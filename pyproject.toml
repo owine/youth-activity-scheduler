@@ -5,7 +5,7 @@ description = "Youth Activity Scheduler — self-hosted crawler + alerter for yo
 requires-python = ">=3.12"
 readme = "README.md"
 dependencies = [
-  "sqlalchemy>=2.0.30",
+  "sqlalchemy[asyncio]>=2.0.30",
   "alembic>=1.13.1",
   "pydantic>=2.7.0",
   "pydantic-settings>=2.2.1",
