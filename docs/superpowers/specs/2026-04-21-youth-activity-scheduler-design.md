@@ -99,6 +99,7 @@ Precomputed, rebuilt on offering or kid changes.
 
 - Types: `watchlist_hit, new_match, reg_opens_24h, reg_opens_1h, reg_opens_now, schedule_posted, crawl_failed, digest`
 - Unsent rows with the same `dedup_key` are updated rather than duplicated.
+- `dedup_key` format: `{type}:{kid_id or "-"}:{offering_id or site_id or "-"}`. Scheduled alerts (`reg_opens_*`) also include the `scheduled_for` bucket so countdown rows don't collide with each other.
 
 **`alert_routing`** — `type (pk), channels (json), enabled` — table-driven routing, editable via UI.
 
@@ -158,7 +159,7 @@ Tiered:
 
 Compares fresh extracted offerings against current `offerings` rows for the page:
 
-- Match key: `(name, start_date)` — small tolerance on name (normalized casing + whitespace).
+- Match key: `(normalized_name, start_date)` where `normalized_name = lowercase → strip punctuation → collapse whitespace → trim`. This stops minor title edits from producing spurious withdrawn/new churn.
 - **New** → insert, set `first_seen = now`.
 - **Updated** → update in place, preserve `first_seen`.
 - **Gone** → `status = withdrawn`.
@@ -182,7 +183,7 @@ Polls every 60s for `alerts` where `scheduled_for <= now AND sent_at IS NULL AND
 - **Coalescing:** normal-urgency alerts (`new_match`, `reg_opens_24h`) buffer 10 min. Multiple alerts with the same coalescing key `(kid_id, type)` merge into one message.
 - **Immediate urgency** (`reg_opens_now`, `reg_opens_1h`, `watchlist_hit`) send immediately.
 - **`schedule_posted`** never sends standalone — rolls into the digest.
-- **Per-kid cap:** max 5 pushes/hour. Excess coalesces to "N new alerts — see dashboard."
+- **Per-kid cap:** max 5 pushes/hour **across all push channels combined** (HA + ntfy counted together; email is uncapped). Excess coalesces to "N new alerts — see dashboard."
 - **Quiet hours** suppress pushes but not emails.
 
 ### 4.8 Error handling
@@ -199,7 +200,7 @@ Polls every 60s for `alerts` where `scheduled_for <= now AND sent_at IS NULL AND
 
 - Age fit: kid's current age ∈ `[age_min, age_max]` (tolerance default 0)
 - Distance fit: offering's location within `max_distance_mi` (fail-open if location unknown)
-- Interest tag overlap: at least one of kid's `interests` ∈ offering's `program_type` or appears in name/description
+- Interest tag overlap: at least one of kid's `interests` equals offering's `program_type`, OR appears as a case-insensitive substring (after lowercasing + whitespace normalization) in `name` or `description`. Per-interest aliases (e.g., `soccer → [kickers, futbol]`) live in a small config map.
 - Offering not ended and `status = active`
 
 Failing any gate → no `matches` row.
@@ -209,7 +210,7 @@ Failing any gate → no `matches` row.
 | Signal | Weight | Notes |
 |---|---|---|
 | Availability fit | 0.4 | % overlap of offering day/time with kid availability windows |
-| Distance | 0.2 | 0–5mi full, 5–15mi linear decay, >15mi = 0 (but hard gate fires first) |
+| Distance | 0.2 | Scaled against `max_distance_mi`: full credit ≤ 30% of cap, linear decay to 0 at the cap. Avoids flat scores when the cap is >15mi. |
 | Price | 0.1 | Optional per-kid `max_price`; linear decay to 0 at 2× max |
 | Registration timing | 0.2 | Full credit if registration open or opens soon; 0 if closed |
 | Freshness | 0.1 | Small boost for recently added offerings |
@@ -257,7 +258,7 @@ Editable via UI through `alert_routing` table.
 
 ### 6.3 Digest
 
-One email per active kid, default 7am daily. Structure:
+One email **per active kid** (N emails for an N-kid household, not a combined household digest — parents can skim per-kid faster than per-household). Default 7am daily. Structure:
 
 - Top-line: LLM-generated summary sentence
 - New matches section
