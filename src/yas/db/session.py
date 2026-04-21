@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -12,22 +14,24 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+# WAL + busy_timeout is the standard combo for one-writer / many-readers SQLite:
+# WAL lets readers proceed while a write is in flight, and busy_timeout lets a
+# would-be writer wait instead of failing with SQLITE_BUSY when another
+# connection briefly holds the write lock.
+_SQLITE_BUSY_TIMEOUT_MS = 5000
+
 
 def create_engine_for(url: str) -> AsyncEngine:
-    """Create an async engine with WAL mode enabled for SQLite."""
-    connect_args: dict[str, object] = {}
+    """Create an async engine. For SQLite URLs, installs WAL + busy-timeout pragmas."""
+    is_sqlite = url.startswith("sqlite")
     engine = create_async_engine(
         url,
-        future=True,
-        connect_args=connect_args,
-        pool_pre_ping=True,
+        # pre-ping is valuable for TCP pools (the other end may have closed),
+        # but useless on a local SQLite file and adds a SELECT 1 per checkout.
+        pool_pre_ping=not is_sqlite,
     )
 
-    if url.startswith("sqlite"):
-        # WAL + sane defaults for the single-writer, multi-reader case.
-        from sqlalchemy import event
-        from sqlalchemy.engine import Engine
-
+    if is_sqlite:
         sync_engine: Engine = engine.sync_engine
 
         @event.listens_for(sync_engine, "connect")
@@ -36,6 +40,7 @@ def create_engine_for(url: str) -> AsyncEngine:
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute(f"PRAGMA busy_timeout={_SQLITE_BUSY_TIMEOUT_MS}")
             cursor.close()
 
     return engine
