@@ -33,7 +33,10 @@ def configure_logging(level: str = "INFO") -> None:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(numeric_level),
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
-        cache_logger_on_first_use=True,
+        # Caching bound loggers pins the first-seen filter level, so a later
+        # reconfigure_logging() call (notably between tests) would silently
+        # keep the old level. Overhead of disabling the cache is negligible.
+        cache_logger_on_first_use=False,
     )
 
 
