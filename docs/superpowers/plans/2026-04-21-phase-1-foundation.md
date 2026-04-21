@@ -684,6 +684,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import mapped_column
@@ -693,8 +694,14 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-def timestamp_column(nullable: bool = False, default_now: bool = True):  # type: ignore[no-untyped-def]
-    kwargs = {"nullable": nullable}
+def timestamp_column(nullable: bool = False, default_now: bool = True) -> Any:
+    """Return a timezone-aware DateTime column with a UTC-now default.
+
+    Returns `Any` because SQLAlchemy's `mapped_column()` return type narrows
+    to `Mapped[T]` only once the caller annotates the attribute; this helper
+    is intended to be used on the RHS of a `Mapped[datetime]` annotation.
+    """
+    kwargs: dict[str, Any] = {"nullable": nullable}
     if default_now:
         kwargs["server_default"] = func.current_timestamp()
         kwargs["default"] = utcnow
@@ -825,7 +832,7 @@ class Location(Base):
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 from sqlalchemy import JSON, Date, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column
@@ -856,7 +863,7 @@ class Kid(Base):
     school_holidays: Mapped[list[str]] = mapped_column(JSON, default=list)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped = timestamp_column()
+    created_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 7: Implement `site.py`**
@@ -887,7 +894,7 @@ class Site(Base):
     active: Mapped[bool] = mapped_column(default=True)
     default_cadence_s: Mapped[int] = mapped_column(Integer, default=6 * 3600)
     muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped = timestamp_column()
+    created_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 8: Implement `page.py`**
@@ -958,8 +965,8 @@ class Offering(Base):
     registration_opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     registration_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    first_seen: Mapped = timestamp_column()
-    last_seen: Mapped = timestamp_column()
+    first_seen: Mapped[datetime] = timestamp_column()
+    last_seen: Mapped[datetime] = timestamp_column()
     status: Mapped[OfferingStatus] = mapped_column(String, default=OfferingStatus.active.value)
     muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 ```
@@ -970,6 +977,8 @@ class Offering(Base):
 """LLM extraction cache keyed by content hash."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from sqlalchemy import JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -985,7 +994,7 @@ class ExtractionCache(Base):
     extracted_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     llm_model: Mapped[str] = mapped_column(String, nullable=False)
     cost_usd: Mapped[float] = mapped_column(default=0.0)
-    extracted_at: Mapped = timestamp_column()
+    extracted_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 11: Implement `match.py`**
@@ -994,6 +1003,8 @@ class ExtractionCache(Base):
 """Precomputed kid↔offering matches."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from sqlalchemy import JSON, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -1011,7 +1022,7 @@ class Match(Base):
     )
     score: Mapped[float] = mapped_column(nullable=False)
     reasons: Mapped[dict] = mapped_column(JSON, default=dict)
-    computed_at: Mapped = timestamp_column()
+    computed_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 12: Implement `watchlist.py`**
@@ -1020,6 +1031,8 @@ class Match(Base):
 """Per-kid watchlist entries."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -1043,7 +1056,7 @@ class WatchlistEntry(Base):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
     ignore_hard_gates: Mapped[bool] = mapped_column(default=False)
-    created_at: Mapped = timestamp_column()
+    created_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 12b: Implement `unavailability_block.py`**
@@ -1053,7 +1066,7 @@ class WatchlistEntry(Base):
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 from sqlalchemy import JSON, Date, ForeignKey, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column
@@ -1078,7 +1091,7 @@ class UnavailabilityBlock(Base):
         ForeignKey("enrollments.id", ondelete="CASCADE"), nullable=True
     )
     active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped = timestamp_column()
+    created_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 12c: Implement `enrollment.py`**
@@ -1110,7 +1123,7 @@ class Enrollment(Base):
     )
     enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped = timestamp_column()
+    created_at: Mapped[datetime] = timestamp_column()
 ```
 
 - [ ] **Step 13: Implement `alert.py`**
@@ -1899,6 +1912,7 @@ git commit -m "feat(worker): add heartbeat loop and runner skeleton"
 
 `tests/unit/test_entrypoint.py`:
 ```python
+import os
 import subprocess
 import sys
 
@@ -1908,7 +1922,7 @@ def test_main_prints_usage_when_no_mode():
         [sys.executable, "-m", "yas"],
         capture_output=True,
         text=True,
-        env={"YAS_ANTHROPIC_API_KEY": "sk-test", "PATH": "/usr/bin:/bin"},
+        env={**os.environ, "YAS_ANTHROPIC_API_KEY": "sk-test"},
     )
     assert r.returncode != 0
     assert "usage" in (r.stderr + r.stdout).lower()
@@ -1921,7 +1935,7 @@ def test_main_accepts_known_modes():
         [sys.executable, "-m", "yas", "--help"],
         capture_output=True,
         text=True,
-        env={"YAS_ANTHROPIC_API_KEY": "sk-test", "PATH": "/usr/bin:/bin"},
+        env={**os.environ, "YAS_ANTHROPIC_API_KEY": "sk-test"},
     )
     assert r.returncode == 0
     combined = r.stdout + r.stderr
