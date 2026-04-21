@@ -25,7 +25,10 @@ Scope is deliberately single-household, single-user. No multi-tenant, no public 
 - Per-kid profiles (DOB, interests, availability, distance) and watchlists
 - Multi-channel alerting (email, Home Assistant, ntfy push) with urgency tiers
 - Daily per-kid digest email
-- Self-hosted web UI (kids, sites, offerings browser, alerts, settings)
+- **Time-gating against school schedules and existing commitments** (recurring unavailability)
+- **Enrollment tracking** — marking an offering as enrolled blocks its time slot for future matching
+- **Calendar view** — per-kid and combined week/month calendar over offerings, enrollments, and unavailability
+- Self-hosted web UI (kids, sites, offerings browser, calendar, alerts, settings)
 - Docker Compose deployment (API + worker)
 
 ### Explicitly out of scope (v1)
@@ -58,12 +61,15 @@ SQLite is the right fit for this workload: one user, ~20 sites, low hundreds of 
 
 ### Tables
 
-**`kids`** — `id, name, dob, interests (json), availability (json), max_distance_mi (nullable), alert_score_threshold (default 0.6), alert_on (json), notes, active`
+**`kids`** — `id, name, dob, interests (json), availability (json), max_distance_mi (nullable), alert_score_threshold (default 0.6), alert_on (json), school_weekdays (json, default [mon..fri]), school_time_start (nullable), school_time_end (nullable), school_year_ranges (json, default []), school_holidays (json, default []), notes, active`
 
 - DOB (not age) is stored; current age is computed at match time.
-- `availability` is a weekly grid of day × time-range windows.
+- `availability` is a weekly grid of day × time-range windows — "when I'd like to do things."
 - `max_distance_mi` nullable → falls back to household default.
 - `alert_on` is `{ new_match, schedule_posted, reg_opens, watchlist_hit }` toggles.
+- `school_year_ranges` is a list of `{ start, end }` date ranges (so you can split fall + spring semesters, or accommodate a kid who starts school mid-year).
+- `school_holidays` is a list of individual dates (Thanksgiving week, winter break, MLK day, etc.) — no-school exceptions within the school year ranges.
+- School fields together produce a computed set of school unavailability blocks via a materializer; see §3.x below. The raw fields stay on `kids` because they're the source of truth and rarely changed.
 
 **`locations`** — `id, name, address, lat, lon`
 Used for home address and for any offering with a parseable location.
@@ -94,6 +100,20 @@ Precomputed, rebuilt on offering or kid changes.
 
 - `pattern` is case-insensitive substring or glob (no regex).
 - `site_id = NULL` → watches across all sites.
+
+**`unavailability_blocks`** — recurring or one-off times a kid is unavailable.
+`id, kid_id, source (manual | school | enrollment | custom), label, days_of_week (json), time_start, time_end, date_start (nullable), date_end (nullable), source_enrollment_id (nullable), active, created_at`
+
+- **`source = school`** rows are derived from the kid's school fields and are rewritten whenever those fields change. They are never edited by hand — the derivation is idempotent. One row per contiguous school-year range, representing "weekdays `school_weekdays` from `school_time_start` to `school_time_end`." `school_holidays` dates are stored on the kid, not as blocks; the matching layer subtracts them when checking a specific date.
+- **`source = enrollment`** rows are auto-created/updated/deleted as `enrollments` rows change (one block per offering occurrence pattern). `source_enrollment_id` is the FK back.
+- **`source = manual | custom`** rows are user-created for ad-hoc commitments (grandma visit, family trip — for custom you can set `date_start/date_end` without a recurring pattern).
+
+**`enrollments`** — a record that the household has committed to an offering.
+`id, kid_id, offering_id, status (interested | enrolled | waitlisted | completed | cancelled), enrolled_at, notes, created_at`
+
+- Only `status = enrolled` produces `source = enrollment` unavailability blocks. `interested` is purely a bookmark and does not affect matching.
+- `status = waitlisted` does not block time either (the kid isn't actually committed yet).
+- Transitioning to `cancelled` or `completed` deactivates the linked unavailability block (`active = false`).
 
 **`alerts`** — `id, type (enum), kid_id (nullable), offering_id (nullable), site_id (nullable), channels (json), scheduled_for, sent_at (nullable), skipped (bool, default false), dedup_key, payload_json`
 
@@ -202,6 +222,7 @@ Polls every 60s for `alerts` where `scheduled_for <= now AND sent_at IS NULL AND
 - Distance fit: offering's location within `max_distance_mi` (fail-open if location unknown)
 - Interest tag overlap: at least one of kid's `interests` equals offering's `program_type`, OR appears as a case-insensitive substring (after lowercasing + whitespace normalization) in `name` or `description`. Per-interest aliases (e.g., `soccer → [kickers, futbol]`) live in a small config map.
 - Offering not ended and `status = active`
+- **No-conflict with unavailability:** for every occurrence of the offering on each date in `[start_date, end_date]` matching `days_of_week`, none of the offering's `(date, time_start, time_end)` windows intersect an active `unavailability_blocks` row for the kid on that date (after subtracting `school_holidays` from `source = school` blocks). Fail-open if the offering lacks any of start_date, end_date, days_of_week, time_start, time_end (record a `reasons` flag "schedule partial, unable to verify no-conflict").
 
 Failing any gate → no `matches` row.
 
@@ -225,7 +246,9 @@ Watchlist entries bypass the score threshold (alert regardless of score) but sti
 
 - New or updated offering → re-match against all active kids
 - Kid profile change → re-match kid against all active offerings
-- Nightly 3am sweep (catches kids aging into a new range)
+- **Unavailability block change** (add/edit/delete, including school-derived rewrite or enrollment status change) → re-match that kid against all active offerings
+- **Enrollment transition to/from `enrolled`** → re-derive linked block, then re-match that kid
+- Nightly 3am sweep (catches kids aging into a new range, and handles date-range effects of school-year boundaries / holidays)
 
 ---
 
@@ -283,12 +306,14 @@ Body is templated; only the top-line uses the LLM to keep it fast and cheap.
 ### Pages
 
 1. **Dashboard** — counts, event feed, upcoming registration calendar, recent watchlist hits
-2. **Offerings browser** — filters (kid, tag, day, time, price, distance, registration status, site), sort (match score default, date, opens-soon, newest), match-reason chips on each card, actions (add to watchlist, mute offering, open source)
-3. **Kids** — list + detail editing (DOB, interests, availability grid, distance cap, alert thresholds, watchlist manager)
-4. **Sites** — list with health status and 7-day LLM cost, detail with tracked pages, `crawl_runs` history, Crawl Now, Pause, Mute, raw HTML/JSON preview. **Add Site flow:** paste URL → auto-fetch preview → LLM first pass → confirm tracked pages
-5. **Watchlist** — global cross-kid view with hit history
-6. **Alerts** — outbox with filters, resend, digest preview, quiet-hours setting
-7. **Settings** — home location, channel configs, routing, digest time, cost cap, quiet hours
+2. **Offerings browser** — filters (kid, tag, day, time, price, distance, registration status, site), sort (match score default, date, opens-soon, newest), match-reason chips on each card, actions (add to watchlist, mute offering, open source, **mark interested / enrolled**)
+3. **Calendar** — week and month views. Toggles per kid or combined (colored per kid). Renders `offerings` (matched + watchlist hits), `enrollments` (solid blocks), and `unavailability_blocks` (dimmed blocks, labeled by source — school / custom / enrollment). Click any offering cell to view details or transition its enrollment status (interested → enrolled → completed / cancelled). This is the page that answers "what's our week actually look like?"
+4. **Kids** — list + detail editing (DOB, interests, availability grid, distance cap, alert thresholds, watchlist manager, **school schedule** (weekdays + times + year ranges + holidays), **manual unavailability blocks**)
+5. **Sites** — list with health status and 7-day LLM cost, detail with tracked pages, `crawl_runs` history, Crawl Now, Pause, Mute, raw HTML/JSON preview. **Add Site flow:** paste URL → auto-fetch preview → LLM first pass → confirm tracked pages
+6. **Watchlist** — global cross-kid view with hit history
+7. **Enrollments** — list of current and historical enrollments per kid, with status transitions and linked unavailability
+8. **Alerts** — outbox with filters, resend, digest preview, quiet-hours setting
+9. **Settings** — home location, channel configs, routing, digest time, cost cap, quiet hours
 
 ### Live updates
 
@@ -410,9 +435,10 @@ Nightly cron in the worker container runs `sqlite3 activities.db ".backup /data/
 ## 9. Open questions / deferred decisions
 
 - Whether to add Pushover/Gotify alongside ntfy
-- `.ics` calendar export (easy add later)
+- `.ics` calendar export and school-calendar `.ics` *import* (both easy adds later on top of the blocks model)
 - Whether any site on the initial list requires authenticated access (would flip scope)
 - Whether home-location-based driving-time (vs. great-circle) distance matters enough to integrate a routing service
+- Whether to surface "soft" conflicts (e.g., offering ends at 3:15pm, school ends at 3:00pm — too tight?) as warnings rather than hard-gate failures
 
 ## 10. Terminal state for v1
 
@@ -423,3 +449,6 @@ The app is "done" (v1) when:
 - Registration-opens countdown alerts fire correctly for a full T−24h / T−1h / T cycle on a real site
 - A full 30-day uninterrupted run shows <$5 LLM spend and zero silent failures
 - User can disable alerts from a specific site or offering with one click
+- Setting a kid's school hours produces an `unavailability_blocks` row that causes activities inside those hours on school-year weekdays (minus holidays) to be filtered from matches
+- Marking an offering as `enrolled` creates a linked unavailability block and immediately suppresses matches for conflicting offerings; marking it `cancelled` restores them
+- Calendar page renders a week view containing offerings, enrollments, and unavailability for a single kid within 1s on a realistic dataset
