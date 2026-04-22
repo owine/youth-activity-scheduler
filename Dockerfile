@@ -26,6 +26,9 @@ COPY alembic ./alembic
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
+# Playwright browser + OS deps. Done after uv sync so `playwright` is on PATH.
+RUN uv run playwright install --with-deps chromium
+
 RUN mkdir -p /data
 
 ENV YAS_DATABASE_URL=sqlite+aiosqlite:////data/activities.db \
