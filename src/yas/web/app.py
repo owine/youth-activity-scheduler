@@ -40,6 +40,9 @@ def create_app(
             "heartbeat_age_s": readiness.heartbeat_age_s,
         }
 
+    from yas.web.routes import sites_router
+    app.include_router(sites_router)
+
     @app.on_event("shutdown")
     async def _shutdown() -> None:
         await state.engine.dispose()
