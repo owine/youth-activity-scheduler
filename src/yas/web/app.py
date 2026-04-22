@@ -43,6 +43,7 @@ def create_app(
         }
 
     from yas.web.routes import (
+        enrollments_router,
         household_router,
         kids_router,
         sites_router,
@@ -55,6 +56,7 @@ def create_app(
     app.include_router(kids_router)
     app.include_router(watchlist_router)
     app.include_router(unavailability_router)
+    app.include_router(enrollments_router)
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
