@@ -105,8 +105,28 @@ class DefaultFetcher:
         raise FetchError(last_status, url, f"unexpected fall-through: {last_err}")
 
     async def _fetch_browser(self, url: str) -> tuple[str, int, str, bool]:
-        # Task 9 fills this in end-to-end.
-        raise NotImplementedError("Playwright branch implemented in Task 9")
+        async with self._browser_lock:
+            if self._browser is None:
+                from playwright.async_api import async_playwright
+
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(headless=True)
+                self._browser_context = await self._browser.new_context(
+                    user_agent=_USER_AGENT,
+                )
+        page = await self._browser_context.new_page()
+        try:
+            response = await page.goto(url, wait_until="networkidle", timeout=30000)
+            status = response.status if response is not None else 200
+            if status >= 400:
+                raise FetchError(status, url, f"browser http {status}")
+            # Give late-firing setTimeout/DOM updates one tick.
+            await page.wait_for_load_state("networkidle")
+            html = await page.content()
+            final_url = page.url
+            return html, status, final_url, True
+        finally:
+            await page.close()
 
     async def aclose(self) -> None:
         await self._http.aclose()
