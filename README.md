@@ -12,6 +12,21 @@ docker compose up -d
 curl http://localhost:8080/healthz
 ```
 
+### Local dev on macOS
+
+Docker Desktop's VirtioFS bind mount doesn't fully honor SQLite's locking
+primitives; you'll see sporadic `disk I/O error` under concurrent api ↔ worker
+access. Real Linux deployments are unaffected. For local dev on macOS, use the
+overlay that switches `./data` to a Docker-managed named volume:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+
+# inspect the db (it's inside the named volume, not on the host)
+docker compose -f docker-compose.yml -f docker-compose.macos.yml \
+    exec yas-api sqlite3 /data/activities.db '.tables'
+```
+
 ## Quickstart (local)
 
 ```bash
@@ -22,6 +37,34 @@ mkdir -p data
 uv run alembic upgrade head
 uv run python -m yas all
 ```
+
+## Managing sites
+
+Sites and their tracked pages are registered via HTTP. The API is un-authed and
+bound to the container network; expose it only on trusted hosts.
+
+```bash
+# Register a site with one tracked schedule page.
+curl -sS -X POST localhost:8080/api/sites \
+  -H 'content-type: application/json' \
+  -d '{
+    "name": "Example Sports",
+    "base_url": "https://example.com/",
+    "needs_browser": false,
+    "pages": [{"url": "https://example.com/schedule", "kind": "schedule"}]
+  }'
+
+curl localhost:8080/api/sites              # list
+curl localhost:8080/api/sites/1            # one site with pages
+curl -X POST localhost:8080/api/sites/1/crawl-now   # schedule now
+curl -X DELETE localhost:8080/api/sites/1  # remove site + pages + offerings
+```
+
+`robots.txt` is **ignored by default**. Set `crawl_hints: {"respect_robots": true}`
+on a site to opt in.
+
+The scheduler ticks every 30s and crawls pages whose `next_check_at` is in the
+past, respecting `site.default_cadence_s` after each successful crawl.
 
 ## Development
 
@@ -40,8 +83,12 @@ src/yas/
   logging.py       structlog setup
   __main__.py      CLI entrypoint (api|worker|all)
   db/              SQLAlchemy models + session
+  crawl/           fetcher, change detector, extractor, reconciler, scheduler, pipeline
+  llm/             Pydantic schemas, prompt builder, AnthropicClient
   web/             FastAPI app
+  web/routes/      site-management HTTP endpoints
   worker/          background loop
 alembic/           DB migrations
+scripts/           manual smoke scripts
 tests/             pytest suite
 ```

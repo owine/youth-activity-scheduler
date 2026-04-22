@@ -28,20 +28,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
     """Run worker in a task alongside uvicorn in-process."""
-    config = uvicorn.Config(
-        create_app(engine=engine, settings=settings),
-        host=settings.host,
-        port=settings.port,
-        log_config=None,
-    )
-    server = uvicorn.Server(config)
-    worker_task = asyncio.create_task(run_worker(engine, settings))
+    from yas.crawl.fetcher import DefaultFetcher
+    from yas.llm.client import AnthropicClient
+
+    fetcher = DefaultFetcher()
+    llm = AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_extraction_model)
     try:
-        await server.serve()
+        config = uvicorn.Config(
+            create_app(engine=engine, settings=settings, fetcher=fetcher, llm=llm),
+            host=settings.host,
+            port=settings.port,
+            log_config=None,
+        )
+        server = uvicorn.Server(config)
+        worker_task = asyncio.create_task(run_worker(engine, settings, fetcher=fetcher, llm=llm))
+        try:
+            await server.serve()
+        finally:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
     finally:
-        worker_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await worker_task
+        await fetcher.aclose()
 
 
 def main(argv: list[str] | None = None) -> int:

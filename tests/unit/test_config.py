@@ -35,3 +35,25 @@ def test_settings_requires_anthropic_key(monkeypatch):
     monkeypatch.delenv("YAS_ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(ValidationError):
         _settings()
+
+
+def test_crawl_scheduler_defaults(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    assert s.crawl_scheduler_enabled is True
+    assert s.crawl_scheduler_tick_s == 30
+    assert s.crawl_scheduler_batch_size == 10
+    assert s.llm_extraction_model == "claude-haiku-4-5-20251001"
+
+
+def test_crawl_scheduler_overrides(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("YAS_CRAWL_SCHEDULER_TICK_S", "5")
+    monkeypatch.setenv("YAS_CRAWL_SCHEDULER_BATCH_SIZE", "3")
+    monkeypatch.setenv("YAS_CRAWL_SCHEDULER_ENABLED", "false")
+    monkeypatch.setenv("YAS_LLM_EXTRACTION_MODEL", "claude-sonnet-4-6")
+    s = _settings()
+    assert s.crawl_scheduler_tick_s == 5
+    assert s.crawl_scheduler_batch_size == 3
+    assert s.crawl_scheduler_enabled is False
+    assert s.llm_extraction_model == "claude-sonnet-4-6"
