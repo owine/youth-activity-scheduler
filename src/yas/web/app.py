@@ -46,6 +46,7 @@ def create_app(
         enrollments_router,
         household_router,
         kids_router,
+        matches_router,
         sites_router,
         unavailability_router,
         watchlist_router,
@@ -57,6 +58,7 @@ def create_app(
     app.include_router(watchlist_router)
     app.include_router(unavailability_router)
     app.include_router(enrollments_router)
+    app.include_router(matches_router)
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
