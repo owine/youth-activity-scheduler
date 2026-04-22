@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     worker_heartbeat_interval_s: int = 10
     worker_heartbeat_staleness_s: int = 60
 
+    # Crawl scheduler
+    crawl_scheduler_enabled: bool = True
+    crawl_scheduler_tick_s: int = 30
+    crawl_scheduler_batch_size: int = 10
+
+    # LLM extraction
+    llm_extraction_model: str = "claude-haiku-4-5-20251001"
+
 
 def get_settings() -> Settings:
     """Factory so callers get a fresh read when needed (tests, reload)."""
