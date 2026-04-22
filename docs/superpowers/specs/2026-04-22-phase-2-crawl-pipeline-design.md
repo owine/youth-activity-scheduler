@@ -139,6 +139,8 @@ async def extract(
 
 Flow: normalize → hash → `extraction_cache` lookup (hit → return); on miss call LLM, validate with Pydantic, write cache row, return. Validation failure raises `ExtractionError` carrying the raw response and the first validation message.
 
+**Transaction boundaries:** `extract()` opens its own short-lived `session_scope` for the `extraction_cache` read and write. This is independent of the pipeline's reconciler session — the cache is a side-store, not part of the offerings-diff transaction. If the pipeline later rolls back (e.g., reconciler error), the cache entry still stands; that's intentional, so a repeat crawl after a transient reconciler bug doesn't re-bill the API.
+
 ### 3.5 `src/yas/crawl/reconciler.py`
 
 ```python
@@ -160,7 +162,7 @@ Runs inside caller's `session_scope`; does not commit.
 
 Algorithm:
 
-1. Load active `offerings` for `page_id`; bucket by `(normalized_name, start_date)`.
+1. Load offerings for `page_id` where `status = 'active'`; bucket by `(normalized_name, start_date)`. Withdrawn rows are ignored — they stay in the DB as history but are invisible to the matcher.
 2. For each extracted offering: if key matches, compare field-by-field (see §3.5.1) — equal = unchanged; different = updated. If no match, insert new.
 3. Any existing key not matched this run → set `status = withdrawn`.
 4. `location_name` / `location_address` flow through `get_or_create_location` (dedup by `normalize_name(name)` within site). Geocoding deferred to Phase 3; lat/lon stay NULL.
