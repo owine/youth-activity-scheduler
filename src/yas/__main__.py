@@ -74,8 +74,26 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "api":
         log.info("mode.api", host=settings.host, port=settings.port)
+        # Construct the API-side LLM and geocoder so endpoints that need them
+        # (e.g. /api/sites/{id}/discover, /api/household immediate-geocode)
+        # work in api-only mode. The worker has its own instances in worker mode.
+        from yas.geo.client import NominatimClient
+        from yas.llm.client import AnthropicClient
+
+        api_llm = AnthropicClient(
+            api_key=settings.anthropic_api_key,
+            model=settings.llm_extraction_model,
+        )
+        api_geocoder = NominatimClient(
+            min_interval_s=settings.geocode_nominatim_min_interval_s,
+        )
         uvicorn.run(
-            create_app(engine=engine, settings=settings),
+            create_app(
+                engine=engine,
+                settings=settings,
+                llm=api_llm,
+                geocoder=api_geocoder,
+            ),
             host=settings.host,
             port=settings.port,
             log_config=None,
