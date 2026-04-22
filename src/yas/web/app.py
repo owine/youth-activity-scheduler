@@ -42,10 +42,11 @@ def create_app(
             "heartbeat_age_s": readiness.heartbeat_age_s,
         }
 
-    from yas.web.routes import household_router, sites_router
+    from yas.web.routes import household_router, kids_router, sites_router
 
     app.include_router(sites_router)
     app.include_router(household_router)
+    app.include_router(kids_router)
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
