@@ -3,6 +3,7 @@ from yas.db.models.alert_routing import AlertRouting
 from yas.db.models.crawl_run import CrawlRun
 from yas.db.models.enrollment import Enrollment
 from yas.db.models.extraction_cache import ExtractionCache
+from yas.db.models.geocode_attempt import GeocodeAttempt
 from yas.db.models.household import HouseholdSettings
 from yas.db.models.kid import Kid
 from yas.db.models.location import Location
@@ -20,6 +21,7 @@ __all__ = [
     "CrawlRun",
     "Enrollment",
     "ExtractionCache",
+    "GeocodeAttempt",
     "HouseholdSettings",
     "Kid",
     "Location",
