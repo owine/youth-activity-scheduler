@@ -1,0 +1,69 @@
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from yas.db.base import Base
+from yas.db.models import WorkerHeartbeat
+from yas.db.session import create_engine_for, session_scope
+from yas.web.app import create_app
+
+
+@pytest.fixture
+async def app_with_db(tmp_path, monkeypatch):
+    url = f"sqlite+aiosqlite:///{tmp_path}/h.db"
+    monkeypatch.setenv("YAS_DATABASE_URL", url)
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    engine = create_engine_for(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    app = create_app(engine=engine)
+    yield app, engine
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_healthz_returns_ok(app_with_db):
+    app, _ = app_with_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_readyz_503_when_no_heartbeat(app_with_db):
+    app, _ = app_with_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/readyz")
+    assert r.status_code == 503
+    assert r.json()["heartbeat_fresh"] is False
+
+
+@pytest.mark.asyncio
+async def test_readyz_200_when_fresh_heartbeat(app_with_db):
+    app, engine = app_with_db
+    async with session_scope(engine) as s:
+        s.add(WorkerHeartbeat(id=1, worker_name="main", last_beat=datetime.now(UTC)))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/readyz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["heartbeat_fresh"] is True
+    assert body["db_reachable"] is True
+
+
+@pytest.mark.asyncio
+async def test_readyz_503_when_stale_heartbeat(app_with_db):
+    app, engine = app_with_db
+    async with session_scope(engine) as s:
+        s.add(
+            WorkerHeartbeat(
+                id=1,
+                worker_name="main",
+                last_beat=datetime.now(UTC) - timedelta(seconds=600),
+            )
+        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/readyz")
+    assert r.status_code == 503
