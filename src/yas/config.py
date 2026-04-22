@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     # LLM extraction
     llm_extraction_model: str = "claude-haiku-4-5-20251001"
 
+    # Geocoder
+    geocode_enabled: bool = True
+    geocode_tick_s: int = 300
+    geocode_batch_size: int = 20
+    geocode_nominatim_min_interval_s: float = 1.0
+
+    # Daily sweep
+    sweep_enabled: bool = True
+    sweep_time_utc: str = "07:00"
+
 
 def get_settings() -> Settings:
     """Factory so callers get a fresh read when needed (tests, reload)."""

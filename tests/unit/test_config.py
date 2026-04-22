@@ -57,3 +57,19 @@ def test_crawl_scheduler_overrides(monkeypatch):
     assert s.crawl_scheduler_batch_size == 3
     assert s.crawl_scheduler_enabled is False
     assert s.llm_extraction_model == "claude-sonnet-4-6"
+
+
+def test_geocode_settings_defaults(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    assert s.geocode_enabled is True
+    assert s.geocode_tick_s == 300
+    assert s.geocode_batch_size == 20
+    assert s.geocode_nominatim_min_interval_s == 1.0
+
+
+def test_sweep_settings_defaults(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    assert s.sweep_enabled is True
+    assert s.sweep_time_utc == "07:00"

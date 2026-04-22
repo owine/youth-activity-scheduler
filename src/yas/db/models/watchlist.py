@@ -25,5 +25,8 @@ class WatchlistEntry(Base):
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
     active: Mapped[bool] = mapped_column(default=True)
+    # Reserved for a future "strict mode" opt-in. Not consulted by the matcher
+    # in Phase 3 — watchlist hits unconditionally bypass all hard gates because
+    # the user has already manually verified the program's details.
     ignore_hard_gates: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = timestamp_column()
