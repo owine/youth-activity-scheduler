@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from yas.web.routes.watchlist_schemas import WatchlistCreate
+
 
 class UnavailabilityCreate(BaseModel):
     """Minimal inline nested create for atomic kid-create.
@@ -26,13 +28,7 @@ class UnavailabilityCreate(BaseModel):
     active: bool = True
 
 
-class WatchlistCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    pattern: str
-    site_id: int | None = None
-    priority: str = "normal"
-    notes: str | None = None
-    active: bool = True
+__all__ = ["KidCreate", "KidDetailOut", "KidOut", "KidUpdate", "UnavailabilityCreate", "WatchlistCreate"]
 
 
 class KidCreate(BaseModel):
