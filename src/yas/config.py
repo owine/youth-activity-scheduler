@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     sweep_enabled: bool = True
     sweep_time_utc: str = "07:00"
 
+    # Site discovery
+    discovery_enabled: bool = True
+    discovery_max_candidates: int = 50
+    discovery_max_returned: int = 20
+    discovery_min_score: float = 0.5
+    discovery_head_fetch_concurrency: int = 10
+    discovery_head_fetch_timeout_s: int = 10
+
 
 def get_settings() -> Settings:
     """Factory so callers get a fresh read when needed (tests, reload)."""

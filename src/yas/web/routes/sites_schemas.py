@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class PageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     url: HttpUrl
-    kind: str = "schedule"
+    # PDF is intentionally NOT in this Literal — Phase 3.5 surfaces PDFs via
+    # /discover but they aren't yet crawlable. Submitting kind="pdf" fails at
+    # the Pydantic layer with a 422 and a clear error.
+    kind: Literal["schedule", "registration", "list", "other"] = "schedule"
 
 
 class PageOut(BaseModel):
