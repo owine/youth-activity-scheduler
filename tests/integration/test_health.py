@@ -67,3 +67,25 @@ async def test_readyz_503_when_stale_heartbeat(app_with_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.get("/readyz")
     assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_readyz_503_when_db_unreachable(app_with_db):
+    """If the DB connection itself fails, /readyz must fail closed (503)."""
+    app, engine = app_with_db
+    await engine.dispose()  # any further connection attempt will try (and may fail)
+
+    # Replace the app's engine with one pointed at a file that doesn't exist
+    # and can't be created (a directory path with a nested nonexistent parent).
+    from yas.db.session import create_engine_for
+
+    broken = create_engine_for("sqlite+aiosqlite:///nonexistent_dir/does/not/exist.db")
+    app.state.yas.engine = broken
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/readyz")
+    assert r.status_code == 503
+    body = r.json()
+    assert body["db_reachable"] is False
+    assert body["heartbeat_fresh"] is False
+    await broken.dispose()
