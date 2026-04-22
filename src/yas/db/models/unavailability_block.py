@@ -16,7 +16,9 @@ class UnavailabilityBlock(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kid_id: Mapped[int] = mapped_column(ForeignKey("kids.id", ondelete="CASCADE"), index=True)
-    source: Mapped[UnavailabilitySource] = mapped_column(String, default=UnavailabilitySource.manual.value)
+    source: Mapped[UnavailabilitySource] = mapped_column(
+        String, default=UnavailabilitySource.manual.value
+    )
     label: Mapped[str | None] = mapped_column(String, nullable=True)
     days_of_week: Mapped[list[str]] = mapped_column(JSON, default=list)
     time_start: Mapped[time | None] = mapped_column(Time, nullable=True)

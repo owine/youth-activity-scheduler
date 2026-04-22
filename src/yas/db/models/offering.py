@@ -31,7 +31,9 @@ class Offering(Base):
     time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    registration_opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    registration_opens_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     registration_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     first_seen: Mapped[datetime] = timestamp_column()

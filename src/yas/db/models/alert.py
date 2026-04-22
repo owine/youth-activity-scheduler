@@ -27,12 +27,12 @@ class Alert(Base):
         ForeignKey("sites.id", ondelete="SET NULL"), nullable=True
     )
     channels: Mapped[list[str]] = mapped_column(JSON, default=list)
-    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    scheduled_for: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     skipped: Mapped[bool] = mapped_column(default=False)
     dedup_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
-    __table_args__ = (
-        Index("ix_alerts_unsent_due", "scheduled_for", "sent_at"),
-    )
+    __table_args__ = (Index("ix_alerts_unsent_due", "scheduled_for", "sent_at"),)
