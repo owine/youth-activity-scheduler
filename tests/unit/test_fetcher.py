@@ -9,13 +9,14 @@ from yas.crawl.fetcher import DefaultFetcher, FetchError
 
 
 async def _mk_fetcher():
-    _ = get_settings   # typecheck — settings import exercised
+    _ = get_settings  # typecheck — settings import exercised
     return DefaultFetcher()
 
 
 class _Page:
     def __init__(self, url):
         self.url = url
+
 
 class _Site:
     def __init__(self, id, needs_browser=False, crawl_hints=None):
@@ -27,7 +28,9 @@ class _Site:
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetch_happy_path():
-    respx.get("https://example.com/p").mock(return_value=Response(200, html="<html><body>ok</body></html>"))
+    respx.get("https://example.com/p").mock(
+        return_value=Response(200, html="<html><body>ok</body></html>")
+    )
     fetcher = await _mk_fetcher()
     try:
         result = await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1))
@@ -49,10 +52,12 @@ def _fast_backoffs(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetch_retries_on_429_then_succeeds(_fast_backoffs):
-    route = respx.get("https://example.com/p").mock(side_effect=[
-        Response(429),
-        Response(200, html="<html>ok</html>"),
-    ])
+    route = respx.get("https://example.com/p").mock(
+        side_effect=[
+            Response(429),
+            Response(200, html="<html>ok</html>"),
+        ]
+    )
     fetcher = await _mk_fetcher()
     try:
         result = await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1))

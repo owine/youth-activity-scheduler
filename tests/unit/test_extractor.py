@@ -49,7 +49,7 @@ async def test_extract_returns_cached_on_hit(tmp_path):
     assert result.from_cache is True
     assert result.cost_usd == 0.0
     assert result.model is None
-    assert llm.call_count == 1   # not called again
+    assert llm.call_count == 1  # not called again
     assert [o.name for o in result.offerings] == ["Soccer"]
     await engine.dispose()
 
@@ -61,6 +61,7 @@ async def test_extract_propagates_extraction_error(tmp_path):
     class _BadLLM:
         async def extract_offerings(self, *, html, url, site_name):
             from yas.llm.client import ExtractionError
+
             raise ExtractionError(raw="{}", detail="nope")
 
     from yas.llm.client import ExtractionError

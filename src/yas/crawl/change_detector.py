@@ -30,9 +30,8 @@ def normalize(html: str) -> str:
     for node in tree.css("*"):
         attrs = dict(node.attributes or {})
         for name in list(attrs.keys()):
-            if (
-                name in _NOISE_ATTRS
-                or any(name.startswith(prefix) for prefix in _NOISE_ATTR_PREFIXES)
+            if name in _NOISE_ATTRS or any(
+                name.startswith(prefix) for prefix in _NOISE_ATTR_PREFIXES
             ):
                 del node.attrs[name]
     # 4. Emit visible text only.

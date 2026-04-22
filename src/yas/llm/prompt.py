@@ -7,8 +7,19 @@ message carries the (normalized) HTML, URL, and site name."""
 from __future__ import annotations
 
 _PROGRAM_TYPES = (
-    "soccer", "swim", "martial_arts", "art", "music", "stem", "dance",
-    "gym", "multisport", "outdoor", "academic", "camp_general", "unknown",
+    "soccer",
+    "swim",
+    "martial_arts",
+    "art",
+    "music",
+    "stem",
+    "dance",
+    "gym",
+    "multisport",
+    "outdoor",
+    "academic",
+    "camp_general",
+    "unknown",
 )
 
 _SYSTEM = f"""You extract youth activity offerings from a single web page into a
@@ -40,11 +51,6 @@ Strict rules:
 def build_extraction_prompt(*, html: str, url: str, site_name: str) -> tuple[str, str]:
     """Return (system_prompt, user_prompt) for the extraction call."""
     user = (
-        f"Site: {site_name}\n"
-        f"URL: {url}\n"
-        f"\n"
-        f"--- page content ---\n"
-        f"{html}\n"
-        f"--- end page content ---"
+        f"Site: {site_name}\nURL: {url}\n\n--- page content ---\n{html}\n--- end page content ---"
     )
     return _SYSTEM, user

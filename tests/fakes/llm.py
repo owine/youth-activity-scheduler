@@ -21,9 +21,7 @@ class FakeLLMClient:
     call_count: int = 0
     on_call: Callable[[str, str, str], None] | None = None
 
-    async def extract_offerings(
-        self, *, html: str, url: str, site_name: str
-    ) -> ExtractionResult:
+    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         self.call_count += 1
         if self.on_call:
             self.on_call(html, url, site_name)

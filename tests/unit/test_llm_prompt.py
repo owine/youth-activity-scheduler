@@ -16,8 +16,20 @@ def test_prompt_contains_site_and_url_and_html():
 
 def test_prompt_mentions_fixed_program_vocabulary():
     system, _ = build_extraction_prompt(html="", url="", site_name="x")
-    for tag in ("soccer", "swim", "martial_arts", "art", "music", "stem", "dance",
-                "gym", "multisport", "outdoor", "academic", "camp_general"):
+    for tag in (
+        "soccer",
+        "swim",
+        "martial_arts",
+        "art",
+        "music",
+        "stem",
+        "dance",
+        "gym",
+        "multisport",
+        "outdoor",
+        "academic",
+        "camp_general",
+    ):
         assert tag in system
 
 

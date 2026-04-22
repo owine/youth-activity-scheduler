@@ -57,12 +57,16 @@ async def create_site(payload: SiteCreate, request: Request) -> SiteOut:
             s.add(Page(site_id=site.id, url=str(p.url), kind=p.kind, next_check_at=now))
         await s.flush()
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.get("", response_model=list[SiteOut])
@@ -72,12 +76,18 @@ async def list_sites(request: Request) -> list[SiteOut]:
         out: list[SiteOut] = []
         for site in sites:
             pages = (
-                await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id))
-            ).scalars().all()
-            out.append(SiteOut.model_validate({
-                **_site_attrs(site),
-                "pages": [PageOut.model_validate(p) for p in pages],
-            }))
+                (await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id)))
+                .scalars()
+                .all()
+            )
+            out.append(
+                SiteOut.model_validate(
+                    {
+                        **_site_attrs(site),
+                        "pages": [PageOut.model_validate(p) for p in pages],
+                    }
+                )
+            )
         return out
 
 
@@ -88,12 +98,16 @@ async def get_site(site_id: int, request: Request) -> SiteOut:
         if site is None:
             raise HTTPException(status_code=404, detail=f"site {site_id} not found")
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.patch("/{site_id}", response_model=SiteOut)
@@ -106,12 +120,16 @@ async def update_site(site_id: int, patch: SiteUpdate, request: Request) -> Site
             setattr(site, field, value)
         await s.flush()
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -38,11 +38,21 @@ async def test_scheduler_picks_due_page_and_runs_pipeline(tmp_path, monkeypatch)
             site = Site(name="Test", base_url=fx.base_url, default_cadence_s=3600)
             s.add(site)
             await s.flush()
-            s.add(Page(site_id=site.id, url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
+            s.add(
+                Page(
+                    site_id=site.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
 
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Baseball", program_type=ProgramType.multisport)])
-        task = asyncio.create_task(crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm))
+        llm = FakeLLMClient(
+            default=[ExtractedOffering(name="Baseball", program_type=ProgramType.multisport)]
+        )
+        task = asyncio.create_task(
+            crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
+        )
         try:
             # Wait until an offering shows up OR timeout.
             for _ in range(60):
@@ -70,20 +80,37 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
 
     async with fixture_site(pages={"/p": PAGE}) as fx:
         async with session_scope(engine) as s:
-            inactive = Site(name="Inactive", base_url=fx.base_url, active=False, default_cadence_s=3600)
+            inactive = Site(
+                name="Inactive", base_url=fx.base_url, active=False, default_cadence_s=3600
+            )
             muted = Site(
-                name="Muted", base_url=fx.base_url,
+                name="Muted",
+                base_url=fx.base_url,
                 muted_until=datetime.now(UTC) + timedelta(hours=1),
                 default_cadence_s=3600,
             )
             s.add_all([inactive, muted])
             await s.flush()
-            s.add(Page(site_id=inactive.id, url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
-            s.add(Page(site_id=muted.id,    url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
+            s.add(
+                Page(
+                    site_id=inactive.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
+            s.add(
+                Page(
+                    site_id=muted.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
 
         fetcher = DefaultFetcher()
         llm = FakeLLMClient()
-        task = asyncio.create_task(crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm))
+        task = asyncio.create_task(
+            crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
+        )
         try:
             await asyncio.sleep(3)  # enough for ~3 ticks
         finally:

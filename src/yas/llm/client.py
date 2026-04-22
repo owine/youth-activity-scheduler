@@ -66,9 +66,7 @@ class AnthropicClient:
 
             self._client = AsyncAnthropic(api_key=api_key)
 
-    async def extract_offerings(
-        self, *, html: str, url: str, site_name: str
-    ) -> ExtractionResult:
+    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
         tool = {
             "name": "report_offerings",
@@ -103,7 +101,10 @@ class AnthropicClient:
 
 def _find_tool_input(msg: Any) -> dict[str, Any] | None:
     for block in getattr(msg, "content", []) or []:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "report_offerings":
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and getattr(block, "name", None) == "report_offerings"
+        ):
             inp = getattr(block, "input", None)
             if isinstance(inp, dict):
                 return inp

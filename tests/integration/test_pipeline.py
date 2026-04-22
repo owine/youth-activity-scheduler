@@ -41,7 +41,13 @@ async def test_crawl_page_happy_path(tmp_path):
     engine = await _init_db(tmp_path)
     async with fixture_site(pages={"/p": PAGE}) as fx:
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport, age_min=2, age_max=3)])
+        llm = FakeLLMClient(
+            default=[
+                ExtractedOffering(
+                    name="Tots Baseball", program_type=ProgramType.multisport, age_min=2, age_max=3
+                )
+            ]
+        )
         site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
         try:
             async with session_scope(engine) as s:
@@ -71,7 +77,9 @@ async def test_crawl_page_cache_hit_on_repeat(tmp_path):
     engine = await _init_db(tmp_path)
     async with fixture_site(pages={"/p": PAGE}) as fx:
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport)])
+        llm = FakeLLMClient(
+            default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport)]
+        )
         site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
         try:
             async with session_scope(engine) as s:
@@ -84,12 +92,12 @@ async def test_crawl_page_cache_hit_on_repeat(tmp_path):
             await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page2, site=site2)
         finally:
             await fetcher.aclose()
-    assert llm.call_count == 1     # cache hit on second crawl
+    assert llm.call_count == 1  # cache hit on second crawl
     async with session_scope(engine) as s:
         runs = (await s.execute(select(CrawlRun).order_by(CrawlRun.id))).scalars().all()
         assert len(runs) == 2
         assert runs[1].status == CrawlStatus.ok
-        assert runs[1].llm_calls == 0          # short-circuited by unchanged hash
+        assert runs[1].llm_calls == 0  # short-circuited by unchanged hash
         assert runs[1].changes_detected == 0
     await engine.dispose()
 
@@ -101,6 +109,7 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
 
     async def server():
         from aiohttp import web
+
         app = web.Application()
 
         async def handler(_req):
@@ -108,6 +117,7 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
 
         app.router.add_get("/{tail:.*}", handler)
         from aiohttp.test_utils import TestServer
+
         s = TestServer(app, port=0)
         await s.start_server()
         return s

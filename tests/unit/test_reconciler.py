@@ -131,10 +131,10 @@ async def test_withdrawn_reappearance_inserts_new_row(tmp_path):
         await reconcile(s, page, [o])
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
-        await reconcile(s, page, [])   # withdraw
+        await reconcile(s, page, [])  # withdraw
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
-        result = await reconcile(s, page, [o])   # reappear
+        result = await reconcile(s, page, [o])  # reappear
     assert len(result.new) == 1
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Offering))).scalars().all()
@@ -145,8 +145,12 @@ async def test_withdrawn_reappearance_inserts_new_row(tmp_path):
 @pytest.mark.asyncio
 async def test_location_name_creates_or_reuses_location(tmp_path):
     engine, _site_id, page_id = await _setup(tmp_path)
-    o = _offering("Kickers", start_date=date(2026, 5, 1),
-                  location_name="Lincoln Park Rec", location_address="123 N Clark St")
+    o = _offering(
+        "Kickers",
+        start_date=date(2026, 5, 1),
+        location_name="Lincoln Park Rec",
+        location_address="123 N Clark St",
+    )
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
         await reconcile(s, page, [o])
@@ -156,6 +160,7 @@ async def test_location_name_creates_or_reuses_location(tmp_path):
         await reconcile(s, page, [o])
     async with session_scope(engine) as s:
         from yas.db.models import Location
+
         rows = (await s.execute(select(Location))).scalars().all()
         assert len(rows) == 1
         assert rows[0].name == "Lincoln Park Rec"

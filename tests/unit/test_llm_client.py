@@ -9,8 +9,13 @@ from yas.llm.client import AnthropicClient, ExtractionResult
 class _FakeAnthropicMessages:
     """Mimics anthropic.AsyncAnthropic().messages.create() for unit tests."""
 
-    def __init__(self, tool_input: dict[str, Any], model: str = "claude-haiku-4-5-20251001",
-                 usage_in: int = 1000, usage_out: int = 200):
+    def __init__(
+        self,
+        tool_input: dict[str, Any],
+        model: str = "claude-haiku-4-5-20251001",
+        usage_in: int = 1000,
+        usage_out: int = 200,
+    ):
         self._tool_input = tool_input
         self._model = model
         self._usage_in = usage_in

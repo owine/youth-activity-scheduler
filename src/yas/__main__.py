@@ -41,9 +41,7 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
             log_config=None,
         )
         server = uvicorn.Server(config)
-        worker_task = asyncio.create_task(
-            run_worker(engine, settings, fetcher=fetcher, llm=llm)
-        )
+        worker_task = asyncio.create_task(run_worker(engine, settings, fetcher=fetcher, llm=llm))
         try:
             await server.serve()
         finally:

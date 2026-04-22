@@ -41,6 +41,7 @@ def create_app(
         }
 
     from yas.web.routes import sites_router
+
     app.include_router(sites_router)
 
     @app.on_event("shutdown")

@@ -17,7 +17,7 @@ import httpx
 _USER_AGENT = "yas/0.1 (+https://github.com/example/youth-activity-scheduler)"
 _TIMEOUT = httpx.Timeout(30.0)
 _RETRY_CODES = {429, 502, 503, 504}
-_BACKOFFS_S = (1.0, 4.0, 10.0)   # 3 attempts total (initial + 2 retries after the first wait)
+_BACKOFFS_S = (1.0, 4.0, 10.0)  # 3 attempts total (initial + 2 retries after the first wait)
 
 
 @dataclass(frozen=True)

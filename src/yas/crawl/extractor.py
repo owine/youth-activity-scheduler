@@ -24,8 +24,8 @@ class ExtractionResult:
     offerings: list[ExtractedOffering]
     content_hash: str
     from_cache: bool
-    model: str | None        # None when from_cache=True
-    cost_usd: float          # 0.0 when from_cache=True
+    model: str | None  # None when from_cache=True
+    cost_usd: float  # 0.0 when from_cache=True
 
 
 async def extract(
@@ -45,7 +45,9 @@ async def extract(
             await s.execute(select(ExtractionCache).where(ExtractionCache.content_hash == h))
         ).scalar_one_or_none()
     if cached is not None:
-        offerings = [ExtractedOffering.model_validate(o) for o in cached.extracted_json.get("offerings", [])]
+        offerings = [
+            ExtractedOffering.model_validate(o) for o in cached.extracted_json.get("offerings", [])
+        ]
         return ExtractionResult(
             offerings=offerings,
             content_hash=h,
@@ -63,9 +65,7 @@ async def extract(
             ExtractionCache(
                 content_hash=h,
                 extracted_json={
-                    "offerings": [
-                        json.loads(o.model_dump_json()) for o in result.offerings
-                    ]
+                    "offerings": [json.loads(o.model_dump_json()) for o in result.offerings]
                 },
                 llm_model=result.model,
                 cost_usd=result.cost_usd,

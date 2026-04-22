@@ -91,28 +91,42 @@ async def _do_crawl(
     except FetchError as exc:
         await _apply_failure(engine, page, site, error_text=str(exc))
         return CrawlResult(
-            status=CrawlStatus.failed, pages_fetched=0, changes_detected=0,
-            llm_calls=0, llm_cost_usd=0.0, error_text=str(exc),
+            status=CrawlStatus.failed,
+            pages_fetched=0,
+            changes_detected=0,
+            llm_calls=0,
+            llm_cost_usd=0.0,
+            error_text=str(exc),
         )
 
     # Short-circuit when content hasn't changed.
     from yas.crawl.change_detector import content_hash, normalize
+
     new_hash = content_hash(normalize(fetched.html))
     if page.content_hash is not None and page.content_hash == new_hash:
         await _apply_unchanged(engine, page, site)
         return CrawlResult(
-            status=CrawlStatus.ok, pages_fetched=1, changes_detected=0,
-            llm_calls=0, llm_cost_usd=0.0, error_text=None,
+            status=CrawlStatus.ok,
+            pages_fetched=1,
+            changes_detected=0,
+            llm_calls=0,
+            llm_cost_usd=0.0,
+            error_text=None,
         )
 
     # Extract + reconcile.
     try:
-        ex = await extract(engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name)
+        ex = await extract(
+            engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name
+        )
     except ExtractionError as exc:
         await _apply_next_check(engine, page, site)
         return CrawlResult(
-            status=CrawlStatus.failed, pages_fetched=1, changes_detected=0,
-            llm_calls=1, llm_cost_usd=0.0,
+            status=CrawlStatus.failed,
+            pages_fetched=1,
+            changes_detected=0,
+            llm_calls=1,
+            llm_cost_usd=0.0,
             error_text=f"extraction_failed: {exc.detail[:500]}",
         )
 
@@ -133,9 +147,13 @@ async def _do_crawl(
         log.info("offering.withdrawn", offering_id=oid, site_id=site.id)
     log.info("page.changed", page_id=page.id, site_id=site.id, new_hash=new_hash)
 
-    changes = len(reconcile_result.new) + len(reconcile_result.updated) + len(reconcile_result.withdrawn)
+    changes = (
+        len(reconcile_result.new) + len(reconcile_result.updated) + len(reconcile_result.withdrawn)
+    )
     return CrawlResult(
-        status=CrawlStatus.ok, pages_fetched=1, changes_detected=changes,
+        status=CrawlStatus.ok,
+        pages_fetched=1,
+        changes_detected=changes,
         llm_calls=0 if ex.from_cache else 1,
         llm_cost_usd=ex.cost_usd,
         error_text=None,
@@ -147,8 +165,10 @@ async def _apply_failure(engine: AsyncEngine, page: Page, site: Site, *, error_t
         row = (await s.execute(select(Page).where(Page.id == page.id))).scalar_one()
         row.consecutive_failures = (row.consecutive_failures or 0) + 1
         row.last_fetched = datetime.now(UTC)
-        backoff_mul = min(2 ** row.consecutive_failures, _MAX_BACKOFF_MULTIPLIER)
-        row.next_check_at = datetime.now(UTC) + timedelta(seconds=site.default_cadence_s * backoff_mul)
+        backoff_mul = min(2**row.consecutive_failures, _MAX_BACKOFF_MULTIPLIER)
+        row.next_check_at = datetime.now(UTC) + timedelta(
+            seconds=site.default_cadence_s * backoff_mul
+        )
 
 
 async def _apply_unchanged(engine: AsyncEngine, page: Page, site: Site) -> None:

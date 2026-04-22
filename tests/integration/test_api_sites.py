@@ -27,13 +27,16 @@ async def client(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_create_and_list_site(client):
     c, _ = client
-    r = await c.post("/api/sites", json={
-        "name": "Lil Sluggers",
-        "base_url": "https://example.com/",
-        "needs_browser": True,
-        "default_cadence_s": 3600,
-        "pages": [{"url": "https://example.com/p", "kind": "schedule"}],
-    })
+    r = await c.post(
+        "/api/sites",
+        json={
+            "name": "Lil Sluggers",
+            "base_url": "https://example.com/",
+            "needs_browser": True,
+            "default_cadence_s": 3600,
+            "pages": [{"url": "https://example.com/p", "kind": "schedule"}],
+        },
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["id"] > 0
@@ -47,10 +50,14 @@ async def test_create_and_list_site(client):
 @pytest.mark.asyncio
 async def test_get_site_returns_pages(client):
     c, _ = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}, {"url": "https://x/b"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}, {"url": "https://x/b"}],
+        },
+    )
     site_id = created.json()["id"]
     r = await c.get(f"/api/sites/{site_id}")
     assert r.status_code == 200
@@ -72,10 +79,14 @@ async def test_patch_site(client):
 @pytest.mark.asyncio
 async def test_delete_site_cascades(client):
     c, engine = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}],
+        },
+    )
     sid = created.json()["id"]
     r = await c.delete(f"/api/sites/{sid}")
     assert r.status_code == 204
@@ -99,23 +110,33 @@ async def test_add_and_remove_page(client):
 @pytest.mark.asyncio
 async def test_crawl_now_resets_next_check_at(client):
     c, engine = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}],
+        },
+    )
     sid = created.json()["id"]
     # Simulate a future-scheduled page.
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page))).scalars().one()
         from datetime import UTC, datetime, timedelta
+
         page.next_check_at = datetime.now(UTC) + timedelta(days=1)
     r = await c.post(f"/api/sites/{sid}/crawl-now")
     assert r.status_code == 202
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page))).scalars().one()
         from datetime import UTC, datetime
+
         # tz-aware comparison
-        next_check = page.next_check_at.replace(tzinfo=UTC) if page.next_check_at.tzinfo is None else page.next_check_at
+        next_check = (
+            page.next_check_at.replace(tzinfo=UTC)
+            if page.next_check_at.tzinfo is None
+            else page.next_check_at
+        )
         assert next_check <= datetime.now(UTC) + __import__("datetime").timedelta(seconds=1)
 
 

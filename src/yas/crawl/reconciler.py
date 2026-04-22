@@ -16,9 +16,20 @@ from yas.llm.schemas import ExtractedOffering
 
 # Fields compared for deciding "updated" vs "unchanged".
 _COMPARE_FIELDS = (
-    "name", "description", "age_min", "age_max", "program_type",
-    "start_date", "end_date", "days_of_week", "time_start", "time_end",
-    "location_id", "price_cents", "registration_opens_at", "registration_url",
+    "name",
+    "description",
+    "age_min",
+    "age_max",
+    "program_type",
+    "start_date",
+    "end_date",
+    "days_of_week",
+    "time_start",
+    "time_end",
+    "location_id",
+    "price_cents",
+    "registration_opens_at",
+    "registration_url",
 )
 
 
@@ -39,13 +50,17 @@ async def reconcile(
 
     Does NOT commit. Caller controls the transaction."""
     existing_rows = (
-        await session.execute(
-            select(Offering).where(
-                Offering.page_id == page.id,
-                Offering.status == OfferingStatus.active,
+        (
+            await session.execute(
+                select(Offering).where(
+                    Offering.page_id == page.id,
+                    Offering.status == OfferingStatus.active,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing_by_key: dict[tuple[str, Any], Offering] = {
         (r.normalized_name, r.start_date): r for r in existing_rows
     }
@@ -78,8 +93,7 @@ async def reconcile(
         else:
             # Compare the subset of fields we treat as user-visible.
             differs = any(
-                getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS
-                if f in desired
+                getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS if f in desired
             )
             existing.raw_json = _raw_json(e)
             existing.last_seen = now
@@ -122,6 +136,7 @@ def _offering_fields(e: ExtractedOffering, norm: str, location_id: int | None) -
 
 def _raw_json(e: ExtractedOffering) -> dict[str, Any]:
     import json
+
     result: dict[str, Any] = json.loads(e.model_dump_json())
     return result
 
@@ -131,16 +146,14 @@ async def _location_id(session: AsyncSession, site_id: int, e: ExtractedOffering
         return None
     norm = normalize_name(e.location_name)
     existing = (
-        await session.execute(
-            select(Location).where(Location.name == e.location_name)
-        )
-    ).scalars().first()
+        (await session.execute(select(Location).where(Location.name == e.location_name)))
+        .scalars()
+        .first()
+    )
     if existing is not None:
         return existing.id
     # Scope dedup loosely — same normalized name anywhere is "same" location.
-    any_norm = (
-        await session.execute(select(Location))
-    ).scalars().all()
+    any_norm = (await session.execute(select(Location))).scalars().all()
     for loc in any_norm:
         if normalize_name(loc.name) == norm:
             return loc.id
