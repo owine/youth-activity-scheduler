@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+import httpx
+from fastapi import APIRouter, Body, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.db.models import Page, Site
 from yas.db.session import session_scope
+from yas.discovery.discover import DiscoveryError, discover_site
+from yas.web.routes.discover_schemas import (
+    CandidateOut,
+    DiscoverRequest,
+    DiscoveryResultOut,
+    DiscoveryStatsOut,
+)
 from yas.web.routes.sites_schemas import (
     PageIn,
     PageOut,
@@ -20,6 +30,13 @@ from yas.web.routes.sites_schemas import (
 )
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
+
+
+@dataclass(frozen=True)
+class _SiteSnapshot:
+    id: int
+    name: str
+    base_url: str
 
 
 def _engine(req: Request) -> AsyncEngine:
@@ -176,3 +193,50 @@ async def crawl_now(site_id: int, request: Request) -> dict[str, int]:
         for p in pages:
             p.next_check_at = now
         return {"scheduled": len(pages)}
+
+
+@router.post("/{site_id}/discover", response_model=DiscoveryResultOut)
+async def discover_pages(
+    site_id: int,
+    request: Request,
+    payload: DiscoverRequest | None = Body(default=None),  # noqa: B008
+) -> DiscoveryResultOut | JSONResponse:
+    engine = _engine(request)
+    settings = request.app.state.yas.settings
+    llm = request.app.state.yas.llm
+    if llm is None:
+        raise HTTPException(status_code=503, detail="llm_not_configured")
+
+    async with session_scope(engine) as s:
+        site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one_or_none()
+        if site is None:
+            raise HTTPException(status_code=404, detail=f"site {site_id} not found")
+        await s.flush()
+        site_snapshot = _SiteSnapshot(id=site.id, name=site.name, base_url=site.base_url)
+
+    body = payload or DiscoverRequest()
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "yas/0.1 (+discovery)"},
+        follow_redirects=True,
+    ) as http:
+        try:
+            result = await discover_site(
+                site=site_snapshot,
+                http_client=http,
+                llm_client=llm,
+                settings=settings,
+                min_score=body.min_score,
+                max_candidates=body.max_candidates,
+            )
+        except DiscoveryError as exc:
+            return JSONResponse(
+                status_code=502,
+                content={"detail": f"{exc.code}: {exc.detail}"},
+            )
+
+    return DiscoveryResultOut(
+        site_id=result.site_id,
+        seed_url=result.seed_url,
+        stats=DiscoveryStatsOut(**vars(result.stats)),
+        candidates=[CandidateOut(**vars(c)) for c in result.candidates],
+    )

@@ -2,7 +2,10 @@
 
 The model is prompted to call a `report_offerings` tool whose input_schema
 mirrors `ExtractionResponse`. We extract the tool input, validate it with
-pydantic, and compute per-call cost from token usage."""
+pydantic, and compute per-call cost from token usage.
+
+A generic `call_tool` method provides the same underlying pattern for other
+discovery-specific tool calls (e.g. the classifier)."""
 
 from __future__ import annotations
 
@@ -36,10 +39,39 @@ class ExtractionError(Exception):
         self.detail = detail
 
 
+class ToolCallError(Exception):
+    """Generic tool-use call failed — model did not invoke the requested tool."""
+
+    def __init__(self, raw: str, detail: str):
+        super().__init__(detail)
+        self.raw = raw
+        self.detail = detail
+
+
+class _ToolMissingError(Exception):
+    """Internal: the model did not call the expected tool."""
+
+    def __init__(self, raw: str, stop_reason: str):
+        super().__init__(stop_reason)
+        self.raw = raw
+        self.stop_reason = stop_reason
+
+
 class LLMClient(Protocol):
     async def extract_offerings(
         self, *, html: str, url: str, site_name: str
     ) -> ExtractionResult: ...
+
+    async def call_tool(
+        self,
+        *,
+        system: str,
+        user: str,
+        tool_name: str,
+        tool_description: str,
+        input_schema: dict[str, Any],
+        max_tokens: int = 4096,
+    ) -> tuple[dict[str, Any], str, float]: ...
 
 
 def _tool_schema() -> dict[str, Any]:
@@ -66,45 +98,93 @@ class AnthropicClient:
 
             self._client = AsyncAnthropic(api_key=api_key)
 
-    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
-        system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
+    async def _call_messages(
+        self,
+        *,
+        system: str,
+        user: str,
+        tool_name: str,
+        tool_description: str,
+        input_schema: dict[str, Any],
+        max_tokens: int = 4096,
+    ) -> tuple[dict[str, Any], str, float]:
         tool = {
-            "name": "report_offerings",
-            "description": "Report the list of offerings extracted from the page.",
-            "input_schema": _tool_schema(),
+            "name": tool_name,
+            "description": tool_description,
+            "input_schema": input_schema,
         }
         msg = await self._client.messages.create(
             model=self._model,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             system=system,
             tools=[tool],
-            tool_choice={"type": "tool", "name": "report_offerings"},
+            tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": user}],
         )
-        tool_input = _find_tool_input(msg)
+        tool_input = _find_tool_input(msg, tool_name)
         if tool_input is None:
-            raise ExtractionError(
+            raise _ToolMissingError(
                 raw=_dump_msg(msg),
-                detail=f"model stopped without calling report_offerings (stop_reason={getattr(msg, 'stop_reason', '?')})",
+                stop_reason=str(getattr(msg, "stop_reason", "?")),
             )
+        cost = _estimate_cost_usd(msg)
+        model = str(getattr(msg, "model", self._model))
+        return tool_input, model, cost
+
+    async def call_tool(
+        self,
+        *,
+        system: str,
+        user: str,
+        tool_name: str,
+        tool_description: str,
+        input_schema: dict[str, Any],
+        max_tokens: int = 4096,
+    ) -> tuple[dict[str, Any], str, float]:
+        try:
+            return await self._call_messages(
+                system=system,
+                user=user,
+                tool_name=tool_name,
+                tool_description=tool_description,
+                input_schema=input_schema,
+                max_tokens=max_tokens,
+            )
+        except _ToolMissingError as exc:
+            raise ToolCallError(
+                raw=exc.raw,
+                detail=f"model stopped without calling {tool_name} (stop_reason={exc.stop_reason})",
+            ) from exc
+
+    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
+        system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
+        try:
+            tool_input, model, cost = await self._call_messages(
+                system=system,
+                user=user,
+                tool_name="report_offerings",
+                tool_description="Report the list of offerings extracted from the page.",
+                input_schema=_tool_schema(),
+            )
+        except _ToolMissingError as exc:
+            raise ExtractionError(
+                raw=exc.raw,
+                detail=f"model stopped without calling report_offerings (stop_reason={exc.stop_reason})",
+            ) from exc
         try:
             parsed = ExtractionResponse.model_validate(tool_input)
         except ValidationError as exc:
             raise ExtractionError(raw=str(tool_input), detail=str(exc)) from exc
-        cost = _estimate_cost_usd(msg)
         return ExtractionResult(
             offerings=list(parsed.offerings),
-            model=getattr(msg, "model", self._model),
+            model=model,
             cost_usd=cost,
         )
 
 
-def _find_tool_input(msg: Any) -> dict[str, Any] | None:
+def _find_tool_input(msg: Any, tool_name: str = "report_offerings") -> dict[str, Any] | None:
     for block in getattr(msg, "content", []) or []:
-        if (
-            getattr(block, "type", None) == "tool_use"
-            and getattr(block, "name", None) == "report_offerings"
-        ):
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == tool_name:
             inp = getattr(block, "input", None)
             if isinstance(inp, dict):
                 return inp

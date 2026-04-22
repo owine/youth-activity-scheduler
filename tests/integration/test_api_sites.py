@@ -145,3 +145,17 @@ async def test_get_nonexistent_site_returns_404(client):
     c, _ = client
     r = await c.get("/api/sites/999")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_add_page_rejects_pdf_kind(client):
+    """Phase 3.5: PageIn.kind is a Literal that excludes 'pdf'. PDF pages are
+    discoverable via /api/sites/{id}/discover but not yet trackable."""
+    c, _ = client
+    created = await c.post("/api/sites", json={"name": "X", "base_url": "https://x/"})
+    sid = created.json()["id"]
+    r = await c.post(
+        f"/api/sites/{sid}/pages",
+        json={"url": "https://x/schedule.pdf", "kind": "pdf"},
+    )
+    assert r.status_code == 422

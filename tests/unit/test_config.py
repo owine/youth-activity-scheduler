@@ -73,3 +73,23 @@ def test_sweep_settings_defaults(monkeypatch):
     s = _settings()
     assert s.sweep_enabled is True
     assert s.sweep_time_utc == "07:00"
+
+
+def test_discovery_settings_defaults(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    assert s.discovery_enabled is True
+    assert s.discovery_max_candidates == 50
+    assert s.discovery_max_returned == 20
+    assert s.discovery_min_score == 0.5
+    assert s.discovery_head_fetch_concurrency == 10
+    assert s.discovery_head_fetch_timeout_s == 10
+
+
+def test_discovery_settings_overrides(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("YAS_DISCOVERY_MAX_CANDIDATES", "30")
+    monkeypatch.setenv("YAS_DISCOVERY_MIN_SCORE", "0.7")
+    s = _settings()
+    assert s.discovery_max_candidates == 30
+    assert s.discovery_min_score == 0.7

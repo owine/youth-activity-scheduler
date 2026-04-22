@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from yas.llm.client import ExtractionResult, LLMClient
 from yas.llm.schemas import ExtractedOffering
@@ -32,6 +33,10 @@ class FakeLLMClient:
         else:
             offerings = list(self.default)
         return ExtractionResult(offerings=offerings, model=self.model, cost_usd=self.cost_usd)
+
+    async def call_tool(self, **_: Any) -> tuple[dict[str, Any], str, float]:
+        """Minimal stub to satisfy LLMClient protocol — discovery tests use a different fake."""
+        return {}, "fake", 0.0
 
 
 # Static type assertion that FakeLLMClient satisfies the protocol.
