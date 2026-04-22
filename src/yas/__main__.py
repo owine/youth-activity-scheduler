@@ -27,21 +27,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
-    """Run worker in a task alongside uvicorn in-process."""
+    """Run worker in a task alongside uvicorn in-process. One fetcher, one LLM
+    client, and one geocoder are constructed at startup and shared across the
+    api and worker."""
     from yas.crawl.fetcher import DefaultFetcher
+    from yas.geo.client import NominatimClient
     from yas.llm.client import AnthropicClient
 
     fetcher = DefaultFetcher()
     llm = AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_extraction_model)
+    geocoder = NominatimClient(min_interval_s=settings.geocode_nominatim_min_interval_s)
     try:
         config = uvicorn.Config(
-            create_app(engine=engine, settings=settings, fetcher=fetcher, llm=llm),
+            create_app(
+                engine=engine, settings=settings,
+                fetcher=fetcher, llm=llm, geocoder=geocoder,
+            ),
             host=settings.host,
             port=settings.port,
             log_config=None,
         )
         server = uvicorn.Server(config)
-        worker_task = asyncio.create_task(run_worker(engine, settings, fetcher=fetcher, llm=llm))
+        worker_task = asyncio.create_task(
+            run_worker(engine, settings, fetcher=fetcher, llm=llm, geocoder=geocoder)
+        )
         try:
             await server.serve()
         finally:
@@ -50,6 +59,7 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
                 await worker_task
     finally:
         await fetcher.aclose()
+        await geocoder.aclose()
 
 
 def main(argv: list[str] | None = None) -> int:
