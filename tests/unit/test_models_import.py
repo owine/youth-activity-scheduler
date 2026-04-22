@@ -37,3 +37,10 @@ def test_all_models_importable():
         WorkerHeartbeat,
     ]:
         assert hasattr(cls, "__tablename__"), f"{cls.__name__} has no __tablename__"
+
+
+def test_alerttype_has_phase4_additions():
+    from yas.db.models._types import AlertType
+    assert AlertType.site_stagnant.value == "site_stagnant"
+    assert AlertType.no_matches_for_kid.value == "no_matches_for_kid"
+    assert AlertType.push_cap.value == "push_cap"

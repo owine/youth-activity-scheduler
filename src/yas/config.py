@@ -58,6 +58,25 @@ class Settings(BaseSettings):
     discovery_head_fetch_concurrency: int = 10
     discovery_head_fetch_timeout_s: int = 10
 
+    # Alerting
+    alerts_enabled: bool = True
+    alert_delivery_tick_s: int = 60
+    alert_coalesce_normal_s: int = 600
+    alert_max_pushes_per_hour: int = 5
+    alert_digest_time_utc: str = "07:00"
+    alert_detector_time_utc: str = "09:00"
+    alert_stagnant_site_days: int = 30
+    alert_no_matches_kid_days: int = 7
+    alert_countdown_past_due_grace_s: int = 86400
+    alert_digest_empty_skip: bool = True
+
+    # Channel secrets (env-only). Missing env disables the channel at runtime.
+    smtp_password: str | None = None
+    forwardemail_api_token: str | None = None
+    ntfy_auth_token: str | None = None
+    pushover_user_key: str | None = None
+    pushover_app_token: str | None = None
+
 
 def get_settings() -> Settings:
     """Factory so callers get a fresh read when needed (tests, reload)."""
