@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Integer, String
+from sqlalchemy import JSON, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from yas.db.base import Base
@@ -14,7 +14,9 @@ class HouseholdSettings(Base):
     __tablename__ = "household_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
-    home_location_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    home_location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
+    )
     default_max_distance_mi: Mapped[float | None] = mapped_column(nullable=True)
     digest_time: Mapped[str] = mapped_column(String, default="07:00")
     quiet_hours_start: Mapped[str | None] = mapped_column(String, nullable=True)
