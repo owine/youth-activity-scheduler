@@ -1,4 +1,10 @@
-"""Worker-side heartbeat: upsert a single row on every tick."""
+"""Worker-side heartbeat: upsert a single row on every tick.
+
+Assumes a single writer. The select-then-insert is TOCTOU-racy if two workers
+ever call `beat_once` against the same DB concurrently; Phase 1's Compose
+topology runs exactly one `yas-worker` service, which keeps this safe. If a
+second writer is ever added, switch to `INSERT ... ON CONFLICT(id) DO UPDATE`.
+"""
 
 from __future__ import annotations
 
