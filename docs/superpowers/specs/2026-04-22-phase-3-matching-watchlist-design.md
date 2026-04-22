@@ -84,7 +84,7 @@ def offering_active_and_not_ended(offering, *, today) -> GateResult: ...
 def no_conflict_with_unavailability(offering, blocks, school_holidays, *, today) -> GateResult: ...
 ```
 
-**Age gate** evaluates age at `offering.start_date` (fallback: `today`), clamped ≥ 0.
+**Age gate** evaluates age at `offering.start_date` (fallback: `today`), clamped ≥ 0. If `start_date` is in the past (common with sites that list historical sessions), the reference is clamped to `today` instead so a kid isn't evaluated at the age they were when a past program started.
 **Distance gate** fails open on unknown location lat/lon; records `"distance_unknown"` code.
 **Interests gate** matches kid interest vs `program_type` OR `normalize_name(name + " " + description)` contains the interest (or its alias).
 **No-conflict gate** iterates each date in `[offering.start_date, offering.end_date]` matching `days_of_week`; for each date, checks whether any active block has `[date_start, date_end]` containing that date (or null endpoints = always active). Dates in `kid.school_holidays` skip the `source=school` block check. **Partial-schedule fail-open**: if offering is missing any of `start_date/end_date/days_of_week/time_start/time_end`, return `GateResult(True, "schedule_partial", …)`.

@@ -110,6 +110,18 @@ def test_age_falls_back_to_today_when_no_start_date():
     assert r.passed
 
 
+def test_age_uses_today_when_start_date_in_past():
+    """A 6yo today should match a 5-7yo program whose listed start_date is
+    in the past (e.g. stale session data on the site). Without the clamp
+    we'd evaluate the kid at their 2024 age and reject."""
+    kid = _Kid(dob=date(2019, 5, 1))
+    offering = _Offering(start_date=date(2024, 4, 25), age_min=5, age_max=7)
+    today = date(2026, 4, 22)
+    r = age_fits(kid, offering, today=today)
+    assert r.passed, r.detail
+    assert today.isoformat() in r.detail
+
+
 def test_age_unspecified_range_passes():
     kid = _Kid(dob=date(2019, 5, 1))
     offering = _Offering(start_date=date(2026, 6, 1))  # no age_min/max

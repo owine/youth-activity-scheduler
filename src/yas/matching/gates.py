@@ -28,7 +28,13 @@ def _age_on(dob: date, reference: date) -> int:
 
 
 def age_fits(kid: Any, offering: Any, *, today: date) -> GateResult:
+    # Age reference: offering.start_date lets a kid who turns N before a future
+    # program starts qualify for N-year-old programs. For past start_dates
+    # (e.g. sites that list historical sessions) we clamp to today so a 6yo
+    # today isn't evaluated as the 4yo they were when a 2024 program started.
     reference = offering.start_date or today
+    if reference < today:
+        reference = today
     age = _age_on(kid.dob, reference)
     if offering.age_min is None and offering.age_max is None:
         return GateResult(True, "age_unspecified", "offering has no age range")
