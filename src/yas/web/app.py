@@ -6,19 +6,24 @@ from fastapi import FastAPI, Response
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.config import Settings, get_settings
+from yas.crawl.fetcher import Fetcher
 from yas.db.session import create_engine_for
 from yas.health import check_readiness
+from yas.llm.client import LLMClient
 from yas.web.deps import AppState
 
 
 def create_app(
     engine: AsyncEngine | None = None,
     settings: Settings | None = None,
+    *,
+    fetcher: Fetcher | None = None,
+    llm: LLMClient | None = None,
 ) -> FastAPI:
     app = FastAPI(title="yas", version="0.1.0")
     s = settings or get_settings()
     e = engine or create_engine_for(s.database_url)
-    state = AppState(engine=e, settings=s)
+    state = AppState(engine=e, settings=s, fetcher=fetcher, llm=llm)
     app.state.yas = state
 
     @app.get("/healthz")
