@@ -22,7 +22,7 @@ def extract_internal_links(html: str, seed_url: str) -> list[tuple[str, str]]:
     seed_origin = (seed_parsed.scheme, seed_parsed.netloc)
 
     tree = HTMLParser(html)
-    seen: dict[str, str] = {}   # url -> longest anchor text so far
+    seen: dict[str, str] = {}  # url -> longest anchor text so far
 
     for a in tree.css("a"):
         href = (a.attributes.get("href") or "").strip()

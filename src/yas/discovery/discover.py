@@ -55,7 +55,7 @@ class DiscoveryError(Exception):
 
 async def discover_site(
     *,
-    site: Any,        # duck-typed: needs .id, .name, .base_url
+    site: Any,  # duck-typed: needs .id, .name, .base_url
     http_client: httpx.AsyncClient,
     llm_client: Any,  # duck-typed: ClassifierLLMClient
     settings: Settings,
@@ -75,9 +75,7 @@ async def discover_site(
     seed_html = r.text
 
     # 2. Sitemap + link extraction in parallel.
-    sitemap_task = asyncio.create_task(
-        fetch_sitemap_urls(site.base_url, http_client=http_client)
-    )
+    sitemap_task = asyncio.create_task(fetch_sitemap_urls(site.base_url, http_client=http_client))
     link_pairs = extract_internal_links(seed_html, site.base_url)
     sitemap_urls = await sitemap_task
 
@@ -125,21 +123,21 @@ async def discover_site(
 
     # 8. Filter by min_score and cap.
     by_url = {h.url: h for h in heads}
-    enriched = [
-        (by_url[sc.url], sc) for sc in scored if sc.url in by_url
-    ]
+    enriched = [(by_url[sc.url], sc) for sc in scored if sc.url in by_url]
     enriched.sort(key=lambda pair: pair[1].score, reverse=True)
     out: list[DiscoveryCandidate] = []
     for head, sc in enriched:
         if sc.score < min_score_f:
             continue
-        out.append(DiscoveryCandidate(
-            url=head.url,
-            title=head.title,
-            kind=head.kind,
-            score=sc.score,
-            reason=sc.reason,
-        ))
+        out.append(
+            DiscoveryCandidate(
+                url=head.url,
+                title=head.title,
+                kind=head.kind,
+                score=sc.score,
+                reason=sc.reason,
+            )
+        )
         if len(out) >= max_out:
             break
 

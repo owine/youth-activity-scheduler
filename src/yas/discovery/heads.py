@@ -90,7 +90,10 @@ async def scrape_heads_concurrently(
     async def _one(url: str, anchor: str | None) -> HeadInfo | None:
         async with sem:
             return await scrape_head(
-                url, http_client=http_client, timeout_s=timeout_s, anchor_text=anchor,
+                url,
+                http_client=http_client,
+                timeout_s=timeout_s,
+                anchor_text=anchor,
             )
 
     return list(

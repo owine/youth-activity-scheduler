@@ -29,7 +29,9 @@ class _FakeLLM:
         self.scored = scored
         self.call_count = 0
 
-    async def call_tool(self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096):
+    async def call_tool(
+        self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096
+    ):
         self.call_count += 1
         return {"candidates": self.scored}, "fake-haiku", 0.003
 
@@ -45,11 +47,13 @@ async def client(tmp_path, monkeypatch):
     async with session_scope(engine) as s:
         s.add(Site(id=1, name="YSI", base_url="https://ysi.test/"))
 
-    llm = _FakeLLM([
-        {"url": "https://ysi.test/programs/summer/", "score": 0.9, "reason": "program detail"},
-        {"url": "https://ysi.test/programs/", "score": 0.4, "reason": "router"},
-        {"url": "https://ysi.test/brochure.pdf", "score": 0.7, "reason": "pdf brochure"},
-    ])
+    llm = _FakeLLM(
+        [
+            {"url": "https://ysi.test/programs/summer/", "score": 0.9, "reason": "program detail"},
+            {"url": "https://ysi.test/programs/", "score": 0.4, "reason": "router"},
+            {"url": "https://ysi.test/brochure.pdf", "score": 0.7, "reason": "pdf brochure"},
+        ]
+    )
     app = create_app(engine=engine, llm=llm)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c, engine, llm
@@ -61,8 +65,12 @@ async def client(tmp_path, monkeypatch):
 async def test_discover_returns_candidates(client):
     c, _, _llm = client
     respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED))
-    respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(200, content=_SITEMAP))
-    respx.get("https://ysi.test/programs/summer/").mock(return_value=httpx.Response(200, text=_PAGE))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_SITEMAP)
+    )
+    respx.get("https://ysi.test/programs/summer/").mock(
+        return_value=httpx.Response(200, text=_PAGE)
+    )
     respx.get("https://ysi.test/programs/").mock(return_value=httpx.Response(200, text=_PAGE))
 
     r = await c.post("/api/sites/1/discover")
@@ -100,8 +108,12 @@ async def test_discover_502_when_seed_fails(client):
 async def test_discover_accepts_min_score_override(client):
     c, _, _ = client
     respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED))
-    respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(200, content=_SITEMAP))
-    respx.get("https://ysi.test/programs/summer/").mock(return_value=httpx.Response(200, text=_PAGE))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_SITEMAP)
+    )
+    respx.get("https://ysi.test/programs/summer/").mock(
+        return_value=httpx.Response(200, text=_PAGE)
+    )
     respx.get("https://ysi.test/programs/").mock(return_value=httpx.Response(200, text=_PAGE))
     r = await c.post("/api/sites/1/discover", json={"min_score": 0.85})
     assert r.status_code == 200

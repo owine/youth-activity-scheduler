@@ -184,10 +184,7 @@ class AnthropicClient:
 
 def _find_tool_input(msg: Any, tool_name: str = "report_offerings") -> dict[str, Any] | None:
     for block in getattr(msg, "content", []) or []:
-        if (
-            getattr(block, "type", None) == "tool_use"
-            and getattr(block, "name", None) == tool_name
-        ):
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == tool_name:
             inp = getattr(block, "input", None)
             if isinstance(inp, dict):
                 return inp

@@ -66,9 +66,7 @@ Call `report_candidates` with your ranked list. Do not invent URLs not in
 the input."""
 
 
-def build_classifier_prompt(
-    candidates: list[HeadInfo], *, site_name: str
-) -> tuple[str, str]:
+def build_classifier_prompt(candidates: list[HeadInfo], *, site_name: str) -> tuple[str, str]:
     items = [
         {
             "url": c.url,

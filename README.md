@@ -66,6 +66,35 @@ on a site to opt in.
 The scheduler ticks every 30s and crawls pages whose `next_check_at` is in the
 past, respecting `site.default_cadence_s` after each successful crawl.
 
+## Discovering pages on a site
+
+If you don't know which exact URLs have programs on them, register the site
+with just `base_url` and call `/discover`:
+
+```bash
+curl -sS -X POST localhost:8080/api/sites \
+  -H 'content-type: application/json' \
+  -d '{"name":"Some Club","base_url":"https://example.org/","needs_browser":true}'
+
+curl -sS -X POST localhost:8080/api/sites/1/discover | jq .
+```
+
+Discovery checks `/sitemap.xml` and extracts internal links from the seed
+page, feeds each candidate's title + meta description to Claude Haiku, and
+returns a ranked list of likely program-detail pages. PDFs are surfaced
+with `"kind": "pdf"` but are not yet trackable (PDF crawling is a future
+phase). HTML candidates can be added to tracking with the existing
+`POST /api/sites/{id}/pages` endpoint.
+
+Typical discovery cost: ~$0.02/call. The endpoint is read-only — it never
+adds pages automatically. Override defaults per call:
+
+```bash
+curl -sS -X POST localhost:8080/api/sites/1/discover \
+  -H 'content-type: application/json' \
+  -d '{"min_score": 0.7, "max_candidates": 5}'
+```
+
 ## Managing kids and matches
 
 Kids, watchlists, unavailability blocks, and enrollments are all HTTP-managed.

@@ -64,7 +64,9 @@ def _extract_urls_from_urlset(root: ET.Element) -> list[str]:
     return urls
 
 
-async def _fetch_index_children(index_root: ET.Element, http_client: httpx.AsyncClient) -> list[str]:
+async def _fetch_index_children(
+    index_root: ET.Element, http_client: httpx.AsyncClient
+) -> list[str]:
     child_sitemap_urls: list[str] = []
     for sm in index_root.findall(f"{_SITEMAP_NS}sitemap"):
         loc = sm.find(f"{_SITEMAP_NS}loc")

@@ -9,16 +9,23 @@ from yas.discovery.classifier import (
 from yas.discovery.heads import HeadInfo
 
 
-def _head(url: str, title: str = "", meta: str | None = None, kind: str = "html",
-          anchor: str | None = None) -> HeadInfo:
+def _head(
+    url: str,
+    title: str = "",
+    meta: str | None = None,
+    kind: str = "html",
+    anchor: str | None = None,
+) -> HeadInfo:
     return HeadInfo(url=url, title=title, meta_description=meta, kind=kind, anchor_text=anchor)
 
 
 def test_prompt_mentions_html_and_pdf_and_anchor_text():
     system, user = build_classifier_prompt(
-        [_head("https://x/a", "Summer Camps"),
-         _head("https://x/b.pdf", "spring.pdf", kind="pdf"),
-         _head("https://x/c", "Programs", anchor="Our Programs")],
+        [
+            _head("https://x/a", "Summer Camps"),
+            _head("https://x/b.pdf", "spring.pdf", kind="pdf"),
+            _head("https://x/c", "Programs", anchor="Our Programs"),
+        ],
         site_name="X",
     )
     assert "report_candidates" in system
@@ -94,5 +101,6 @@ async def test_classify_empty_input_returns_empty():
 
 def test_scored_candidate_validates_score_range():
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         ScoredCandidate(url="https://x", score=1.5, reason="bad")

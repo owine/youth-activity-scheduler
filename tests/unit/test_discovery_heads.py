@@ -33,7 +33,9 @@ async def test_scrape_head_preserves_anchor_text_when_provided():
     respx.get("https://ex.com/summer").mock(return_value=httpx.Response(200, text=_HTML))
     async with httpx.AsyncClient() as http:
         info = await scrape_head(
-            "https://ex.com/summer", http_client=http, timeout_s=5,
+            "https://ex.com/summer",
+            http_client=http,
+            timeout_s=5,
             anchor_text="Our Summer Camps",
         )
     assert info is not None
@@ -72,7 +74,9 @@ async def test_scrape_head_pdf_short_circuits():
     # No network call expected for PDFs.
     async with httpx.AsyncClient() as http:
         info = await scrape_head(
-            "https://ex.com/brochures/spring-2026.pdf", http_client=http, timeout_s=5,
+            "https://ex.com/brochures/spring-2026.pdf",
+            http_client=http,
+            timeout_s=5,
         )
     assert info is not None
     assert info.kind == "pdf"
@@ -112,7 +116,10 @@ async def test_scrape_heads_concurrently_respects_semaphore():
 
     async with httpx.AsyncClient() as http:
         results = await scrape_heads_concurrently(
-            [(u, None) for u in urls], http_client=http, timeout_s=5, concurrency=3,
+            [(u, None) for u in urls],
+            http_client=http,
+            timeout_s=5,
+            concurrency=3,
         )
     assert len(results) == 30
     assert all(r is not None for r in results)
