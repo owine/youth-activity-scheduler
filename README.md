@@ -12,6 +12,21 @@ docker compose up -d
 curl http://localhost:8080/healthz
 ```
 
+### Local dev on macOS
+
+Docker Desktop's VirtioFS bind mount doesn't fully honor SQLite's locking
+primitives; you'll see sporadic `disk I/O error` under concurrent api ↔ worker
+access. Real Linux deployments are unaffected. For local dev on macOS, use the
+overlay that switches `./data` to a Docker-managed named volume:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+
+# inspect the db (it's inside the named volume, not on the host)
+docker compose -f docker-compose.yml -f docker-compose.macos.yml \
+    exec yas-api sqlite3 /data/activities.db '.tables'
+```
+
 ## Quickstart (local)
 
 ```bash

@@ -1,0 +1,30 @@
+# Overlay for local macOS development.
+#
+# SQLite + Docker-on-macOS bind mounts produce `disk I/O error` on concurrent
+# api ↔ worker access: Docker Desktop's VirtioFS file sharing doesn't fully
+# support SQLite's locking primitives. Real Linux deployments are unaffected
+# (native kernel locking works) — this overlay is purely for local dev.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+#
+# Trade-off: the DB lives inside a Docker-managed named volume rather than
+# on the host filesystem. To inspect it:
+#   docker compose -f docker-compose.yml -f docker-compose.macos.yml \
+#       exec yas-api sqlite3 /data/activities.db '.tables'
+
+services:
+  yas-migrate:
+    volumes:
+      - yas-data:/data
+
+  yas-worker:
+    volumes:
+      - yas-data:/data
+
+  yas-api:
+    volumes:
+      - yas-data:/data
+
+volumes:
+  yas-data:
