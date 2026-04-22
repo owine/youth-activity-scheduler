@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
@@ -22,7 +23,8 @@ from yas.logging import get_logger
 
 log = get_logger("yas.geo.enricher")
 
-RematchFn = Callable[[AsyncSession, int], Awaitable[None]]
+# Any Awaitable return type is acceptable — the enricher ignores the result.
+RematchFn = Callable[[AsyncSession, int], Awaitable[Any]]
 
 
 @dataclass(frozen=True)
@@ -104,9 +106,7 @@ async def enrich_ungeocoded_locations(
 async def geocode_enricher_loop(
     engine: AsyncEngine, settings: Settings, geocoder: Geocoder,
 ) -> None:
-    from yas.matching.matcher import (  # type: ignore[import-untyped]  # local import; module lands in Task 10
-        rematch_offering,
-    )
+    from yas.matching.matcher import rematch_offering
 
     log.info("geocode.start",
              tick_s=settings.geocode_tick_s,
