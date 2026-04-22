@@ -1,10 +1,9 @@
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, time, timedelta  # noqa: F401
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from yas.alerts.rate_limit import (
-    AlertGroup,  # noqa: F401
     coalesce,
     is_in_quiet_hours,
     should_rate_limit_push,
