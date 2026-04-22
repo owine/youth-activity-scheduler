@@ -134,7 +134,7 @@ Pattern evaluation:
 - If pattern contains `*` or `?`, use `fnmatch.fnmatchcase` against the normalized name.
 - Otherwise, substring check.
 - `entry.site_id IS NULL` matches across all sites; else must equal `offering.site_id`.
-- Precedence: priority `high` first, then by `entry.id` ascending. First match wins.
+- Precedence: `priority = "high"` first, then `priority = "normal"`, then ascending `entry.id`. First match wins. (Values from Phase 1 `WatchlistPriority` StrEnum: `high`, `normal` — there is no `low`.)
 
 ### 3.5 `src/yas/matching/matcher.py` — async orchestrator
 
@@ -221,7 +221,7 @@ async def geocode_enricher_loop(engine, settings, geocoder) -> None: ...
 
 Per-tick algorithm:
 1. Select up to `geocode_batch_size` from `locations` where `lat IS NULL AND address IS NOT NULL`.
-2. Skip addresses whose normalized form has a matching `geocode_attempts` row with `result IN ('not_found', 'error')`.
+2. Skip addresses whose normalized form has a matching `geocode_attempts` row with `result IN ('not_found', 'error')`. No time-based retry in Phase 3 — once an address is flagged unresolvable, the only way to retry is to change the address itself (which produces a new `address_norm` key). If retry-after becomes useful later, it's a small change to the skip predicate.
 3. For each remaining address, call `geocoder.geocode(address)`. Hit → update `locations`, record `ok`. Miss → record `not_found`. Error → record `error` with `detail`.
 4. For each location that just gained coordinates, select its offerings and call `matcher.rematch_offering(id)`.
 
@@ -277,7 +277,7 @@ async with asyncio.TaskGroup() as tg:
 `daily_sweep_loop(engine, settings)`:
 - Every 60s, check whether the current UTC wall clock is past `settings.sweep_time_utc` and today's sweep hasn't run yet.
 - When due, call `matcher.rematch_all_active_kids()` inside one session.
-- Mark completion in memory (the sweep is idempotent; persistence across restarts is not required — missing one day doesn't break correctness because event hooks cover mutations).
+- Mark completion in memory (the sweep is idempotent; persistence across restarts is not required — missing one day doesn't break correctness because event hooks cover mutations). A worker restart near the sweep window can cause at most one double-run (harmless; rematch is idempotent) or one skip (next-day sweep closes the gap).
 
 ### 5.2 Geocode enricher
 
@@ -306,7 +306,9 @@ Created by one new Alembic migration: `alembic/versions/0002_geocode_attempts.py
 
 ### 6.2 `watchlist_entries.ignore_hard_gates` reinterpretation
 
-No schema change. The column stays. Its semantics flip: **the default behavior is now "bypass all hard gates on watchlist hit"**; the column is reserved for a future "strict mode" opt-in (currently not consulted by the matcher). Documented via comment on the model.
+No schema change. The column stays. Its semantics flip: **the default behavior is now "bypass all hard gates on watchlist hit"**; the column is reserved for a future "strict mode" opt-in (currently not consulted by the matcher).
+
+**Required in Plan 3:** update the docstring on `WatchlistEntry.ignore_hard_gates` to flag that the column is not read by Phase 3 — so future readers don't assume it's wired. A comment like `# Reserved for future "strict mode" opt-in; unused in Phase 3.` is sufficient.
 
 ### 6.3 Household settings
 
