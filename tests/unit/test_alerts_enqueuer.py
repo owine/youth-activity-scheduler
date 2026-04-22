@@ -38,6 +38,7 @@ async def _setup(tmp_path):
                 id=1, site_id=1, page_id=1,
                 name="Spring Soccer", normalized_name="spring soccer",
                 program_type=ProgramType.soccer.value,
+                registration_url="https://x/register",
             )
         )
     return engine
@@ -184,6 +185,23 @@ async def test_enqueue_registration_countdowns_rewrites_on_date_change(tmp_path)
             assert first > original_naive
         else:
             assert first > original
+
+
+@pytest.mark.asyncio
+async def test_enqueue_registration_countdowns_payload_matches_schema(tmp_path):
+    from yas.alerts.schemas import RegOpensPayload
+
+    engine = await _setup(tmp_path)
+    opens_at = datetime.now(UTC) + timedelta(days=3)
+    async with session_scope(engine) as s:
+        await enqueue_registration_countdowns(
+            s, offering_id=1, kid_id=1, opens_at=opens_at,
+        )
+    async with session_scope(engine) as s:
+        rows = (await s.execute(select(Alert))).scalars().all()
+        for row in rows:
+            # Validate the stored payload against the schema — should not raise.
+            RegOpensPayload.model_validate(row.payload_json)
 
 
 # --- enqueue_crawl_failed ------------------------------------------------------

@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from yas.db.models import Alert, Kid, Site
+from yas.db.models import Alert, Kid, Offering, Site
 from yas.db.models._types import AlertType
 from yas.logging import get_logger
 
@@ -207,6 +207,9 @@ async def enqueue_registration_countdowns(
 ) -> list[int]:
     """Delete any existing unsent reg_opens_* rows for this (kid, offering) and
     insert up to three fresh ones at T-24h, T-1h, T. Skips past-due schedules."""
+    # Load the offering to get its name and registration_url for the payload.
+    offering = (await session.execute(select(Offering).where(Offering.id == offering_id))).scalar_one()
+
     # Delete prior unsent countdowns for this pair.
     await session.execute(
         delete(Alert).where(
@@ -229,7 +232,11 @@ async def enqueue_registration_countdowns(
         (AlertType.reg_opens_now, timedelta(0)),
     ]
     ids: list[int] = []
-    payload_base = {"opens_at": opens_at.isoformat(), "offering_id": offering_id}
+    payload_base = {
+        "opens_at": opens_at.isoformat(),
+        "offering_name": offering.name,
+        "registration_url": offering.registration_url,
+    }
     for alert_type, offset in offsets:
         scheduled_for = opens_at - offset
         if scheduled_for < now:
