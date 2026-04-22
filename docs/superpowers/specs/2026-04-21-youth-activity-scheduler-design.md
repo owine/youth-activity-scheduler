@@ -87,7 +87,7 @@ Used for home address and for any offering with a parseable location.
 
 **`offerings`** — `id, site_id, page_id, name, description, age_min, age_max, program_type (enum tag), start_date, end_date, days_of_week (json), time_start, time_end, location_id, price_cents, registration_opens_at, registration_url, raw_json, first_seen, last_seen, status (active | ended | withdrawn), muted_until (nullable)`
 
-- `program_type` is drawn from a fixed vocabulary emitted by the LLM extractor (`soccer`, `swim`, `martial_arts`, `art`, `music`, `stem`, `dance`, `gym`, `multisport`, `outdoor`, `academic`, `camp_general`).
+- `program_type` is drawn from a fixed vocabulary emitted by the LLM extractor: team sports (`soccer`, `baseball`, `softball`, `basketball`, `hockey`, `football`), individual/other sports (`swim`, `martial_arts`, `gymnastics`, `dance`, `gym`), enrichment (`art`, `music`, `stem`, `academic`), and umbrella (`multisport`, `outdoor`, `camp_general`, `unknown`). The vocabulary expanded from Phase 1's initial guess after Phase 2 smoke testing against a real baseball program revealed the original set was too narrow for real youth sports sites.
 - `raw_json` preserves the full extraction so reprocessing is possible without re-crawl.
 
 **`extraction_cache`** — `content_hash (pk), extracted_json, llm_model, cost_usd, extracted_at`

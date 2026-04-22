@@ -7,17 +7,27 @@ message carries the (normalized) HTML, URL, and site name."""
 from __future__ import annotations
 
 _PROGRAM_TYPES = (
+    # Team sports
     "soccer",
+    "baseball",
+    "softball",
+    "basketball",
+    "hockey",
+    "football",
+    # Individual / other sports
     "swim",
     "martial_arts",
+    "gymnastics",
+    "dance",
+    "gym",
+    # Enrichment
     "art",
     "music",
     "stem",
-    "dance",
-    "gym",
+    "academic",
+    # Umbrella
     "multisport",
     "outdoor",
-    "academic",
     "camp_general",
     "unknown",
 )

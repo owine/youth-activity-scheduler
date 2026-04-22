@@ -29,17 +29,27 @@ def timestamp_column(nullable: bool = False, default_now: bool = True) -> Any:
 
 
 class ProgramType(StrEnum):
+    # Team sports
     soccer = "soccer"
+    baseball = "baseball"
+    softball = "softball"
+    basketball = "basketball"
+    hockey = "hockey"
+    football = "football"
+    # Individual / racquet / other sports
     swim = "swim"
     martial_arts = "martial_arts"
+    gymnastics = "gymnastics"
+    dance = "dance"
+    gym = "gym"  # general fitness / tumbling — retained for historical cache entries
+    # Enrichment
     art = "art"
     music = "music"
     stem = "stem"
-    dance = "dance"
-    gym = "gym"
+    academic = "academic"
+    # Umbrella / other
     multisport = "multisport"
     outdoor = "outdoor"
-    academic = "academic"
     camp_general = "camp_general"
     unknown = "unknown"
 
