@@ -130,6 +130,10 @@ async def _do_crawl(
             error_text=f"extraction_failed: {exc.detail[:500]}",
         )
 
+    # Local import to avoid a module-level cycle; the matcher imports
+    # extractor/reconciler-adjacent types.
+    from yas.matching.matcher import rematch_offering
+
     async with session_scope(engine) as s:
         page_row = (await s.execute(select(Page).where(Page.id == page.id))).scalar_one()
         reconcile_result = await reconcile(s, page_row, ex.offerings)
@@ -138,6 +142,12 @@ async def _do_crawl(
         page_row.last_changed = datetime.now(UTC)
         page_row.consecutive_failures = 0
         page_row.next_check_at = _schedule_next(site)
+        # Rematch each new/updated offering in the same session so matches land
+        # atomically with the reconcile. Withdrawn offerings don't need a
+        # rematch call — they're filtered out by the matcher's active status
+        # check and any stale match rows become invisible on read.
+        for oid in reconcile_result.new + reconcile_result.updated:
+            await rematch_offering(s, oid)
 
     for oid in reconcile_result.new:
         log.info("offering.new", offering_id=oid, site_id=site.id)

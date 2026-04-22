@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "crawl_runs",
     "enrollments",
     "extraction_cache",
+    "geocode_attempts",
     "household_settings",
     "kids",
     "locations",
