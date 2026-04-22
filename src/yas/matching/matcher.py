@@ -53,7 +53,9 @@ async def _household_defaults(session: AsyncSession) -> tuple[int | None, float 
 async def _home_coords(session: AsyncSession, home_id: int | None) -> tuple[float, float] | None:
     if home_id is None:
         return None
-    loc = (await session.execute(select(Location).where(Location.id == home_id))).scalar_one_or_none()
+    loc = (
+        await session.execute(select(Location).where(Location.id == home_id))
+    ).scalar_one_or_none()
     if loc is None or loc.lat is None or loc.lon is None:
         return None
     return (loc.lat, loc.lon)
@@ -62,14 +64,18 @@ async def _home_coords(session: AsyncSession, home_id: int | None) -> tuple[floa
 async def _offering_coords(session: AsyncSession, offering: Offering) -> tuple[float, float] | None:
     if offering.location_id is None:
         return None
-    loc = (await session.execute(select(Location).where(Location.id == offering.location_id))).scalar_one_or_none()
+    loc = (
+        await session.execute(select(Location).where(Location.id == offering.location_id))
+    ).scalar_one_or_none()
     if loc is None or loc.lat is None or loc.lon is None:
         return None
     return (loc.lat, loc.lon)
 
 
 async def _compute_distance_mi(
-    session: AsyncSession, home: tuple[float, float] | None, offering: Offering,
+    session: AsyncSession,
+    home: tuple[float, float] | None,
+    offering: Offering,
 ) -> float | None:
     if home is None:
         return None
@@ -80,15 +86,23 @@ async def _compute_distance_mi(
 
 
 async def _kid_blocks(session: AsyncSession, kid_id: int) -> list[UnavailabilityBlock]:
-    return list((await session.execute(
-        select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id)
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def _kid_watchlist(session: AsyncSession, kid_id: int) -> list[WatchlistEntry]:
-    return list((await session.execute(
-        select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id)
-    )).scalars().all())
+    return list(
+        (await session.execute(select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id)))
+        .scalars()
+        .all()
+    )
 
 
 async def _kid_enrollment_offering_map(session: AsyncSession, kid_id: int) -> dict[int, int]:
@@ -99,9 +113,11 @@ async def _kid_enrollment_offering_map(session: AsyncSession, kid_id: int) -> di
     from matching X (it must continue to match so the UI can show the enrolled
     row). It should still block sibling offerings that share the timeslot.
     """
-    rows = (await session.execute(
-        select(Enrollment.id, Enrollment.offering_id).where(Enrollment.kid_id == kid_id)
-    )).all()
+    rows = (
+        await session.execute(
+            select(Enrollment.id, Enrollment.offering_id).where(Enrollment.kid_id == kid_id)
+        )
+    ).all()
     return {eid: oid for eid, oid in rows}
 
 
@@ -116,15 +132,19 @@ def _school_holidays(kid: Kid) -> set[date]:
 
 
 async def _eligible_offerings(session: AsyncSession) -> list[Offering]:
-    return list((await session.execute(
-        select(Offering).where(Offering.status == OfferingStatus.active.value)
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(Offering).where(Offering.status == OfferingStatus.active.value)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def _active_kids(session: AsyncSession) -> list[Kid]:
-    return list((await session.execute(
-        select(Kid).where(Kid.active.is_(True))
-    )).scalars().all())
+    return list((await session.execute(select(Kid).where(Kid.active.is_(True)))).scalars().all())
 
 
 def _gates_passed(gates: list[GateResult]) -> bool:
@@ -132,7 +152,9 @@ def _gates_passed(gates: list[GateResult]) -> bool:
 
 
 def _reasons_payload(
-    gates: list[GateResult], score_bd: dict[str, Any], watchlist_hit: Any,
+    gates: list[GateResult],
+    score_bd: dict[str, Any],
+    watchlist_hit: Any,
 ) -> dict[str, Any]:
     return {
         "gates": {g.code: {"passed": g.passed, "detail": g.detail} for g in gates},
@@ -142,15 +164,23 @@ def _reasons_payload(
                 "entry_id": watchlist_hit.entry.id,
                 "pattern": watchlist_hit.entry.pattern,
                 "match_type": watchlist_hit.reason,
-                "priority": getattr(watchlist_hit.entry.priority, "value", watchlist_hit.entry.priority),
-            } if watchlist_hit else None
+                "priority": getattr(
+                    watchlist_hit.entry.priority, "value", watchlist_hit.entry.priority
+                ),
+            }
+            if watchlist_hit
+            else None
         ),
     }
 
 
 async def _evaluate_pair(
-    session: AsyncSession, kid: Kid, offering: Offering, *,
-    home: tuple[float, float] | None, default_max_distance: float | None,
+    session: AsyncSession,
+    kid: Kid,
+    offering: Offering,
+    *,
+    home: tuple[float, float] | None,
+    default_max_distance: float | None,
     today: date,
     # Optional precomputed per-kid state (hoisted by rematch_kid for N-offering loops).
     blocks: list[UnavailabilityBlock] | None = None,
@@ -172,20 +202,24 @@ async def _evaluate_pair(
     # Exclude enrollment-sourced blocks whose source enrollment is on THIS
     # offering so the kid still matches the offering they're enrolled in.
     filtered_blocks = [
-        b for b in blocks
+        b
+        for b in blocks
         if b.source_enrollment_id is None
         or enrollment_offering_map.get(b.source_enrollment_id) != offering.id
     ]
 
     gates = [
         age_fits(kid, offering, today=today),
-        distance_fits(kid, offering, distance_mi=distance_mi, household_default=default_max_distance),
+        distance_fits(
+            kid, offering, distance_mi=distance_mi, household_default=default_max_distance
+        ),
         interests_overlap(kid, offering, INTEREST_ALIASES),
         offering_active_and_not_ended(offering, today=today),
         no_conflict_with_unavailability(offering, filtered_blocks, school_holidays, today=today),
     ]
     score, breakdown = compute_score(
-        kid, offering,
+        kid,
+        offering,
         distance_mi=distance_mi,
         household_max_distance_mi=default_max_distance,
         today=today,
@@ -195,16 +229,26 @@ async def _evaluate_pair(
     return include, score, reasons
 
 
-async def _upsert_match(session: AsyncSession, kid_id: int, offering_id: int,
-                        score: float, reasons: dict[str, Any]) -> bool:
+async def _upsert_match(
+    session: AsyncSession, kid_id: int, offering_id: int, score: float, reasons: dict[str, Any]
+) -> bool:
     """Returns True if new (insert), False if existing row updated."""
-    existing = (await session.execute(
-        select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-    )).scalar_one_or_none()
+    existing = (
+        await session.execute(
+            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+        )
+    ).scalar_one_or_none()
     now = datetime.now(UTC)
     if existing is None:
-        session.add(Match(kid_id=kid_id, offering_id=offering_id,
-                          score=score, reasons=reasons, computed_at=now))
+        session.add(
+            Match(
+                kid_id=kid_id,
+                offering_id=offering_id,
+                score=score,
+                reasons=reasons,
+                computed_at=now,
+            )
+        )
         return True
     existing.score = score
     existing.reasons = reasons
@@ -213,16 +257,20 @@ async def _upsert_match(session: AsyncSession, kid_id: int, offering_id: int,
 
 
 async def _delete_match_if_exists(session: AsyncSession, kid_id: int, offering_id: int) -> bool:
-    existing = (await session.execute(
-        select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-    )).scalar_one_or_none()
+    existing = (
+        await session.execute(
+            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+        )
+    ).scalar_one_or_none()
     if existing is None:
         return False
     await session.delete(existing)
     return True
 
 
-async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None = None) -> MatchResult:
+async def rematch_kid(
+    session: AsyncSession, kid_id: int, *, today: date | None = None
+) -> MatchResult:
     kid = (await session.execute(select(Kid).where(Kid.id == kid_id))).scalar_one()
     if today is None:
         today = date.today()
@@ -237,9 +285,15 @@ async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None 
     result = MatchResult(kid_id=kid_id)
     for off in offerings:
         include, score, reasons = await _evaluate_pair(
-            session, kid, off,
-            home=home, default_max_distance=default_distance, today=today,
-            blocks=blocks, watchlist_entries=watchlist_entries, school_holidays=school_holidays,
+            session,
+            kid,
+            off,
+            home=home,
+            default_max_distance=default_distance,
+            today=today,
+            blocks=blocks,
+            watchlist_entries=watchlist_entries,
+            school_holidays=school_holidays,
             enrollment_offering_map=enrollment_offering_map,
         )
         key = (kid_id, off.id)
@@ -252,7 +306,9 @@ async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None 
     return result
 
 
-async def rematch_offering(session: AsyncSession, offering_id: int, *, today: date | None = None) -> MatchResult:
+async def rematch_offering(
+    session: AsyncSession, offering_id: int, *, today: date | None = None
+) -> MatchResult:
     off = (await session.execute(select(Offering).where(Offering.id == offering_id))).scalar_one()
     if today is None:
         today = date.today()
@@ -261,7 +317,12 @@ async def rematch_offering(session: AsyncSession, offering_id: int, *, today: da
     result = MatchResult(offering_id=offering_id)
     for kid in await _active_kids(session):
         include, score, reasons = await _evaluate_pair(
-            session, kid, off, home=home, default_max_distance=default_distance, today=today,
+            session,
+            kid,
+            off,
+            home=home,
+            default_max_distance=default_distance,
+            today=today,
         )
         key = (kid.id, offering_id)
         if include:
@@ -273,7 +334,9 @@ async def rematch_offering(session: AsyncSession, offering_id: int, *, today: da
     return result
 
 
-async def rematch_all_active_kids(session: AsyncSession, *, today: date | None = None) -> list[MatchResult]:
+async def rematch_all_active_kids(
+    session: AsyncSession, *, today: date | None = None
+) -> list[MatchResult]:
     results: list[MatchResult] = []
     for kid in await _active_kids(session):
         results.append(await rematch_kid(session, kid.id, today=today))

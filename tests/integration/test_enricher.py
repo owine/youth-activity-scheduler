@@ -21,11 +21,16 @@ async def test_enricher_populates_coords(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         s.add(Location(id=1, name="Lincoln Park Rec", address="2045 N Lincoln Park W, Chicago, IL"))
-    geocoder = FakeGeocoder(fixtures={
-        "2045 n lincoln park w, chicago, il": GeocodeResult(
-            lat=41.9214, lon=-87.6351, display_name="Lincoln Park", provider="fake",
-        )
-    })
+    geocoder = FakeGeocoder(
+        fixtures={
+            "2045 n lincoln park w, chicago, il": GeocodeResult(
+                lat=41.9214,
+                lon=-87.6351,
+                display_name="Lincoln Park",
+                provider="fake",
+            )
+        }
+    )
     async with session_scope(engine) as s:
         result = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
     assert result.updated == 1
@@ -47,12 +52,12 @@ async def test_enricher_records_not_found_and_skips_on_retry(tmp_path):
     assert r1.not_found == 1
     async with session_scope(engine) as s:
         r2 = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
-    assert r2.skipped == 1   # skipped due to prior not_found
+    assert r2.skipped == 1  # skipped due to prior not_found
     async with session_scope(engine) as s:
         rows = (await s.execute(select(GeocodeAttempt))).scalars().all()
         assert len(rows) == 1
         assert rows[0].result == "not_found"
-    assert geocoder.call_count == 1   # second call skipped
+    assert geocoder.call_count == 1  # second call skipped
     await engine.dispose()
 
 

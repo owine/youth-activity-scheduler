@@ -61,12 +61,14 @@ async def test_create_kid_with_nested_unavailability_atomic(client):
     assert body["unavailability"][0]["label"] == "Tuesday piano"
     async with session_scope(engine) as s:
         blocks = (
-            await s.execute(
-                select(UnavailabilityBlock).where(
-                    UnavailabilityBlock.kid_id == body["id"]
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == body["id"])
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(blocks) == 1
 
 
@@ -85,10 +87,10 @@ async def test_create_kid_with_nested_watchlist_atomic(client):
     assert body["watchlist"][0]["pattern"] == "chess club"
     async with session_scope(engine) as s:
         entries = (
-            await s.execute(
-                select(WatchlistEntry).where(WatchlistEntry.kid_id == body["id"])
-            )
-        ).scalars().all()
+            (await s.execute(select(WatchlistEntry).where(WatchlistEntry.kid_id == body["id"])))
+            .scalars()
+            .all()
+        )
         assert len(entries) == 1
 
 
@@ -113,9 +115,7 @@ async def test_get_kid_detail_includes_nested_collections(client):
         json={
             "name": "Sam",
             "dob": "2019-05-01",
-            "unavailability": [
-                {"source": "manual", "label": "piano", "days_of_week": ["tue"]}
-            ],
+            "unavailability": [{"source": "manual", "label": "piano", "days_of_week": ["tue"]}],
             "watchlist": [{"pattern": "chess club"}],
         },
     )
@@ -140,6 +140,7 @@ async def test_patch_kid_triggers_rematch_once(client, monkeypatch):
     async def spy(session, kid_id_arg, *, today=None):
         call_count["n"] += 1
         from yas.matching.matcher import MatchResult
+
         return MatchResult(kid_id=kid_id_arg)
 
     monkeypatch.setattr("yas.web.routes.kids.rematch_kid", spy)
@@ -166,13 +167,17 @@ async def test_patch_school_schedule_materializes_blocks(client):
     assert r.status_code == 200
     async with session_scope(engine) as s:
         blocks = (
-            await s.execute(
-                select(UnavailabilityBlock).where(
-                    UnavailabilityBlock.kid_id == kid_id,
-                    UnavailabilityBlock.source == "school",
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.kid_id == kid_id,
+                        UnavailabilityBlock.source == "school",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(blocks) == 1
         assert blocks[0].date_start == date(2026, 9, 1)
 
@@ -193,20 +198,12 @@ async def test_delete_kid_cascades(client):
     r = await c.delete(f"/api/kids/{kid_id}")
     assert r.status_code == 204
     async with session_scope(engine) as s:
+        assert (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one_or_none() is None
         assert (
-            await s.execute(select(Kid).where(Kid.id == kid_id))
-        ).scalar_one_or_none() is None
-        assert (
-            await s.execute(
-                select(UnavailabilityBlock).where(
-                    UnavailabilityBlock.kid_id == kid_id
-                )
-            )
+            await s.execute(select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id))
         ).scalars().all() == []
         assert (
-            await s.execute(
-                select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id)
-            )
+            await s.execute(select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id))
         ).scalars().all() == []
 
 

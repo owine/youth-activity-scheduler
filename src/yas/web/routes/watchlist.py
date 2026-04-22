@@ -38,12 +38,16 @@ async def list_watchlist(kid_id: int, request: Request) -> list[WatchlistOut]:
     async with session_scope(_engine(request)) as s:
         await _require_kid(s, kid_id)
         rows = (
-            await s.execute(
-                select(WatchlistEntry)
-                .where(WatchlistEntry.kid_id == kid_id)
-                .order_by(WatchlistEntry.id)
+            (
+                await s.execute(
+                    select(WatchlistEntry)
+                    .where(WatchlistEntry.kid_id == kid_id)
+                    .order_by(WatchlistEntry.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [WatchlistOut.model_validate(r) for r in rows]
 
 

@@ -47,7 +47,7 @@ async def test_transport_error_retries_once_then_returns_none():
     try:
         result = await client.geocode("Chicago")
         assert result is None
-        assert route.call_count == 2    # one retry
+        assert route.call_count == 2  # one retry
     finally:
         await client.aclose()
 

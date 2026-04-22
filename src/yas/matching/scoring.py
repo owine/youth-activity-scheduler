@@ -81,7 +81,8 @@ def _availability_signal(kid: Any, offering: Any) -> float:
 
 
 def _distance_signal(
-    kid: Any, offering: Any,
+    kid: Any,
+    offering: Any,
     distance_mi: float | None,
     household_default: float | None,
 ) -> float:

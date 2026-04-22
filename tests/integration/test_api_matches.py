@@ -27,33 +27,61 @@ async def client(tmp_path, monkeypatch):
         await s.flush()
         s.add(
             Offering(
-                id=1, site_id=1, page_id=1,
-                name="Sat Soccer", normalized_name="sat soccer",
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Sat Soccer",
+                normalized_name="sat soccer",
                 program_type=ProgramType.soccer.value,
-                start_date=date(2026, 5, 1), days_of_week=["sat"],
-                time_start=time(9, 0), time_end=time(10, 0),
+                start_date=date(2026, 5, 1),
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
             )
         )
         s.add(
             Offering(
-                id=2, site_id=1, page_id=1,
-                name="Sun Basketball", normalized_name="sun basketball",
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Sun Basketball",
+                normalized_name="sun basketball",
                 program_type=ProgramType.basketball.value,
-                start_date=date(2026, 5, 2), days_of_week=["sun"],
-                time_start=time(14, 0), time_end=time(15, 0),
+                start_date=date(2026, 5, 2),
+                days_of_week=["sun"],
+                time_start=time(14, 0),
+                time_end=time(15, 0),
             )
         )
         await s.flush()
         # Seed matches directly (don't exercise matcher in these tests).
-        s.add(Match(kid_id=1, offering_id=1, score=0.82,
-                    reasons={"gates": {}, "score_breakdown": {}},
-                    computed_at=datetime.now(UTC)))
-        s.add(Match(kid_id=1, offering_id=2, score=0.35,
-                    reasons={"gates": {}, "score_breakdown": {}},
-                    computed_at=datetime.now(UTC)))
-        s.add(Match(kid_id=2, offering_id=1, score=0.71,
-                    reasons={"gates": {}, "score_breakdown": {}},
-                    computed_at=datetime.now(UTC)))
+        s.add(
+            Match(
+                kid_id=1,
+                offering_id=1,
+                score=0.82,
+                reasons={"gates": {}, "score_breakdown": {}},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            Match(
+                kid_id=1,
+                offering_id=2,
+                score=0.35,
+                reasons={"gates": {}, "score_breakdown": {}},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            Match(
+                kid_id=2,
+                offering_id=1,
+                score=0.71,
+                reasons={"gates": {}, "score_breakdown": {}},
+                computed_at=datetime.now(UTC),
+            )
+        )
     app = create_app(engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c

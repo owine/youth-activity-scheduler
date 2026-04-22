@@ -74,6 +74,7 @@ ALIASES = {
 
 # --- age gate -----------------------------------------------------------------
 
+
 def test_age_uses_offering_start_date_not_today():
     kid = _Kid(dob=date(2021, 5, 1))
     offering = _Offering(start_date=date(2026, 5, 15), age_min=5, age_max=6)
@@ -119,6 +120,7 @@ def test_age_unspecified_range_passes():
 
 # --- distance gate ------------------------------------------------------------
 
+
 def test_distance_unknown_fails_open():
     kid = _Kid(max_distance_mi=15.0)
     offering = _Offering(location_id=None)
@@ -159,6 +161,7 @@ def test_distance_no_cap_set_passes():
 
 # --- interests gate -----------------------------------------------------------
 
+
 def test_interests_match_via_program_type():
     kid = _Kid(interests=["soccer"])
     offering = _Offering(program_type=ProgramType.soccer, name="Spring Soccer")
@@ -189,6 +192,7 @@ def test_interests_empty_list_rejects():
 
 # --- status gate --------------------------------------------------------------
 
+
 def test_offering_active_passes():
     offering = _Offering(status=OfferingStatus.active.value, end_date=date(2027, 1, 1))
     today = date(2026, 4, 22)
@@ -214,6 +218,7 @@ def test_offering_withdrawn_rejects():
 
 # --- no-conflict gate ---------------------------------------------------------
 
+
 def _school_block():
     return _Block(
         source=UnavailabilitySource.school.value,
@@ -235,7 +240,9 @@ def test_summer_offering_passes_school_year_gate():
         time_start=time(9, 0),
         time_end=time(12, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed, r.detail
 
 
@@ -245,10 +252,12 @@ def test_during_school_year_conflicts_with_school():
         start_date=date(2026, 10, 1),
         end_date=date(2026, 11, 1),
         days_of_week=["tue"],
-        time_start=time(10, 0),   # overlaps 08-15
+        time_start=time(10, 0),  # overlaps 08-15
         time_end=time(11, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert not r.passed
 
 
@@ -261,7 +270,9 @@ def test_after_school_during_school_year_passes():
         time_start=time(16, 0),
         time_end=time(17, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed
 
 
@@ -277,7 +288,8 @@ def test_school_holiday_carves_exception_on_specific_date():
         time_end=time(11, 0),
     )
     r = no_conflict_with_unavailability(
-        offering, [block],
+        offering,
+        [block],
         school_holidays={date(2027, 1, 18)},
         today=date(2026, 4, 22),
     )
@@ -286,8 +298,12 @@ def test_school_holiday_carves_exception_on_specific_date():
 
 def test_partial_schedule_fails_open():
     block = _school_block()
-    offering = _Offering(start_date=None, end_date=None, days_of_week=[], time_start=None, time_end=None)
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    offering = _Offering(
+        start_date=None, end_date=None, days_of_week=[], time_start=None, time_end=None
+    )
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed
     assert r.code == "schedule_partial"
 
@@ -305,8 +321,10 @@ def test_enrollment_block_blocks_overlapping_offering():
         start_date=date(2026, 5, 10),
         end_date=date(2026, 6, 20),
         days_of_week=["sat"],
-        time_start=time(9, 30),   # overlaps
+        time_start=time(9, 30),  # overlaps
         time_end=time(10, 30),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert not r.passed

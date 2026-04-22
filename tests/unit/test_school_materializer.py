@@ -25,9 +25,17 @@ async def test_no_school_info_produces_zero_blocks(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert rows == []
     await engine.dispose()
 
@@ -46,9 +54,17 @@ async def test_materializes_one_block_per_year_range(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2
         for r in rows:
             assert r.time_start == time(8, 0)
@@ -75,9 +91,17 @@ async def test_rewrites_on_second_call(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].time_start == time(9, 0)
         assert rows[0].time_end == time(16, 0)
@@ -95,8 +119,16 @@ async def test_partial_school_info_produces_zero_blocks(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert rows == []
     await engine.dispose()

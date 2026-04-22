@@ -49,10 +49,18 @@ async def _kid(session, **kwargs):
 
 async def _offering(session, **kwargs):
     defaults = dict(
-        site_id=1, page_id=1, name="Spring Soccer", normalized_name="spring soccer",
-        program_type=ProgramType.soccer.value, age_min=6, age_max=8,
-        start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
-        days_of_week=["sat"], time_start=time(9, 0), time_end=time(10, 0),
+        site_id=1,
+        page_id=1,
+        name="Spring Soccer",
+        normalized_name="spring soccer",
+        program_type=ProgramType.soccer.value,
+        age_min=6,
+        age_max=8,
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 30),
+        days_of_week=["sat"],
+        time_start=time(9, 0),
+        time_end=time(10, 0),
         status=OfferingStatus.active.value,
     )
     defaults.update(kwargs)
@@ -92,7 +100,7 @@ async def test_age_gate_uses_start_date(tmp_path):
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
-        assert len(rows) == 1   # matched despite today's age = 4
+        assert len(rows) == 1  # matched despite today's age = 4
 
 
 @pytest.mark.asyncio
@@ -101,15 +109,24 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["soccer"])
         # school block covers 2026-09..2027-06
-        s.add(UnavailabilityBlock(
-            kid_id=kid.id, source=UnavailabilitySource.school.value,
-            days_of_week=["mon","tue","wed","thu","fri"],
-            time_start=time(8,0), time_end=time(15,0),
-            date_start=date(2026,9,2), date_end=date(2027,6,14),
-        ))
-        await _offering(s,
-            start_date=date(2026, 6, 15), end_date=date(2026, 8, 15),
-            days_of_week=["mon","wed"], time_start=time(9,0), time_end=time(12,0),
+        s.add(
+            UnavailabilityBlock(
+                kid_id=kid.id,
+                source=UnavailabilitySource.school.value,
+                days_of_week=["mon", "tue", "wed", "thu", "fri"],
+                time_start=time(8, 0),
+                time_end=time(15, 0),
+                date_start=date(2026, 9, 2),
+                date_end=date(2027, 6, 14),
+            )
+        )
+        await _offering(
+            s,
+            start_date=date(2026, 6, 15),
+            end_date=date(2026, 8, 15),
+            days_of_week=["mon", "wed"],
+            time_start=time(9, 0),
+            time_end=time(12, 0),
         )
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
@@ -122,13 +139,19 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
 async def test_watchlist_bypasses_all_hard_gates(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
-        kid = await _kid(s, interests=["swim"], max_distance_mi=1.0)   # not soccer; tiny distance
+        kid = await _kid(s, interests=["swim"], max_distance_mi=1.0)  # not soccer; tiny distance
         # location with unavailable coords so distance stays unknown = fail-open on distance
-        s.add(WatchlistEntry(
-            id=1, kid_id=kid.id, pattern="spring soccer",
-            priority=WatchlistPriority.high.value, active=True, ignore_hard_gates=False,
-        ))
-        await _offering(s)   # program_type soccer, age 6-8 (kid is 6 on 2026-05-01)
+        s.add(
+            WatchlistEntry(
+                id=1,
+                kid_id=kid.id,
+                pattern="spring soccer",
+                priority=WatchlistPriority.high.value,
+                active=True,
+                ignore_hard_gates=False,
+            )
+        )
+        await _offering(s)  # program_type soccer, age 6-8 (kid is 6 on 2026-05-01)
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
@@ -145,24 +168,35 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
         kid_b = await _kid(s, name="Kid B", dob=date(2019, 5, 1), interests=["soccer"])
         sat_9 = await _offering(s, name="Sat 9am Soccer")
         sat_9_other = await _offering(s, name="Sat 9am Other Soccer")
-        s.add(Enrollment(
-            id=1, kid_id=kid_a.id, offering_id=sat_9.id, status=EnrollmentStatus.enrolled.value,
-        ))
+        s.add(
+            Enrollment(
+                id=1,
+                kid_id=kid_a.id,
+                offering_id=sat_9.id,
+                status=EnrollmentStatus.enrolled.value,
+            )
+        )
         await s.flush()
         # materialize the enrollment block manually (avoiding materializer coupling here)
-        s.add(UnavailabilityBlock(
-            kid_id=kid_a.id, source=UnavailabilitySource.enrollment.value,
-            source_enrollment_id=1,
-            days_of_week=["sat"], time_start=time(9,0), time_end=time(10,0),
-            date_start=date(2026,5,1), date_end=date(2026,6,30),
-        ))
+        s.add(
+            UnavailabilityBlock(
+                kid_id=kid_a.id,
+                source=UnavailabilitySource.enrollment.value,
+                source_enrollment_id=1,
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
+                date_start=date(2026, 5, 1),
+                date_end=date(2026, 6, 30),
+            )
+        )
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=kid_a.id)
         await rematch_kid(s, kid_id=kid_b.id)
     async with session_scope(engine) as s:
         # Kid A matches the enrolled offering (obviously) but not the conflicting sibling
         rows_a = (await s.execute(select(Match).where(Match.kid_id == kid_a.id))).scalars().all()
-        assert {m.offering_id for m in rows_a} == {sat_9.id}   # conflicting sibling filtered
+        assert {m.offering_id for m in rows_a} == {sat_9.id}  # conflicting sibling filtered
         # Kid B is unaffected and matches both soccer offerings
         rows_b = (await s.execute(select(Match).where(Match.kid_id == kid_b.id))).scalars().all()
         assert {m.offering_id for m in rows_b} == {sat_9.id, sat_9_other.id}
@@ -179,7 +213,7 @@ async def test_failed_gate_removes_existing_match(tmp_path):
     async with session_scope(engine) as s:
         # change the kid to a different age so the match should drop
         kid = (await s.execute(select(Kid))).scalar_one()
-        kid.dob = date(2010, 1, 1)   # kid is ~16
+        kid.dob = date(2010, 1, 1)  # kid is ~16
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:

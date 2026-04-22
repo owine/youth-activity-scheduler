@@ -49,12 +49,16 @@ async def list_blocks(kid_id: int, request: Request) -> list[UnavailabilityOut]:
     async with session_scope(_engine(request)) as s:
         await _require_kid(s, kid_id)
         rows = (
-            await s.execute(
-                select(UnavailabilityBlock)
-                .where(UnavailabilityBlock.kid_id == kid_id)
-                .order_by(UnavailabilityBlock.id)
+            (
+                await s.execute(
+                    select(UnavailabilityBlock)
+                    .where(UnavailabilityBlock.kid_id == kid_id)
+                    .order_by(UnavailabilityBlock.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [UnavailabilityOut.model_validate(r) for r in rows]
 
 

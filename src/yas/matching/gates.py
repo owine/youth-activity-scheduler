@@ -33,17 +33,26 @@ def age_fits(kid: Any, offering: Any, *, today: date) -> GateResult:
     if offering.age_min is None and offering.age_max is None:
         return GateResult(True, "age_unspecified", "offering has no age range")
     if offering.age_min is not None and age < offering.age_min:
-        return GateResult(False, "too_young",
-                          f"age {age} on {reference.isoformat()} < min {offering.age_min}")
+        return GateResult(
+            False, "too_young", f"age {age} on {reference.isoformat()} < min {offering.age_min}"
+        )
     if offering.age_max is not None and age > offering.age_max:
-        return GateResult(False, "too_old",
-                          f"age {age} on {reference.isoformat()} > max {offering.age_max}")
-    return GateResult(True, "age_ok",
-                      f"age {age} on {reference.isoformat()} fits [{offering.age_min}, {offering.age_max}]")
+        return GateResult(
+            False, "too_old", f"age {age} on {reference.isoformat()} > max {offering.age_max}"
+        )
+    return GateResult(
+        True,
+        "age_ok",
+        f"age {age} on {reference.isoformat()} fits [{offering.age_min}, {offering.age_max}]",
+    )
 
 
 def distance_fits(
-    kid: Any, offering: Any, *, distance_mi: float | None, household_default: float | None,
+    kid: Any,
+    offering: Any,
+    *,
+    distance_mi: float | None,
+    household_default: float | None,
 ) -> GateResult:
     cap = kid.max_distance_mi if kid.max_distance_mi is not None else household_default
     if cap is None:
@@ -63,15 +72,20 @@ def interests_overlap(kid: Any, offering: Any, aliases: dict[str, list[str]]) ->
     for interest in kid.interests:
         interest = interest.lower()
         if program_type_val == interest:
-            return GateResult(True, "interest_program_type_match",
-                              f"kid interest '{interest}' == program_type")
+            return GateResult(
+                True, "interest_program_type_match", f"kid interest '{interest}' == program_type"
+            )
         terms = aliases.get(interest, [interest])
         for term in terms:
             if normalize_name(term) in needle_hay:
-                return GateResult(True, "interest_text_match",
-                                  f"kid interest '{interest}' matched via '{term}' in name/description")
-    return GateResult(False, "no_interest_match",
-                      f"no kid interest ({', '.join(kid.interests)}) matched offering")
+                return GateResult(
+                    True,
+                    "interest_text_match",
+                    f"kid interest '{interest}' matched via '{term}' in name/description",
+                )
+    return GateResult(
+        False, "no_interest_match", f"no kid interest ({', '.join(kid.interests)}) matched offering"
+    )
 
 
 def offering_active_and_not_ended(offering: Any, *, today: date) -> GateResult:
@@ -112,7 +126,9 @@ def no_conflict_with_unavailability(
     today: date,
 ) -> GateResult:
     if not _offering_has_full_schedule(offering):
-        return GateResult(True, "schedule_partial", "offering schedule incomplete; cannot verify no-conflict")
+        return GateResult(
+            True, "schedule_partial", "offering schedule incomplete; cannot verify no-conflict"
+        )
 
     offering_days = {d.lower() for d in (getattr(d, "value", d) for d in offering.days_of_week)}
     active_blocks = [b for b in blocks if b.active]
@@ -133,16 +149,21 @@ def no_conflict_with_unavailability(
                     continue
                 if block.date_end is not None and cur > block.date_end:
                     continue
-                block_days = {d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))}
+                block_days = {
+                    d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))
+                }
                 if block_days and weekday not in block_days:
                     continue
                 if block.time_start is None or block.time_end is None:
                     # Whole-day block on this date → conflict.
-                    return GateResult(False, "conflict",
-                                      f"all-day block on {cur.isoformat()} ({source})")
-                if _time_overlaps(offering.time_start, offering.time_end, block.time_start, block.time_end):
-                    return GateResult(False, "conflict",
-                                      f"conflict on {cur.isoformat()} ({source})")
+                    return GateResult(
+                        False, "conflict", f"all-day block on {cur.isoformat()} ({source})"
+                    )
+                if _time_overlaps(
+                    offering.time_start, offering.time_end, block.time_start, block.time_end
+                ):
+                    return GateResult(
+                        False, "conflict", f"conflict on {cur.isoformat()} ({source})"
+                    )
         cur += timedelta(days=1)
-    return GateResult(True, "no_conflict",
-                      f"no overlap with {len(active_blocks)} active block(s)")
+    return GateResult(True, "no_conflict", f"no overlap with {len(active_blocks)} active block(s)")

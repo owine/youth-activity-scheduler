@@ -66,6 +66,46 @@ on a site to opt in.
 The scheduler ticks every 30s and crawls pages whose `next_check_at` is in the
 past, respecting `site.default_cadence_s` after each successful crawl.
 
+## Managing kids and matches
+
+Kids, watchlists, unavailability blocks, and enrollments are all HTTP-managed.
+Matches are computed automatically — any mutation of a kid, offering, block,
+or enrollment triggers a rematch. A daily sweep at `YAS_SWEEP_TIME_UTC` (default
+`07:00`) re-matches all active kids to catch date-based shifts.
+
+```bash
+# Create a household with a home address (geocoded immediately via Nominatim).
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{"home_address":"2045 N Lincoln Park W, Chicago, IL","default_max_distance_mi":20}'
+
+# Create a kid. DOB drives age at offering start_date; school schedule drives
+# an auto-materialized no-conflict gate during school weekdays.
+curl -sS -X POST localhost:8080/api/kids -H 'content-type: application/json' -d '{
+  "name":"Sam","dob":"2019-05-01","interests":["baseball"],
+  "school_weekdays":["mon","tue","wed","thu","fri"],
+  "school_time_start":"08:00","school_time_end":"15:00",
+  "school_year_ranges":[{"start":"2026-09-02","end":"2027-06-14"}]
+}'
+
+# Read matches, ordered by score desc.
+curl 'localhost:8080/api/matches?kid_id=1'
+
+# Add a wildcard watchlist entry — hits bypass all hard gates because
+# watchlist entries represent manually-verified programs.
+curl -X POST localhost:8080/api/kids/1/watchlist -H 'content-type: application/json' \
+  -d '{"pattern":"t*ball*","priority":"high"}'
+
+# Mark an enrollment — status=enrolled creates a linked unavailability block
+# so conflicting offerings stop matching.
+curl -X POST localhost:8080/api/enrollments -H 'content-type: application/json' \
+  -d '{"kid_id":1,"offering_id":42,"status":"enrolled"}'
+```
+
+Geocoding: the worker geocodes new location addresses every
+`YAS_GEOCODE_TICK_S` (default 5 min). Nominatim is rate-limited to 1 req/s per
+policy. Addresses that can't be resolved are recorded in `geocode_attempts` so
+they're not retried until they change.
+
 ## Development
 
 ```bash
@@ -79,16 +119,19 @@ uv run mypy src        # typecheck
 
 ```
 src/yas/
-  config.py        pydantic-settings
-  logging.py       structlog setup
-  __main__.py      CLI entrypoint (api|worker|all)
-  db/              SQLAlchemy models + session
-  crawl/           fetcher, change detector, extractor, reconciler, scheduler, pipeline
-  llm/             Pydantic schemas, prompt builder, AnthropicClient
-  web/             FastAPI app
-  web/routes/      site-management HTTP endpoints
-  worker/          background loop
-alembic/           DB migrations
-scripts/           manual smoke scripts
-tests/             pytest suite
+  config.py          pydantic-settings
+  logging.py         structlog setup
+  __main__.py        CLI entrypoint (api|worker|all)
+  db/                SQLAlchemy models + session
+  crawl/             fetcher, change detector, extractor, reconciler, scheduler, pipeline
+  llm/               Pydantic schemas, prompt builder, AnthropicClient
+  matching/          pure gates + scoring + watchlist + aliases, async matcher orchestrator
+  unavailability/    school-block and enrollment-block materializers
+  geo/               haversine distance, Nominatim client, geocode enricher
+  web/               FastAPI app
+  web/routes/        HTTP endpoints (sites, kids, watchlist, unavailability, enrollments, matches, household)
+  worker/            background loops (heartbeat, crawl scheduler, daily sweep, geocode enricher)
+alembic/             DB migrations
+scripts/             manual smoke scripts
+tests/               pytest suite
 ```

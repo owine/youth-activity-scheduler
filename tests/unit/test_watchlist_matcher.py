@@ -81,7 +81,7 @@ def test_priority_high_beats_normal():
     o = _Offering(name="Little Kickers")
     hit = matches_watchlist(o, [e_normal, e_high], site_id=1)
     assert hit is not None
-    assert hit.entry.id == 2   # high wins
+    assert hit.entry.id == 2  # high wins
 
 
 def test_among_same_priority_lowest_id_wins():

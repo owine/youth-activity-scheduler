@@ -43,6 +43,7 @@ async def test_create_watchlist_entry_triggers_rematch(client, monkeypatch):
     async def spy(session, kid_id):
         calls.append(kid_id)
         from yas.matching.matcher import MatchResult
+
         return MatchResult(kid_id=kid_id)
 
     monkeypatch.setattr("yas.web.routes.watchlist.rematch_kid", spy)
@@ -83,6 +84,7 @@ async def test_patch_pattern_triggers_rematch(client, monkeypatch):
     async def spy(session, kid_id):
         calls.append(kid_id)
         from yas.matching.matcher import MatchResult
+
         return MatchResult(kid_id=kid_id)
 
     monkeypatch.setattr("yas.web.routes.watchlist.rematch_kid", spy)
@@ -107,9 +109,7 @@ async def test_delete_entry_triggers_rematch(client, engine=None, monkeypatch=No
 @pytest.mark.asyncio
 async def test_rejects_unknown_fields(client):
     c, _ = client
-    r = await c.post(
-        "/api/kids/1/watchlist", json={"pattern": "x", "garbage_field": 1}
-    )
+    r = await c.post("/api/kids/1/watchlist", json={"pattern": "x", "garbage_field": 1})
     assert r.status_code == 422
 
 
@@ -125,5 +125,5 @@ async def test_patch_entry_preserves_other_fields(client):
     assert r.status_code == 200
     body = r.json()
     assert body["pattern"] == "newpattern"
-    assert body["priority"] == "high"        # unchanged
+    assert body["priority"] == "high"  # unchanged
     assert body["notes"] == "Sam's favorite"  # unchanged

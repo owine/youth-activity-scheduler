@@ -52,33 +52,44 @@ def _engine(req: Request) -> AsyncEngine:
 
 async def _build_detail(session: AsyncSession, kid: Kid) -> KidDetailOut:
     blocks = (
-        (await session.execute(
-            select(UnavailabilityBlock)
-            .where(UnavailabilityBlock.kid_id == kid.id)
-            .order_by(UnavailabilityBlock.id)
-        )).scalars().all()
+        (
+            await session.execute(
+                select(UnavailabilityBlock)
+                .where(UnavailabilityBlock.kid_id == kid.id)
+                .order_by(UnavailabilityBlock.id)
+            )
+        )
+        .scalars()
+        .all()
     )
     watchlist = (
-        (await session.execute(
-            select(WatchlistEntry)
-            .where(WatchlistEntry.kid_id == kid.id)
-            .order_by(WatchlistEntry.id)
-        )).scalars().all()
+        (
+            await session.execute(
+                select(WatchlistEntry)
+                .where(WatchlistEntry.kid_id == kid.id)
+                .order_by(WatchlistEntry.id)
+            )
+        )
+        .scalars()
+        .all()
     )
     enrollments = (
-        (await session.execute(
-            select(Enrollment)
-            .where(Enrollment.kid_id == kid.id)
-            .order_by(Enrollment.id)
-        )).scalars().all()
+        (
+            await session.execute(
+                select(Enrollment).where(Enrollment.kid_id == kid.id).order_by(Enrollment.id)
+            )
+        )
+        .scalars()
+        .all()
     )
     matches = (
-        (await session.execute(
-            select(Match)
-            .where(Match.kid_id == kid.id)
-            .order_by(Match.score.desc())
-            .limit(10)
-        )).scalars().all()
+        (
+            await session.execute(
+                select(Match).where(Match.kid_id == kid.id).order_by(Match.score.desc()).limit(10)
+            )
+        )
+        .scalars()
+        .all()
     )
     data: dict[str, Any] = {
         "id": kid.id,
@@ -127,26 +138,30 @@ async def create_kid(payload: KidCreate, request: Request) -> KidDetailOut:
         await s.flush()
 
         for u in payload.unavailability:
-            s.add(UnavailabilityBlock(
-                kid_id=kid.id,
-                source=u.source,
-                label=u.label,
-                days_of_week=u.days_of_week,
-                time_start=u.time_start,
-                time_end=u.time_end,
-                date_start=u.date_start,
-                date_end=u.date_end,
-                active=u.active,
-            ))
+            s.add(
+                UnavailabilityBlock(
+                    kid_id=kid.id,
+                    source=u.source,
+                    label=u.label,
+                    days_of_week=u.days_of_week,
+                    time_start=u.time_start,
+                    time_end=u.time_end,
+                    date_start=u.date_start,
+                    date_end=u.date_end,
+                    active=u.active,
+                )
+            )
         for w in payload.watchlist:
-            s.add(WatchlistEntry(
-                kid_id=kid.id,
-                site_id=w.site_id,
-                pattern=w.pattern,
-                priority=w.priority,
-                notes=w.notes,
-                active=w.active,
-            ))
+            s.add(
+                WatchlistEntry(
+                    kid_id=kid.id,
+                    site_id=w.site_id,
+                    pattern=w.pattern,
+                    priority=w.priority,
+                    notes=w.notes,
+                    active=w.active,
+                )
+            )
         await s.flush()
 
         await materialize_school_blocks(s, kid.id)

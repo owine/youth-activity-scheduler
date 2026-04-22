@@ -18,11 +18,16 @@ async def client(tmp_path, monkeypatch):
     engine = create_engine_for(url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    geocoder = FakeGeocoder(fixtures={
-        "123 main st, chicago, il": GeocodeResult(
-            lat=41.88, lon=-87.63, display_name="Chicago", provider="fake",
-        )
-    })
+    geocoder = FakeGeocoder(
+        fixtures={
+            "123 main st, chicago, il": GeocodeResult(
+                lat=41.88,
+                lon=-87.63,
+                display_name="Chicago",
+                provider="fake",
+            )
+        }
+    )
     app = create_app(engine=engine, fetcher=None, llm=None, geocoder=geocoder)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c, engine, geocoder
@@ -60,7 +65,9 @@ async def test_patch_home_address_triggers_immediate_geocode(client):
     assert body["home_location_id"] is not None
     assert geocoder.call_count >= 1
     async with session_scope(engine) as s:
-        loc = (await s.execute(select(Location).where(Location.id == body["home_location_id"]))).scalar_one()
+        loc = (
+            await s.execute(select(Location).where(Location.id == body["home_location_id"]))
+        ).scalar_one()
         assert loc.lat == 41.88
         assert loc.lon == -87.63
 
@@ -77,5 +84,7 @@ async def test_patch_home_address_geocode_miss_still_saves(client):
     body = r.json()
     assert body["home_location_id"] is not None  # location created
     async with session_scope(engine) as s:
-        loc = (await s.execute(select(Location).where(Location.id == body["home_location_id"]))).scalar_one()
-        assert loc.lat is None   # miss — enricher will retry never (negative-cached)
+        loc = (
+            await s.execute(select(Location).where(Location.id == body["home_location_id"]))
+        ).scalar_one()
+        assert loc.lat is None  # miss — enricher will retry never (negative-cached)

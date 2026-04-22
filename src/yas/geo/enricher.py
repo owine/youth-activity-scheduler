@@ -48,10 +48,17 @@ async def enrich_ungeocoded_locations(
     skipped = 0
 
     locations = (
-        await session.execute(
-            select(Location).where(Location.lat.is_(None)).where(Location.address.isnot(None)).limit(batch_size)
+        (
+            await session.execute(
+                select(Location)
+                .where(Location.lat.is_(None))
+                .where(Location.address.isnot(None))
+                .limit(batch_size)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for loc in locations:
         addr_norm = normalize_name(loc.address or "")
@@ -67,18 +74,25 @@ async def enrich_ungeocoded_locations(
             result = await geocoder.geocode(loc.address or "")
         except Exception as exc:
             errored += 1
-            session.add(GeocodeAttempt(
-                address_norm=addr_norm, last_tried=datetime.now(UTC),
-                result="error", detail=str(exc)[:500],
-            ))
+            session.add(
+                GeocodeAttempt(
+                    address_norm=addr_norm,
+                    last_tried=datetime.now(UTC),
+                    result="error",
+                    detail=str(exc)[:500],
+                )
+            )
             continue
         if result is None:
             not_found += 1
             if prior is None:
-                session.add(GeocodeAttempt(
-                    address_norm=addr_norm, last_tried=datetime.now(UTC),
-                    result="not_found",
-                ))
+                session.add(
+                    GeocodeAttempt(
+                        address_norm=addr_norm,
+                        last_tried=datetime.now(UTC),
+                        result="not_found",
+                    )
+                )
             else:
                 prior.last_tried = datetime.now(UTC)
                 prior.result = "not_found"
@@ -87,16 +101,22 @@ async def enrich_ungeocoded_locations(
         loc.lon = result.lon
         updated += 1
         if prior is None:
-            session.add(GeocodeAttempt(
-                address_norm=addr_norm, last_tried=datetime.now(UTC), result="ok",
-            ))
+            session.add(
+                GeocodeAttempt(
+                    address_norm=addr_norm,
+                    last_tried=datetime.now(UTC),
+                    result="ok",
+                )
+            )
         else:
             prior.last_tried = datetime.now(UTC)
             prior.result = "ok"
         if on_rematch is not None:
             offering_ids = (
-                await session.execute(select(Offering.id).where(Offering.location_id == loc.id))
-            ).scalars().all()
+                (await session.execute(select(Offering.id).where(Offering.location_id == loc.id)))
+                .scalars()
+                .all()
+            )
             for oid in offering_ids:
                 await on_rematch(session, oid)
 
@@ -104,24 +124,32 @@ async def enrich_ungeocoded_locations(
 
 
 async def geocode_enricher_loop(
-    engine: AsyncEngine, settings: Settings, geocoder: Geocoder,
+    engine: AsyncEngine,
+    settings: Settings,
+    geocoder: Geocoder,
 ) -> None:
     from yas.matching.matcher import rematch_offering
 
-    log.info("geocode.start",
-             tick_s=settings.geocode_tick_s,
-             batch_size=settings.geocode_batch_size)
+    log.info(
+        "geocode.start", tick_s=settings.geocode_tick_s, batch_size=settings.geocode_batch_size
+    )
     try:
         while True:
             async with session_scope(engine) as s:
                 result = await enrich_ungeocoded_locations(
-                    s, geocoder, batch_size=settings.geocode_batch_size,
+                    s,
+                    geocoder,
+                    batch_size=settings.geocode_batch_size,
                     on_rematch=rematch_offering,
                 )
             if result.updated or result.not_found or result.errored:
-                log.info("geocode.tick",
-                         updated=result.updated, not_found=result.not_found,
-                         errored=result.errored, skipped=result.skipped)
+                log.info(
+                    "geocode.tick",
+                    updated=result.updated,
+                    not_found=result.not_found,
+                    errored=result.errored,
+                    skipped=result.skipped,
+                )
             await asyncio.sleep(settings.geocode_tick_s)
     except asyncio.CancelledError:
         log.info("geocode.stop")

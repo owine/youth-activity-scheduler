@@ -35,14 +35,16 @@ async def materialize_school_blocks(session: AsyncSession, kid_id: int) -> None:
     for entry in kid.school_year_ranges:
         start = _parse_date(entry["start"])
         end = _parse_date(entry["end"])
-        session.add(UnavailabilityBlock(
-            kid_id=kid_id,
-            source=UnavailabilitySource.school.value,
-            label=f"School {start.isoformat()}..{end.isoformat()}",
-            days_of_week=weekdays,
-            time_start=kid.school_time_start,
-            time_end=kid.school_time_end,
-            date_start=start,
-            date_end=end,
-            active=True,
-        ))
+        session.add(
+            UnavailabilityBlock(
+                kid_id=kid_id,
+                source=UnavailabilitySource.school.value,
+                label=f"School {start.isoformat()}..{end.isoformat()}",
+                days_of_week=weekdays,
+                time_start=kid.school_time_start,
+                time_end=kid.school_time_end,
+                date_start=start,
+                date_end=end,
+                active=True,
+            )
+        )

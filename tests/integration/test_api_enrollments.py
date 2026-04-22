@@ -33,11 +33,17 @@ async def client(tmp_path, monkeypatch):
         await s.flush()
         s.add(
             Offering(
-                id=1, site_id=1, page_id=1,
-                name="Sat Soccer", normalized_name="sat soccer",
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Sat Soccer",
+                normalized_name="sat soccer",
                 program_type=ProgramType.soccer.value,
-                start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
-                days_of_week=["sat"], time_start=time(9, 0), time_end=time(10, 0),
+                start_date=date(2026, 5, 1),
+                end_date=date(2026, 6, 30),
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
             )
         )
     app = create_app(engine=engine)

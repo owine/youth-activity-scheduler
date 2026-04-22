@@ -40,8 +40,11 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
     try:
         config = uvicorn.Config(
             create_app(
-                engine=engine, settings=settings,
-                fetcher=fetcher, llm=llm, geocoder=geocoder,
+                engine=engine,
+                settings=settings,
+                fetcher=fetcher,
+                llm=llm,
+                geocoder=geocoder,
             ),
             host=settings.host,
             port=settings.port,

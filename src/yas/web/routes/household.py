@@ -84,11 +84,7 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                     loc.lat = result.lat
                     loc.lon = result.lon
                     if prior is None:
-                        s.add(
-                            GeocodeAttempt(
-                                address_norm=addr_norm, last_tried=now, result="ok"
-                            )
-                        )
+                        s.add(GeocodeAttempt(address_norm=addr_norm, last_tried=now, result="ok"))
                     else:
                         prior.last_tried = now
                         prior.result = "ok"

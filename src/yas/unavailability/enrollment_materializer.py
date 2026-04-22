@@ -16,7 +16,9 @@ async def apply_enrollment_block(session: AsyncSession, enrollment_id: int) -> N
 
     existing = (
         await session.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source_enrollment_id == enrollment_id)
+            select(UnavailabilityBlock).where(
+                UnavailabilityBlock.source_enrollment_id == enrollment_id
+            )
         )
     ).scalar_one_or_none()
 
@@ -31,18 +33,20 @@ async def apply_enrollment_block(session: AsyncSession, enrollment_id: int) -> N
     ).scalar_one()
 
     if existing is None:
-        session.add(UnavailabilityBlock(
-            kid_id=enrollment.kid_id,
-            source=UnavailabilitySource.enrollment.value,
-            source_enrollment_id=enrollment.id,
-            label=f"Enrolled: {offering.name}",
-            days_of_week=list(offering.days_of_week or []),
-            time_start=offering.time_start,
-            time_end=offering.time_end,
-            date_start=offering.start_date,
-            date_end=offering.end_date,
-            active=True,
-        ))
+        session.add(
+            UnavailabilityBlock(
+                kid_id=enrollment.kid_id,
+                source=UnavailabilitySource.enrollment.value,
+                source_enrollment_id=enrollment.id,
+                label=f"Enrolled: {offering.name}",
+                days_of_week=list(offering.days_of_week or []),
+                time_start=offering.time_start,
+                time_end=offering.time_end,
+                date_start=offering.start_date,
+                date_end=offering.end_date,
+                active=True,
+            )
+        )
     else:
         existing.kid_id = enrollment.kid_id
         existing.label = f"Enrolled: {offering.name}"

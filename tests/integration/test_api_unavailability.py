@@ -80,9 +80,7 @@ async def test_patch_manual_block(client):
         json={"label": "old", "source": "manual"},
     )
     bid = created.json()["id"]
-    r = await c.patch(
-        f"/api/kids/1/unavailability/{bid}", json={"label": "new"}
-    )
+    r = await c.patch(f"/api/kids/1/unavailability/{bid}", json={"label": "new"})
     assert r.status_code == 200
     assert r.json()["label"] == "new"
 
@@ -90,9 +88,7 @@ async def test_patch_manual_block(client):
 @pytest.mark.asyncio
 async def test_delete_manual_block(client):
     c, _ = client
-    created = await c.post(
-        "/api/kids/1/unavailability", json={"label": "x", "source": "manual"}
-    )
+    created = await c.post("/api/kids/1/unavailability", json={"label": "x", "source": "manual"})
     bid = created.json()["id"]
     r = await c.delete(f"/api/kids/1/unavailability/{bid}")
     assert r.status_code == 204
@@ -128,7 +124,10 @@ async def test_patch_enrollment_block_returns_409(client, engine=None):
         await s.flush()
         s.add(
             Offering(
-                id=1, site_id=1, page_id=1, name="Sat Soccer",
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Sat Soccer",
                 normalized_name="sat soccer",
                 program_type=ProgramType.soccer.value,
             )

@@ -28,7 +28,14 @@ class UnavailabilityCreate(BaseModel):
     active: bool = True
 
 
-__all__ = ["KidCreate", "KidDetailOut", "KidOut", "KidUpdate", "UnavailabilityCreate", "WatchlistCreate"]
+__all__ = [
+    "KidCreate",
+    "KidDetailOut",
+    "KidOut",
+    "KidUpdate",
+    "UnavailabilityCreate",
+    "WatchlistCreate",
+]
 
 
 class KidCreate(BaseModel):
@@ -40,9 +47,7 @@ class KidCreate(BaseModel):
     max_distance_mi: float | None = None
     alert_score_threshold: float = 0.6
     alert_on: dict[str, Any] = Field(default_factory=dict)
-    school_weekdays: list[str] = Field(
-        default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"]
-    )
+    school_weekdays: list[str] = Field(default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"])
     school_time_start: time | None = None
     school_time_end: time | None = None
     school_year_ranges: list[dict[str, Any]] = Field(default_factory=list)

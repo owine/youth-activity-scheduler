@@ -22,12 +22,20 @@ async def _setup(tmp_path):
         page = Page(id=1, site_id=1, url="https://x/p")
         s.add(page)
         await s.flush()
-        s.add(Offering(
-            id=1, site_id=1, page_id=1,
-            name="Sat Soccer", normalized_name="sat soccer",
-            start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
-            days_of_week=["sat"], time_start=time(9, 0), time_end=time(10, 0),
-        ))
+        s.add(
+            Offering(
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Sat Soccer",
+                normalized_name="sat soccer",
+                start_date=date(2026, 5, 1),
+                end_date=date(2026, 6, 30),
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
+            )
+        )
         await s.flush()
         s.add(Enrollment(id=1, kid_id=1, offering_id=1, status=EnrollmentStatus.interested.value))
     return engine
