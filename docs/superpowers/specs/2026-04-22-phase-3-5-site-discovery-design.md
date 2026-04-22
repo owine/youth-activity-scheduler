@@ -65,8 +65,12 @@ Discovery is **not cached**. Each call re-runs the full pipeline (~$0.02 per cal
 
 ```python
 async def fetch_sitemap_urls(base_url: str, *, http_client: httpx.AsyncClient) -> list[str]:
-    """Try {base}/sitemap.xml and {base}/sitemap_index.xml. Follow one level
-    of index references. Return bare URLs. Network or parse errors → []."""
+    """Try {base}/sitemap.xml first; if missing/invalid, try {base}/sitemap_index.xml.
+    If the first-tried URL returns a 200 with parseable content (even if it's an
+    index that yields zero child URLs), do NOT try the second. This matches
+    typical site conventions where one or the other exists but not both.
+    Follow one level of index references. Return bare URLs. Network or parse
+    errors → []."""
 ```
 
 Internal helpers: `_parse_sitemap_xml(xml_bytes)` → list of URLs; `_parse_sitemap_index_xml(xml_bytes)` → list of child sitemap URLs. Both tolerate malformed XML (return `[]`).
@@ -103,9 +107,11 @@ class HeadInfo:
     title: str
     meta_description: str | None
     kind: Literal["html", "pdf"]
+    anchor_text: str | None = None   # populated only when URL came via link extraction
 
 async def scrape_head(
     url: str, *, http_client: httpx.AsyncClient, timeout_s: int,
+    anchor_text: str | None = None,
 ) -> HeadInfo | None:
     """Return HeadInfo or None on any failure (4xx/5xx/timeout/parse error).
     For PDF URLs (path ends in .pdf), skip the HTTP GET and return
@@ -192,7 +198,7 @@ Algorithm:
 
 1. GET seed via httpx. On failure → raise `DiscoveryError("seed_fetch_failed", cause)`.
 2. Concurrently: `fetch_sitemap_urls(site.base_url)` and `extract_internal_links(seed_html, site.base_url)`.
-3. Union URLs (preserve first-seen anchor text). Apply `filters.is_junk`. Cap at `settings.discovery_max_candidates` (default 50).
+3. Union URLs. **Ordering:** sitemap URLs first (in the order the sitemap returned them), then link-extracted URLs not already seen. A URL appearing in both keeps its sitemap position and picks up the anchor text from the link-crawl side. Apply `filters.is_junk`. Cap at `settings.discovery_max_candidates` (default 50) — sitemap URLs take precedence when the cap truncates.
 4. Fetch heads concurrently with semaphore; collect successful `HeadInfo` rows.
 5. Call `classifier.classify_candidates`. On `ClassificationError` → raise `DiscoveryError("classification_failed", detail)`.
 6. Filter by `min_score` (default `settings.discovery_min_score`, 0.5). Sort by score desc. Cap at `max_candidates` (default `settings.discovery_max_returned`, 20).
@@ -309,7 +315,7 @@ No new packages. `selectolax` (Phase 2), `httpx` (Phase 2), Pydantic (Phase 1), 
   - `POST /api/sites {name, base_url: "https://ysifc.com/", needs_browser: true}` (no `pages`)
   - `POST /api/sites/1/discover` returns a `DiscoveryResult` with HTML program pages and (if present) PDF brochures as candidates
   - User-picked HTML candidate added via `POST /api/sites/1/pages` → scheduler crawls → offerings populated → `/api/matches?kid_id=1` returns real-data matches (with age-gate clamp helping)
-  - Cost per discovery call under $0.05; typical ~$0.02
+  - Cost per discovery call under $0.05; typical ~$0.02. Measured via the existing `AnthropicClient`'s `cost_usd` on `ExtractionResult`/classification return value — the classifier logs one structured line per call with `input_tokens`, `output_tokens`, `cost_usd`. Smoke script greps the log or inspects the response to verify.
 - No silent failures: discovery errors surface in API response body (502) and in the structured log
 
 ## 8. Open questions / deferred
