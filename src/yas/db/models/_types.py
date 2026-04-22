@@ -92,3 +92,13 @@ class EnrollmentStatus(StrEnum):
     waitlisted = "waitlisted"
     completed = "completed"
     cancelled = "cancelled"
+
+
+class DayOfWeek(StrEnum):
+    mon = "mon"
+    tue = "tue"
+    wed = "wed"
+    thu = "thu"
+    fri = "fri"
+    sat = "sat"
+    sun = "sun"
