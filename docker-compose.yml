@@ -1,0 +1,39 @@
+services:
+  yas-migrate:
+    build: .
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    env_file: .env
+    volumes:
+      - ./data:/data
+    restart: "no"
+
+  yas-worker:
+    build: .
+    command: ["python", "-m", "yas", "worker"]
+    env_file: .env
+    volumes:
+      - ./data:/data
+    depends_on:
+      yas-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  yas-api:
+    build: .
+    command: ["python", "-m", "yas", "api"]
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    depends_on:
+      yas-migrate:
+        condition: service_completed_successfully
+      yas-worker:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

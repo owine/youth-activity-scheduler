@@ -3,8 +3,9 @@ FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    UV_SYSTEM_PYTHON=1 \
-    UV_NO_CACHE=1
+    UV_NO_CACHE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl sqlite3 \
@@ -28,8 +29,7 @@ RUN uv sync --frozen --no-dev
 RUN mkdir -p /data
 
 ENV YAS_DATABASE_URL=sqlite+aiosqlite:////data/activities.db \
-    YAS_DATA_DIR=/data \
-    PYTHONPATH=/app/src
+    YAS_DATA_DIR=/data
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
