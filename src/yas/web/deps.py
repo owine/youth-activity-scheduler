@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.config import Settings
 from yas.crawl.fetcher import Fetcher
+from yas.geo.client import Geocoder
 from yas.llm.client import LLMClient
 
 
@@ -16,8 +17,11 @@ class AppState:
         settings: Settings,
         fetcher: Fetcher | None = None,
         llm: LLMClient | None = None,
+        *,
+        geocoder: Geocoder | None = None,
     ) -> None:
         self.engine = engine
         self.settings = settings
         self.fetcher = fetcher
         self.llm = llm
+        self.geocoder = geocoder
