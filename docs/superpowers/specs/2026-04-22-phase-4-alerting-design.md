@@ -181,10 +181,16 @@ async def enqueue_digest(session, kid_id, for_date, payload) -> int: ...
 ```
 
 **dedup_key format** (extends Phase 3 convention):
-- `{type}:{kid_id or "-"}:{offering_id or site_id or "-"}`
-- For countdowns, append `scheduled_for` ISO bucket (minute precision) so the three rows don't collide with each other: `reg_opens_24h:{kid_id}:{offering_id}:{scheduled_for_iso_minute}`
-- For digest, append `for_date`: `digest:{kid_id}:{for_date_iso}`
-- For site_stagnant, the key is `site_stagnant:-:{site_id}` — no kid — one alert per stagnant site regardless of how many kids are affected
+- General: `{type}:{kid_id or "-"}:{offering_id or site_id or "-"}`
+- `new_match`: `new_match:{kid_id}:{offering_id}` — identical from pipeline-path and matcher-path rematch calls, so either ordering dedups correctly
+- `watchlist_hit`: `watchlist_hit:{kid_id}:{offering_id}`
+- Countdowns: append `scheduled_for` ISO bucket (minute precision) so the three rows don't collide: `reg_opens_24h:{kid_id}:{offering_id}:{scheduled_for_iso_minute}`
+- `digest`: append `for_date`: `digest:{kid_id}:{for_date_iso}`
+- `site_stagnant`: `site_stagnant:-:{site_id}` — no kid; one alert per stagnant site regardless of affected-kid count
+- `no_matches_for_kid`: `no_matches_for_kid:{kid_id}:-`
+- `crawl_failed`: `crawl_failed:-:{site_id}` — one alert per site escalation, not per failed page
+- `schedule_posted`: `schedule_posted:-:{site_id}:{page_id}` — rolls into digest only
+- `push_cap` (consolidated excess): `push_cap:{kid_id}:{hour_bucket_iso}` — see §3.7
 
 Dedup behavior: if an UNSENT row exists with the same key, the enqueuer **updates** the row's `payload_json` and `scheduled_for` (for countdown-style update) rather than inserting. Sent rows don't dedup — they're history.
 
@@ -275,7 +281,7 @@ def should_rate_limit_push(sent_count: int, max_per_hour: int) -> bool: ...
 
 Applied only to push-channel routings (ntfy + Pushover combined). Email uncapped.
 
-**Excess handling:** when a push group would exceed the cap, the worker skips push for that group AND inserts a single consolidated push ("N new alerts for {kid.name} — see dashboard") with `dedup_key="push_cap:{kid_id}:{hour_bucket}"` so successive hits within the same hour don't re-spam. Email side of the same group still delivers uncapped.
+**Excess handling:** when a push group would exceed the cap, the worker skips push for that group AND enqueues a single consolidated push with `dedup_key="push_cap:{kid_id}:{hour_bucket}"` where `hour_bucket = now_utc.strftime("%Y-%m-%dT%H")`. On successive hits within the same hour, the dedup-key collision means the enqueuer **updates** the existing unsent row's `payload_json.count` (incrementing) and `payload_json.alert_type_counts` (per-type tally), rather than inserting a duplicate. Subject/body render at send time using the current count. Email side of the same group still delivers uncapped.
 
 ### 3.8 Quiet hours — `src/yas/alerts/rate_limit.py`
 
@@ -368,13 +374,19 @@ Reads `alert_routing` table (created in Phase 1 migration; currently unused). On
 | `no_matches_for_kid` | (none — digest only) |
 | `digest` | email |
 
-"push" resolves to the first configured channel with `NotifierCapability.push`. For `reg_opens_now` the routing layer prefers a channel with `push_emergency` capability (Pushover), falling back to `push` with a downgrade log line if Pushover isn't configured.
+"push" resolves to the first configured channel with `NotifierCapability.push`. For `reg_opens_now` the routing layer prefers a channel with `push_emergency` capability (Pushover), falling back to `push` with a downgrade log line if Pushover isn't configured. Downgrades also enqueue a `schedule_posted`-equivalent note for the next digest so the user sees "we couldn't emergency-push; Pushover not configured" in context, not just in logs.
 
 ### 3.11 Digest
 
 **`daily_digest_loop`** at `alert_digest_time_utc` (07:00 UTC). Same tick-check pattern as the Phase 3 sweep loop. Per active kid:
 
-1. Gather past-24h events + registration calendar + delivery failures + stagnant-site ids.
+1. Gather data:
+   - **New matches**: `matches` rows where `computed_at >= now - 24h` AND `matches.kid_id = kid.id`
+   - **Starting soon**: active offerings matched to this kid with `start_date IN (today, today + 14d]`
+   - **Registration calendar**: active offerings matched to this kid with `registration_opens_at IN (now, now + 14d]`
+   - **Delivery failures**: `alerts` rows where `skipped=true AND sent_at >= previous_digest_timestamp_for_kid OR now - 24h, whichever is earlier`. `previous_digest_timestamp_for_kid` is the most recent `alerts.sent_at` where `type=digest AND kid_id=this kid`.
+   - **Stagnant site ids**: from today's `detect_stagnant_sites()` result
+   - **Silent page changes**: `schedule_posted` alerts scheduled in the last 24h (always skipped from direct delivery per routing; digest is their only surface)
 2. LLM top-line via `llm_summary.generate_top_line` with cost-cap gate. Falls back to templated `"{kid.name}'s activities — {n_new} new matches, {n_soon_reg} opening soon"` on any failure.
 3. Render `digest.html.j2` + `digest.txt.j2`.
 4. `enqueue_digest(kid_id, today, payload={subject, body_plain, body_html})`.
@@ -515,6 +527,7 @@ ntfy, Pushover, ForwardEmail all use existing `httpx`.
 
 `scripts/smoke_phase4.sh`:
 
+- Adds a **Mailpit sidecar** to `docker-compose.yml` (image `axllent/mailpit`, published :1025 SMTP + :8025 web UI). Not a Python dep — a compose service. Disabled in production compose; only used by this smoke script.
 - Configures email via Mailpit sidecar (catches all outbound SMTP; web UI at :8025 for inspection) OR ForwardEmail when `FORWARDEMAIL_SMOKE=1`
 - Configures ntfy against `https://ntfy.sh/<random-topic>` (subscribe before running)
 - Configures Pushover from real env (optional; skipped if `YAS_PUSHOVER_USER_KEY` absent)
