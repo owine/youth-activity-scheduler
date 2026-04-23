@@ -25,3 +25,4 @@ class HouseholdSettings(Base):
     smtp_config_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     ha_config_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     ntfy_config_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    pushover_config_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
