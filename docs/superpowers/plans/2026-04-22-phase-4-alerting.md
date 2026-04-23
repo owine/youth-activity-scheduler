@@ -1702,7 +1702,7 @@ This task is substantial enough to merit subagent-driven execution. The implemen
    - ForwardEmail transport against `respx`: assert POST to `https://api.forwardemail.net/v1/emails`, Basic Auth header with token from config's env var, form fields `from`, `to`, `subject`, `text`, `html`
    - `EmailChannel` selects transport from `transport` config field; missing transport → ValueError
    - Both transports produce `SendResult(ok=True, transient_failure=False, detail=...)` on success
-   - SMTP transport: 4xx SMTP code → non-transient; 5xx / connection refused / timeout → transient
+   - SMTP transport: 5xx SMTP code → non-transient (permanent, per RFC 5321); 4xx / connection refused / timeout → transient
    - ForwardEmail transport: 4xx (not 429) → non-transient; 429 / 5xx / timeout → transient
 
 2. Implement the email module with a shared `_build_email(subject, from_addr, to_addrs, text, html) -> email.message.EmailMessage` helper that produces multipart/alternative. Both transports send this.
