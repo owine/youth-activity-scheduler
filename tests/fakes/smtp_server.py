@@ -5,6 +5,7 @@ aiosmtplib. Spin up the server in a fixture; it records every message."""
 
 from __future__ import annotations
 
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -44,15 +45,33 @@ class FakeSMTPServer:
     captured: list[CapturedMessage] = field(default_factory=list)
 
 
+def _free_port() -> int:
+    """Allocate a free TCP port on 127.0.0.1 and immediately release it.
+
+    Note: This is intentionally a pre-allocate-and-close pattern (TOCTOU race).
+    The idiomatic approach would be Controller(port=0) and reading the bound port
+    from controller.server.sockets[0].getsockname()[1] after start(). However,
+    aiosmtpd's _trigger_server() calls create_connection() back to (hostname, port)
+    during start(), which fails with EADDRNOTAVAIL when port=0 is given (it tries
+    to connect to port 0 rather than the OS-assigned port). This is an aiosmtpd
+    design limitation that prevents the port=0 idiom. The TOCTOU window is
+    negligible in a loopback test context.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 @asynccontextmanager
 async def fake_smtp_server() -> AsyncIterator[FakeSMTPServer]:
     captured: list[CapturedMessage] = []
-    controller = Controller(_Handler(captured), hostname="127.0.0.1", port=0)
+    port = _free_port()
+    controller = Controller(_Handler(captured), hostname="127.0.0.1", port=port)
     controller.start()
     try:
         yield FakeSMTPServer(
             host=controller.hostname,
-            port=controller.server.sockets[0].getsockname()[1],
+            port=port,
             captured=captured,
         )
     finally:
