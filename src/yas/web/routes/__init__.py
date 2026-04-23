@@ -1,3 +1,4 @@
+from yas.web.routes.alerts import router as alerts_router
 from yas.web.routes.enrollments import router as enrollments_router
 from yas.web.routes.household import router as household_router
 from yas.web.routes.kids import router as kids_router
@@ -7,6 +8,7 @@ from yas.web.routes.unavailability import router as unavailability_router
 from yas.web.routes.watchlist import router as watchlist_router
 
 __all__ = [
+    "alerts_router",
     "enrollments_router",
     "household_router",
     "kids_router",
