@@ -48,6 +48,7 @@ def create_app(
         digest_preview_router,
         enrollments_router,
         household_router,
+        inbox_router,
         kids_router,
         matches_router,
         site_crawls_router,
@@ -62,6 +63,7 @@ def create_app(
     app.include_router(sites_router)
     app.include_router(site_crawls_router)
     app.include_router(household_router)
+    app.include_router(inbox_router)
     app.include_router(kids_router)
     app.include_router(watchlist_router)
     app.include_router(unavailability_router)
