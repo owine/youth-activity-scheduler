@@ -201,22 +201,32 @@ async def test_get_alerts_filter_by_type(client):
 
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_since(client):
-    """GET /api/alerts?since=<datetime> filters by scheduled_for >= since."""
+    """GET /api/alerts?since=<datetime> filters by scheduled_for >= since (excludes earlier alerts)."""
     now = datetime.now(UTC)
-    # Use a cutoff point well into the past to avoid timezone precision issues
-    two_days_ago = (now - timedelta(days=2)).isoformat()
-    # URL-encode the + sign in the ISO format datetime
-    encoded_since = two_days_ago.replace("+", "%2B")
+    # Use a cutoff point that falls between alert 1 (1 day ago) and earlier
+    # The cutoff is 1.5 days ago, so only alerts from the last 1.5 days are included
+    # Alert 1 is 1 day ago (included), alerts 2,3,4 are within 1.5 days (included)
+    # But we need to test that earlier alerts ARE excluded.
+    # Since our fixture has alert 1 at 1 day ago, let's use a cutoff between
+    # the beginning of time and 1 day ago... Actually, simpler: use 0.5 days ago
+    # This includes: alert 2 (1 hour ago), alert 3 (now), alert 4 (1 day future)
+    # This excludes: alert 1 (1 day ago < 0.5 days ago)
+    half_day_ago = (now - timedelta(hours=12)).isoformat()
+    encoded_since = half_day_ago.replace("+", "%2B")
     r = await client.get(f"/api/alerts?since={encoded_since}")
     assert r.status_code == 200
     body = r.json()
-    # All 4 alerts (1 is 1 day ago, others are recent) should be >= 2 days ago
-    assert body["total"] == 4
+    # Should include alerts 2, 3, 4 but exclude alert 1 (which is 1 day ago)
+    assert body["total"] == 3
+    # Verify that alert 1 is not in the results
+    alert_ids = {item["id"] for item in body["items"]}
+    assert 1 not in alert_ids
+    assert {2, 3, 4} == alert_ids
 
 
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_until(client):
-    """GET /api/alerts?until=<datetime> filters by scheduled_for <= until."""
+    """GET /api/alerts?until=<datetime> filters by scheduled_for <= until (excludes later alerts)."""
     now = datetime.now(UTC)
     one_hour_ago = (now - timedelta(hours=1)).isoformat()
     # URL-encode the + sign in the ISO format datetime
@@ -224,9 +234,50 @@ async def test_get_alerts_filter_by_until(client):
     r = await client.get(f"/api/alerts?until={encoded_until}")
     assert r.status_code == 200
     body = r.json()
-    # Alerts 1, 2 are scheduled at or before 1 hour ago
-    # Alerts 3, 4 are after (now and 1 day from now)
+    # Alerts 1 (1 day ago), 2 (1 hour ago) are at or before 1 hour ago
+    # Alerts 3 (now), 4 (1 day future) are after 1 hour ago, so excluded
     assert body["total"] == 2
+    alert_ids = {item["id"] for item in body["items"]}
+    assert {1, 2} == alert_ids
+
+
+@pytest.mark.asyncio
+async def test_get_alerts_filter_by_since_and_until(client):
+    """GET /api/alerts?since=&until= with both params filters date range intersection."""
+    now = datetime.now(UTC)
+    # Define a range: 2 days ago to 2 hours ago
+    # Alert 1 (1 day ago) is in range
+    # Alert 2 (1 hour ago) is OUTSIDE (too recent, after 2 hours ago)
+    # Alert 3 (now) is OUTSIDE (too recent, after 2 hours ago)
+    # Alert 4 (1 day future) is OUTSIDE (too far in future, after 2 hours ago)
+    # So only alert 1 should be returned... but wait, let me reconsider.
+    # Actually, let's define: since=3 days ago, until=12 hours ago
+    # Alert 1 (1 day ago): within range? (3 days ago <= 1 day ago <= 12 hours ago)? YES
+    # Alert 2 (1 hour ago): within range? NO (after 12 hours ago)
+    # Alert 3 (now): within range? NO (after 12 hours ago)
+    # Alert 4 (1 day future): within range? NO (after 12 hours ago)
+    # So only alert 1 should match.
+
+    # But the spec says "seeds 4 alerts across a wide time span", so we're
+    # testing with the existing 4 alerts. Let's use:
+    # since = 2 days ago (includes alerts 1,2,3,4)
+    # until = 30 minutes ago (excludes alert 3 at now and alert 4 at future)
+    # This should include only alerts 1, 2 which are both before 30 min ago.
+
+    since_dt = (now - timedelta(days=2)).isoformat()
+    until_dt = (now - timedelta(minutes=30)).isoformat()
+    encoded_since = since_dt.replace("+", "%2B")
+    encoded_until = until_dt.replace("+", "%2B")
+    r = await client.get(f"/api/alerts?since={encoded_since}&until={encoded_until}")
+    assert r.status_code == 200
+    body = r.json()
+    # Alert 1 (1 day ago): 2 days ago <= 1 day ago <= 30 min ago? YES
+    # Alert 2 (1 hour ago): 2 days ago <= 1 hour ago <= 30 min ago? YES
+    # Alert 3 (now): 2 days ago <= now <= 30 min ago? NO (now > 30 min ago)
+    # Alert 4 (1 day future): 2 days ago <= 1 day future <= 30 min ago? NO
+    assert body["total"] == 2
+    alert_ids = {item["id"] for item in body["items"]}
+    assert {1, 2} == alert_ids
 
 
 @pytest.mark.asyncio

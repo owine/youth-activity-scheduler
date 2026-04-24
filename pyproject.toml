@@ -54,7 +54,6 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B", "SIM"]
-"src/yas/web/routes/**" = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"

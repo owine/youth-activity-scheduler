@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import and_, func, select
@@ -26,13 +26,13 @@ def _engine(req: Request) -> AsyncEngine:
 @router.get("", response_model=AlertListResponse)
 async def list_alerts(
     request: Request,
-    kid_id: int | None = Query(default=None),
-    type: AlertType | None = Query(default=None),
-    status: Literal["pending", "sent", "skipped"] | None = Query(default=None),
-    since: datetime | None = Query(default=None),
-    until: datetime | None = Query(default=None),
-    limit: int = Query(default=25, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    kid_id: Annotated[int | None, Query()] = None,
+    type: Annotated[AlertType | None, Query()] = None,
+    status: Annotated[Literal["pending", "sent", "skipped"] | None, Query()] = None,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AlertListResponse:
     async with session_scope(_engine(request)) as s:
         q = select(Alert)
