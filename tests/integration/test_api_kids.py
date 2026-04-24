@@ -208,6 +208,23 @@ async def test_delete_kid_cascades(client):
 
 
 @pytest.mark.asyncio
+async def test_kid_detail_watchlist_includes_ignore_hard_gates(client):
+    c, engine = client
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
+        await s.flush()
+        s.add(WatchlistEntry(
+            kid_id=1, site_id=None, pattern="baseball", priority="normal",
+            notes=None, active=True, ignore_hard_gates=True,
+        ))
+    r = await c.get("/api/kids/1")
+    assert r.status_code == 200
+    watchlist = r.json()["watchlist"]
+    assert len(watchlist) == 1
+    assert watchlist[0]["ignore_hard_gates"] is True
+
+
+@pytest.mark.asyncio
 async def test_create_kid_rejects_unknown_fields(client):
     c, _ = client
     r = await c.post(
