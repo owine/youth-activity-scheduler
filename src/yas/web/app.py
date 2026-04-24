@@ -50,6 +50,7 @@ def create_app(
         household_router,
         kids_router,
         matches_router,
+        site_crawls_router,
         sites_router,
         unavailability_router,
         watchlist_router,
@@ -59,6 +60,7 @@ def create_app(
     app.include_router(alerts_router)
     app.include_router(digest_preview_router)
     app.include_router(sites_router)
+    app.include_router(site_crawls_router)
     app.include_router(household_router)
     app.include_router(kids_router)
     app.include_router(watchlist_router)
