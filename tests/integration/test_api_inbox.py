@@ -76,6 +76,7 @@ async def test_inbox_includes_alert_with_kid_name_and_summary(client):
     a = body["alerts"][0]
     assert a["kid_name"] == "Sam"
     assert "T-Ball" in a["summary_text"]
+    assert "Sam" in a["summary_text"]
 
 
 @pytest.mark.asyncio
@@ -190,6 +191,7 @@ async def test_inbox_site_activity_counts(client):
     body = r.json()
     assert body["site_activity"]["refreshed_count"] == 1
     assert body["site_activity"]["posted_new_count"] == 1
+    assert body["site_activity"]["stagnant_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -197,3 +199,38 @@ async def test_inbox_malformed_timestamp_returns_422(client):
     c, _ = client
     r = await c.get("/api/inbox/summary", params={"since": "not-a-date", "until": "also-not"})
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_inbox_falls_back_gracefully_for_unknown_stored_alert_type(client):
+    c, engine = client
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
+        s.add(Site(id=1, name="Lil Sluggers", base_url="https://x", needs_browser=False))
+        await s.flush()
+        s.add(
+            Alert(
+                type="some_legacy_type_not_in_enum",
+                kid_id=1,
+                site_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="legacy1",
+                payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
+            )
+        )
+    r = await c.get(
+        "/api/inbox/summary",
+        params={
+            "since": _iso(now - timedelta(days=1)),
+            "until": _iso(now + timedelta(seconds=1)),
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["alerts"]) == 1
+    a = body["alerts"][0]
+    assert a["type"] == "some_legacy_type_not_in_enum"
+    assert isinstance(a["summary_text"], str)
+    assert len(a["summary_text"]) > 0

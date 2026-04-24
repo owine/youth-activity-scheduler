@@ -8,7 +8,7 @@ from yas.db.models._types import AlertType
 
 
 def summarize_alert(
-    alert_type: AlertType,
+    alert_type: AlertType | str,
     *,
     kid_name: str | None,
     payload: dict[str, Any],

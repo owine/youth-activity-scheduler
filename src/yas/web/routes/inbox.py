@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -35,6 +35,9 @@ async def inbox_summary(
     since: Annotated[datetime, Query()],
     until: Annotated[datetime, Query()],
 ) -> InboxSummaryOut:
+    if since >= until:
+        raise HTTPException(status_code=422, detail="since must be before until")
+
     settings = request.app.state.yas.settings
     now = datetime.now(UTC)
     opens_soon_window_end = now + timedelta(days=7)
@@ -57,7 +60,7 @@ async def inbox_summary(
             except ValueError:
                 # Unknown type stored — defensive; summarize_alert handles str too.
                 at = alert.type
-            summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})  # type: ignore[arg-type]
+            summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
             inbox_alerts.append(
                 InboxAlertOut(
                     id=alert.id,
@@ -80,7 +83,7 @@ async def inbox_summary(
         # total_new: matches where computed_at IN [since, until)
         # opening_soon_count: subset whose offering has registration_opens_at IN [now, now+7d]
         per_kid_total_q = (
-            select(Kid.id, Kid.name, func.count(Match.offering_id))
+            select(Kid.id, Kid.name, func.count())
             .join(Match, Match.kid_id == Kid.id)
             .where(Match.computed_at >= since)
             .where(Match.computed_at < until)
@@ -89,7 +92,7 @@ async def inbox_summary(
         per_kid_total_rows = (await s.execute(per_kid_total_q)).all()
 
         per_kid_opens_q = (
-            select(Kid.id, func.count(Match.offering_id))
+            select(Kid.id, func.count())
             .join(Match, Match.kid_id == Kid.id)
             .join(Offering, Offering.id == Match.offering_id)
             .where(Match.computed_at >= since)
