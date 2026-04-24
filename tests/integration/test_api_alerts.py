@@ -352,7 +352,7 @@ async def test_resend_alert_clones_row(client):
 
 @pytest.mark.asyncio
 async def test_alerts_resend_clones_original_payload(client):
-    """Named must-have: resend clones payload, distinct dedup_key, original unchanged."""
+    """Named must-have: resend clones payload, channels, distinct dedup_key, original unchanged."""
     # Get original alert
     r_orig = await client.get("/api/alerts/1")
     original = r_orig.json()
@@ -369,9 +369,11 @@ async def test_alerts_resend_clones_original_payload(client):
     assert original_after["payload_json"] == original["payload_json"]
     assert original_after["sent_at"] == original["sent_at"]
 
-    # Verify cloned has same payload but different dedup_key
+    # Verify cloned has same payload and channels but different dedup_key
     assert cloned["payload_json"] == original["payload_json"]
     assert cloned["payload_json"] is not None
+    assert cloned["channels"] == original["channels"]
+    assert cloned["channels"] is not original["channels"]  # Different list objects
     assert cloned["dedup_key"] != original["dedup_key"]
     assert cloned["dedup_key"].startswith(original["dedup_key"] + ":resend:")
 

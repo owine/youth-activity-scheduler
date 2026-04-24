@@ -114,7 +114,7 @@ async def resend_alert(request: Request, alert_id: int) -> AlertOut:
             kid_id=original.kid_id,
             offering_id=original.offering_id,
             site_id=original.site_id,
-            channels=original.channels,
+            channels=list(original.channels),
             scheduled_for=now,
             sent_at=None,
             skipped=False,
