@@ -135,6 +135,8 @@ async def test_patch_alert_routing_unknown_channel(client):
 async def test_patch_alert_routing_unconfigured_channel(client, caplog):
     """PATCH with known but unconfigured channel → 200 (warning logged)."""
     # ntfy is not configured in the fixture (only email is)
+    # Note: caplog may not fully capture structured logs (structlog),
+    # but we verify that the PATCH succeeds and the channel is accepted
     r = await client.patch(
         "/api/alert_routing/new_match",
         json={"channels": ["email", "pushover"]},
@@ -143,7 +145,23 @@ async def test_patch_alert_routing_unconfigured_channel(client, caplog):
     updated = r.json()
     assert updated["channels"] == ["email", "pushover"]
     # pushover should be in channels even though it's not configured
-    # Warning should have been logged but test passes
+    # A warning is logged (see alert_routing.py line 104-108) but may not be captured by caplog
+
+
+@pytest.mark.asyncio
+async def test_patch_alert_routing_empty_channels(client):
+    """PATCH with empty channels list → 422."""
+    r = await client.patch(
+        "/api/alert_routing/new_match",
+        json={"channels": []},
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    # detail is a list of validation error dicts; check any error message
+    assert any(
+        "channels must not be empty" in str(err.get("msg", ""))
+        for err in (detail if isinstance(detail, list) else [detail])
+    )
 
 
 @pytest.mark.asyncio
