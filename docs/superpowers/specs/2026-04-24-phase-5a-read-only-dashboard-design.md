@@ -102,7 +102,7 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build  # emits /build/dist
+RUN npm run build  # emits /build/dist, with Vite's default hashed-asset layout: dist/index.html + dist/assets/*.{js,css}
 
 FROM python:3.12-slim AS app
 # ... existing python install ...
@@ -110,11 +110,11 @@ COPY --from=frontend-build /build/dist /app/static
 # existing CMD unchanged; FastAPI app factory mounts /app/static
 ```
 
-FastAPI changes (`src/yas/web/app.py`):
+**FastAPI SPA serving — a single mechanism, deliberately.** The spec rejects the "both `StaticFiles(html=True)` at `/` AND a catch-all route" pattern: `StaticFiles` mounted at `/` would shadow `/api/*` 404 responses (it grabs anything that doesn't match a static file and hands back `index.html`, including unknown API paths). Instead:
 
-- Mount `StaticFiles(directory="/app/static", html=True)` at `/` after all API routers are registered. With `html=True`, requests for `/` return `index.html`.
-- Add a catch-all route at the end that returns `/app/static/index.html` for any GET not matching `/api/*`, `/healthz`, `/readyz`, or a static asset. Required so TanStack Router deep links (e.g., `/kids/1/matches`) work on page refresh. Implementation: register last, matches `{full_path:path}`, returns `FileResponse("/app/static/index.html")` when the path doesn't map to a static asset.
-- Order invariant (asserted by a test): API routes resolve before the SPA fallback.
+1. Mount `StaticFiles(directory="/app/static/assets", html=False)` at `/assets`. This serves only the Vite-hashed JS/CSS/font bundles — Vite's default output puts all hashed assets under `dist/assets/` — with long-cache headers.
+2. Register a single SPA fallback route `GET /{full_path:path}` at the END of the router stack. It returns `FileResponse("/app/static/index.html", headers={"Cache-Control": "no-cache"})`. This fires only when no earlier router matched — including `/api/*` (which 404s normally via FastAPI's own router), `/healthz`, `/readyz`, and `/assets/*` (which 404s normally via `StaticFiles`).
+3. Order invariant (asserted by test in §5.1): API routes resolve before the SPA fallback; `/api/nonexistent` returns JSON 404, not the SPA shell.
 
 ### 2.4 Dev loop
 
@@ -169,7 +169,7 @@ new QueryClient({
 **Layout (per mockup A, "digest-style sections"):**
 
 - Header: "What's new this week · Since Apr 17 · 2 kids · 8 sites tracked"
-- **Alerts (N)** — list of rows, most-recent first, typed with coloured badges (`watchlist_hit`, `reg_opens_1h`, `crawl_failed`, etc.). Click a row → opens `AlertDetailDrawer` (shadcn `Sheet`, slides from right). Drawer does not navigate away; preserves the Inbox underneath for fast scan-through.
+- **Alerts (N)** — list of rows, most-recent first, typed with coloured badges (`watchlist_hit`, `reg_opens_1h`, `crawl_failed`, etc.). Click a row → opens `AlertDetailDrawer` (shadcn `Sheet`, slides from right). Drawer does not navigate away; preserves the Inbox underneath for fast scan-through. **Drawer data source:** the drawer reads its content from the already-fetched `useInboxSummary` cache (selecting by alert id from the cached `alerts[]` array). It does NOT issue a separate `GET /api/alerts/{id}` call, because that endpoint returns plain `AlertOut` without the `kid_name` / `summary_text` enrichments the drawer needs. If a 60-second background refetch causes the selected alert to drop out of the window, the drawer continues to render the last-seen state (the row remains in the React component's own `useState` once selected) and shows a small "no longer in current window" notice.
 - **New Matches (N)** — one card per kid showing "{N} new · {M} opening soon". Click a card → navigates to `/kids/:id/matches`.
 - **Site activity** — three-line summary: "6 sites refreshed · 2 posted new schedules · 1 stagnant". Click "stagnant" → `/sites` pre-filtered.
 
@@ -200,7 +200,7 @@ new QueryClient({
 - Click a card → `MatchDetailDrawer` with the full `reasons` breakdown (gates, watchlist_hit, distance miles, score components).
 - Filter bar above the first group: min score slider, site filter dropdown, date-range picker. Filters are URL search params; hitting refresh preserves them. Clear-all link when any filter is active.
 
-**Data:** `GET /api/matches?kid_id=N` + `GET /api/kids/:id` for header. Client-side grouping based on `offering.registration_opens_at` and `offering.start_date` fields already returned by the matches endpoint.
+**Data:** `GET /api/matches?kid_id=N&limit=200` + `GET /api/kids/:id` for header. Client-side grouping based on `offering.registration_opens_at` and `offering.start_date` fields **added to `OfferingSummary` per §4.4**. Note: `/api/matches` currently caps `limit` at 500 and defaults to 50; for 5a the client requests `limit=200` (covers the realistic worst case of one kid with very many matches). If a household exceeds 200 matches per kid, the UI shows a "showing first 200; pagination arrives in 5b" notice in the third (least-urgent) urgency group. Adding pagination UI is explicitly deferred.
 
 #### 3.2.2 Watchlist — `/kids/:id/watchlist`
 
@@ -226,8 +226,8 @@ new QueryClient({
 
 **Data:**
 
-- `GET /api/sites` — existing.
-- `GET /api/sites/:id` — existing (may need `include_pages=true`; confirm during planning).
+- `GET /api/sites` — existing; already returns `pages` on each row, no change needed.
+- `GET /api/sites/:id` — existing; already returns `pages` unconditionally, no change needed.
 - `GET /api/sites/:id/crawls?limit=10` — **new** (§4.2).
 
 ### 3.4 Settings — `/settings`
@@ -290,46 +290,82 @@ If either is malformed → 422 via FastAPI default.
 }
 ```
 
+**Types (names matter — these are new Pydantic models, distinct from existing ones):**
+
+- `InboxSummaryOut` — the top-level response. New.
+- `InboxAlertOut` — the type of `InboxSummaryOut.alerts[]`. **NOT the same as the existing `AlertOut`** from `alerts_schemas.py`. Extends `AlertOut` with two extra fields: `kid_name: str | None` (joined from `kids.name`; null when `kid_id` is null) and `summary_text: str` (server-composed one-liner). The existing `/api/alerts` and `/api/alerts/{id}` endpoints remain unchanged and continue to return `AlertOut`.
+- `InboxKidMatchCountOut` — the type of `new_matches_by_kid[]`. New.
+- `InboxSiteActivityOut` — the type of `site_activity`. New.
+
 **Semantics:**
 
-- `alerts` — `alerts` rows where `scheduled_for IN [since, until)`, ordered by `scheduled_for DESC`, limit 50. Includes skipped alerts (the UI distinguishes them with a badge).
+- `alerts` — `alerts` rows where `scheduled_for IN [since, until)`, ordered by `scheduled_for DESC`, limit 50. Includes skipped alerts (the UI distinguishes them with a badge). Query LEFT JOINs `kids` to populate `kid_name`.
 - `summary_text` — one-line human summary composed server-side so the client doesn't need to understand every alert type's payload shape. Built from `type` + `payload_json` via a small dispatch table; mirrors the template logic already used by the digest builder.
-- `new_matches_by_kid` — one row per active kid. `total_new` = count of `matches` rows with `computed_at IN [since, until)` for that kid. `opening_soon_count` = subset whose linked offering has `registration_opens_at` within the window.
+- `new_matches_by_kid` — one row per active kid. `total_new` = count of `matches` rows with `computed_at IN [since, until)` for that kid. `opening_soon_count` is **future-looking and independent of the inbox window**: it counts the subset of this kid's `total_new` matches whose linked offering has `registration_opens_at IN [now, now + 7d]`. This matches how the UI ("{N} new · {M} opening soon") reads and aligns with the §3.2.1 "Registration opens this week" urgency group definition.
 - `site_activity.refreshed_count` — distinct sites with at least one successful crawl in the window.
 - `site_activity.posted_new_count` — sites with at least one `schedule_posted` alert in the window.
 - `site_activity.stagnant_count` — sites currently flagged stagnant by the existing detector (reuse `yas.alerts.detectors.site_stagnant`).
 
-**Tests:** happy path with seeded data, empty window, one-kid household, malformed timestamp (422), window that crosses zero data.
+**Tests:** happy path with seeded data, empty window, one-kid household, malformed timestamp (422), window that crosses zero data, verify `opening_soon_count` uses future-looking `registration_opens_at` (not window-bounded) via an offering whose registration opens tomorrow.
 
 ### 4.2 `GET /api/sites/{id}/crawls?limit=10`
 
 **New endpoint.** Returns the most recent `N` crawl attempts for one site. 404 if the site doesn't exist.
 
-**Response:** `list[CrawlOut]` with `{id, page_id, started_at, finished_at, status, fetched_bytes, error_message}`.
+**Response:** `list[CrawlRunOut]` — matches the actual `CrawlRun` ORM columns at `src/yas/db/models/crawl_run.py`:
 
-**Semantics:** reads the existing `crawls` table added in Phase 2, no schema changes. `limit` defaults to 10, max 100.
+```
+{
+  "id": 17,
+  "site_id": 3,
+  "started_at": "...",
+  "finished_at": "...",
+  "status": "ok",
+  "pages_fetched": 4,
+  "changes_detected": 2,
+  "llm_calls": 1,
+  "llm_cost_usd": 0.0042,
+  "error_text": null
+}
+```
 
-**Tests:** happy path, unknown site (404), limit validation, empty history.
+All fields from the model; no synthesis. The Site Detail UI renders `pages_fetched`, `changes_detected`, and `status` as the "result summary" column; `llm_calls` / `llm_cost_usd` / `error_text` appear in an expanded-row detail.
+
+**Semantics:** reads the existing `crawl_runs` table added in Phase 2, no schema changes. `limit` defaults to 10, max 100. Ordered by `started_at DESC`.
+
+**Tests:** happy path, unknown site (404), limit validation, empty history, failed crawl with populated `error_text`.
 
 ### 4.3 SPA fallback wiring
 
-Not an endpoint, but a route-order invariant in `src/yas/web/app.py`:
+Not an endpoint, but a route-order invariant in `src/yas/web/app.py` (see §2.3 for the rationale):
 
 1. All `/api/*` routers registered first (unchanged).
 2. `/healthz`, `/readyz` (unchanged).
-3. `StaticFiles(directory=..., html=True)` mounted at `/`.
-4. Catch-all: any GET path that didn't match above returns `FileResponse("/app/static/index.html")`. Implementation pseudocode:
+3. `StaticFiles(directory="/app/static/assets", html=False)` mounted at `/assets`. Hashed assets only.
+4. Catch-all (LAST registered): `GET /{full_path:path}` returns `FileResponse("/app/static/index.html", headers={"Cache-Control": "no-cache"})`. Pseudocode:
    ```python
    @app.get("/{full_path:path}", include_in_schema=False)
    async def spa_fallback(full_path: str) -> FileResponse:
-       return FileResponse(STATIC_DIR / "index.html")
+       return FileResponse(
+           STATIC_DIR / "index.html",
+           headers={"Cache-Control": "no-cache"},
+       )
    ```
-5. **Invariant test:** hit `/api/kids` → JSON (not HTML); hit `/kids/1/matches` → HTML; hit `/api/nonexistent` → 404 JSON (not the SPA shell).
+5. **Invariant test (`tests/integration/test_spa_fallback.py`):** `/api/kids` returns JSON; `/api/nonexistent` returns 404 JSON (not the SPA shell); `/kids/1/matches` returns HTML; `/assets/index-abc123.js` returns 404 in unit-test mode (no static file present) but the route is reached, not shadowed.
 
-### 4.4 Explicit non-changes
+### 4.4 Required extensions to existing schemas
 
-- `HouseholdOut` is NOT extended with notifier config fields in 5a. Settings page shows the placeholder. Adding masked configs is a 5b decision.
-- No new mutation endpoints. No changes to existing endpoints' response shapes.
+These are NOT new endpoints but they ARE backend changes. Each is small (a field or two) and read-only. They must land before the dependent UI does or the frontend will be unimplementable as written.
+
+- **`OfferingSummary`** in `src/yas/web/routes/matches_schemas.py` — add `registration_opens_at: datetime | None` and `site_name: str`. Required by §3.2.1 (urgency grouping by `registration_opens_at`) and §3.2.1 ("Site" column on each match card). Backend implementation: extend the existing `select(Match, Offering)` join to also `JOIN sites ON sites.id = offerings.site_id` and project `Site.name` into `OfferingSummary`. No new endpoint.
+- **`kids_schemas.WatchlistOut`** in `src/yas/web/routes/kids_schemas.py` (the embedded version inside `KidDetailOut`, NOT to be confused with the standalone `watchlist_schemas.WatchlistOut`) — add `ignore_hard_gates: bool`. Required by §3.2.2's "ignores hard gates" flag display. The standalone `WatchlistOut` already has it; the embedded copy is just out of sync.
+- **`HouseholdOut`** in `src/yas/web/routes/household_schemas.py` — add `home_address: str | None` and `home_location_name: str | None`, both populated by joining `locations` on `home_location_id`. Required by §3.4 ("home address, home location name" content). Without this extension, the Settings page can only display a meaningless integer FK. **This intentionally contradicts the previous draft's "no changes to existing endpoint shapes" rule** — that rule was wrong; the rule that survives is "no NEW endpoints unless §4.1/4.2; existing endpoints may grow optional fields."
+
+### 4.5 Explicit non-changes
+
+- `HouseholdOut` is NOT extended with notifier config fields (`smtp_config_json`, etc.) in 5a — different concern from §4.4's address/name addition. Settings page shows a placeholder for notifier config; adding masked configs is a 5b decision.
+- No new mutation endpoints.
+- `AlertOut` in `alerts_schemas.py` is NOT extended — the inbox endpoint introduces `InboxAlertOut` as a separate, richer type (§4.1). The existing `/api/alerts` and `/api/alerts/{id}` continue to return `AlertOut` unchanged.
 
 ## 5. Engineering details
 
@@ -412,7 +448,7 @@ New frontend gates:
 
 New integration gate:
 
-- `scripts/e2e_phase5a.sh` — runs the Playwright suite against a full Dockerized stack.
+- `scripts/e2e_phase5a.sh` — runs the Playwright suite against a full Dockerized stack. **Manual gate for 5a** (run on the developer's machine before merge), not wired into automated CI. Reasons: this repo currently has no remote-triggered CI pipeline (no `git remote` configured at the time of writing), and Docker-in-Docker setup for headless Playwright is itself a sub-project. When CI lands in a future phase, the script becomes its primary e2e step. Until then, the merge checklist requires a screenshot or terminal log of a successful local run.
 
 All gates green before merging to `main` via `--no-ff`.
 
@@ -427,8 +463,7 @@ All gates green before merging to `main` via `--no-ff`.
 
 ### 6.2 Open questions (resolved during implementation planning, not now)
 
-- Whether `GET /api/sites/:id` needs an `include_pages=true` flag or whether the existing response already includes pages.
-- Whether `WatchlistOut` should grow a `current_match_count` field server-side, or the client should derive it from `/api/matches?kid_id=N`.
+- Whether `kids_schemas.WatchlistOut` should grow a `current_match_count` field server-side, or the client should derive it from `/api/matches?kid_id=N`. (Independent of §4.4's `ignore_hard_gates` addition.)
 - Whether to use Vitest's `happy-dom` or `jsdom` environment (happy-dom is faster; jsdom has broader API coverage).
 
 ## 7. Success criteria
