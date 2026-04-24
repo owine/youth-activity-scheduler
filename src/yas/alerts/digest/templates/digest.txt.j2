@@ -1,0 +1,33 @@
+{{ top_line }}
+
+{% if payload.under_no_matches_threshold -%}
+We haven't found any activities matching {{ payload.kid_name }} yet. We're still scanning sites and will be in touch as soon as we find something. Back tomorrow.
+{%- else -%}
+{% if payload.new_matches -%}
+NEW MATCHES ({{ payload.new_matches|length }}):
+{% for m in payload.new_matches -%}
+  - {{ m.offering_name }} @ {{ m.site_name }} · {{ m.start_date|rel_date }} · {{ m.price_cents|price }} · score {{ "%.2f"|format(m.score) }}
+{% endfor %}
+{%- endif %}
+{% if payload.starting_soon -%}
+STARTING SOON:
+{% for o in payload.starting_soon -%}
+  - {{ o.offering_name }} starts {{ o.start_date|rel_date }}
+{% endfor %}
+{%- endif %}
+{% if payload.registration_calendar -%}
+REGISTRATION OPENS:
+{% for r in payload.registration_calendar -%}
+  - {{ r.offering_name }} opens {{ r.registration_opens_at|fmt }}
+{% endfor %}
+{%- endif %}
+{% if payload.delivery_failures -%}
+DELIVERY ISSUES:
+{% for f in payload.delivery_failures -%}
+  - {{ f.alert_type }}: {{ f.detail }}
+{% endfor %}
+{%- endif %}
+{% if not payload.new_matches and not payload.starting_soon and not payload.registration_calendar -%}
+No new activity today.
+{%- endif %}
+{%- endif %}

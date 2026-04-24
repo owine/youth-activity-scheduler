@@ -9,10 +9,16 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from yas.alerts.enqueuer import (
+    enqueue_crawl_failed,
+    enqueue_new_match,
+    enqueue_registration_countdowns,
+    enqueue_watchlist_hit,
+)
 from yas.crawl.extractor import extract
 from yas.crawl.fetcher import Fetcher, FetchError
 from yas.crawl.reconciler import reconcile
-from yas.db.models import CrawlRun, Page, Site
+from yas.db.models import CrawlRun, Kid, Match, Offering, Page, Site
 from yas.db.models._types import CrawlStatus
 from yas.db.session import session_scope
 from yas.llm.client import ExtractionError, LLMClient
@@ -134,6 +140,7 @@ async def _do_crawl(
     # extractor/reconciler-adjacent types.
     from yas.matching.matcher import rematch_offering
 
+    tick_start = datetime.now(UTC)
     async with session_scope(engine) as s:
         page_row = (await s.execute(select(Page).where(Page.id == page.id))).scalar_one()
         reconcile_result = await reconcile(s, page_row, ex.offerings)
@@ -148,6 +155,63 @@ async def _do_crawl(
         # check and any stale match rows become invisible on read.
         for oid in reconcile_result.new + reconcile_result.updated:
             await rematch_offering(s, oid)
+
+        # --- Alert hooks ---
+        # After all rematches, fire alerts for fresh matches from this tick.
+        for oid in reconcile_result.new + reconcile_result.updated:
+            offering_row = (
+                await s.execute(select(Offering).where(Offering.id == oid))
+            ).scalar_one()
+            fresh_matches = (
+                (
+                    await s.execute(
+                        select(Match).where(
+                            Match.offering_id == oid,
+                            Match.computed_at >= tick_start,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for match in fresh_matches:
+                kid_row = (await s.execute(select(Kid).where(Kid.id == match.kid_id))).scalar_one()
+                watchlist_hit = (match.reasons or {}).get("watchlist_hit")
+                if watchlist_hit:
+                    await enqueue_watchlist_hit(
+                        s,
+                        kid_id=match.kid_id,
+                        offering_id=oid,
+                        watchlist_entry_id=watchlist_hit["entry_id"],
+                        reasons=match.reasons,
+                    )
+                elif match.score >= kid_row.alert_score_threshold:
+                    await enqueue_new_match(
+                        s,
+                        kid_id=match.kid_id,
+                        offering_id=oid,
+                        score=match.score,
+                        reasons=match.reasons,
+                    )
+            # Registration countdown alerts for matched kids.
+            # Normalise to UTC-aware for comparison (SQLite may return naive datetimes).
+            reg_opens = offering_row.registration_opens_at
+            if reg_opens is not None and reg_opens.tzinfo is None:
+                reg_opens = reg_opens.replace(tzinfo=UTC)
+            if reg_opens is not None and reg_opens > datetime.now(UTC):
+                for match in fresh_matches:
+                    await enqueue_registration_countdowns(
+                        s,
+                        offering_id=oid,
+                        kid_id=match.kid_id,
+                        opens_at=reg_opens,
+                    )
+        log.info(
+            "pipeline.alerts_enqueued",
+            site_id=site.id,
+            page_id=page.id,
+            affected_offerings=len(reconcile_result.new + reconcile_result.updated),
+        )
 
     for oid in reconcile_result.new:
         log.info("offering.new", offering_id=oid, site_id=site.id)
@@ -179,6 +243,19 @@ async def _apply_failure(engine: AsyncEngine, page: Page, site: Site, *, error_t
         row.next_check_at = datetime.now(UTC) + timedelta(
             seconds=site.default_cadence_s * backoff_mul
         )
+        if row.consecutive_failures == 3:
+            await enqueue_crawl_failed(
+                s,
+                site_id=site.id,
+                consecutive_failures=3,
+                last_error=error_text,
+            )
+            log.warning(
+                "pipeline.crawl_failed_alert",
+                site_id=site.id,
+                page_id=page.id,
+                consecutive_failures=3,
+            )
 
 
 async def _apply_unchanged(engine: AsyncEngine, page: Page, site: Site) -> None:

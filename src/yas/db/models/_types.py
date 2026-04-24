@@ -76,6 +76,10 @@ class AlertType(StrEnum):
     schedule_posted = "schedule_posted"
     crawl_failed = "crawl_failed"
     digest = "digest"
+    # Phase 4 additions
+    site_stagnant = "site_stagnant"
+    no_matches_for_kid = "no_matches_for_kid"
+    push_cap = "push_cap"
 
 
 class WatchlistPriority(StrEnum):

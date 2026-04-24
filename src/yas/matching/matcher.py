@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from yas.alerts.enqueuer import enqueue_new_match, enqueue_watchlist_hit
 from yas.db.models import (
     Enrollment,
     HouseholdSettings,
@@ -21,6 +22,7 @@ from yas.db.models import (
 )
 from yas.db.models._types import OfferingStatus
 from yas.geo.distance import great_circle_miles
+from yas.logging import get_logger
 from yas.matching.aliases import INTEREST_ALIASES
 from yas.matching.gates import (
     GateResult,
@@ -32,6 +34,8 @@ from yas.matching.gates import (
 )
 from yas.matching.scoring import compute_score
 from yas.matching.watchlist import matches_watchlist
+
+log = get_logger("yas.matching.matcher")
 
 
 @dataclass(frozen=True)
@@ -230,9 +234,20 @@ async def _evaluate_pair(
 
 
 async def _upsert_match(
-    session: AsyncSession, kid_id: int, offering_id: int, score: float, reasons: dict[str, Any]
+    session: AsyncSession,
+    kid_id: int,
+    offering_id: int,
+    score: float,
+    reasons: dict[str, Any],
+    *,
+    kid: Kid,
 ) -> bool:
-    """Returns True if new (insert), False if existing row updated."""
+    """Returns True if new (insert), False if existing row updated.
+
+    On fresh inserts fires alert enqueue calls so the sweep path (rematch_kid /
+    rematch_all_active_kids) also produces alerts. The pipeline path fires its
+    own enqueue AFTER the session commits; the shared dedup_key ensures both
+    paths converge to a single alerts row."""
     existing = (
         await session.execute(
             select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
@@ -249,6 +264,24 @@ async def _upsert_match(
                 computed_at=now,
             )
         )
+        # Enqueue alerts for fresh inserts (sweep path).
+        watchlist_hit = (reasons or {}).get("watchlist_hit")
+        if watchlist_hit:
+            await enqueue_watchlist_hit(
+                session,
+                kid_id=kid_id,
+                offering_id=offering_id,
+                watchlist_entry_id=watchlist_hit["entry_id"],
+                reasons=reasons,
+            )
+        elif score >= kid.alert_score_threshold:
+            await enqueue_new_match(
+                session,
+                kid_id=kid_id,
+                offering_id=offering_id,
+                score=score,
+                reasons=reasons,
+            )
         return True
     existing.score = score
     existing.reasons = reasons
@@ -298,7 +331,7 @@ async def rematch_kid(
         )
         key = (kid_id, off.id)
         if include:
-            inserted = await _upsert_match(session, kid_id, off.id, score, reasons)
+            inserted = await _upsert_match(session, kid_id, off.id, score, reasons, kid=kid)
             (result.new if inserted else result.updated).append(key)
         else:
             if await _delete_match_if_exists(session, kid_id, off.id):
@@ -326,7 +359,7 @@ async def rematch_offering(
         )
         key = (kid.id, offering_id)
         if include:
-            inserted = await _upsert_match(session, kid.id, offering_id, score, reasons)
+            inserted = await _upsert_match(session, kid.id, offering_id, score, reasons, kid=kid)
             (result.new if inserted else result.updated).append(key)
         else:
             if await _delete_match_if_exists(session, kid.id, offering_id):

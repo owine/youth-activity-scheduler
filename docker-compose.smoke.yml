@@ -1,0 +1,11 @@
+services:
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"  # SMTP listener
+      - "8025:8025"  # Web UI
+    restart: unless-stopped
+
+  yas-worker:
+    depends_on:
+      - mailpit

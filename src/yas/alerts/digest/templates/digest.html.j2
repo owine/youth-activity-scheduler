@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Activity Digest — {{ payload.for_date }}</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 16px;">
+
+<p style="font-size: 1.1em; font-weight: bold;">{{ top_line }}</p>
+
+{% if payload.under_no_matches_threshold %}
+<p>We haven't found any activities matching <strong>{{ payload.kid_name }}</strong> yet.
+We're still scanning sites and will be in touch as soon as we find something. Back tomorrow.</p>
+{% else %}
+
+{% if payload.new_matches %}
+<h1 style="font-size: 1em; border-bottom: 1px solid #ccc;">New Matches ({{ payload.new_matches|length }})</h1>
+<ul>
+  {% for m in payload.new_matches %}
+  <li>
+    <strong>{{ m.offering_name }}</strong>
+    {% if m.site_name %} @ {{ m.site_name }}{% endif %}
+    &middot; {{ m.start_date|rel_date }}
+    &middot; {{ m.price_cents|price }}
+    &middot; score {{ "%.2f"|format(m.score) }}
+    {% if m.registration_url %}
+    &middot; <a href="{{ m.registration_url }}">Register</a>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if payload.starting_soon %}
+<h1 style="font-size: 1em; border-bottom: 1px solid #ccc;">Starting Soon</h1>
+<ul>
+  {% for o in payload.starting_soon %}
+  <li><strong>{{ o.offering_name }}</strong> starts {{ o.start_date|rel_date }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if payload.registration_calendar %}
+<h1 style="font-size: 1em; border-bottom: 1px solid #ccc;">Registration Opens</h1>
+<ul>
+  {% for r in payload.registration_calendar %}
+  <li><strong>{{ r.offering_name }}</strong> opens {{ r.registration_opens_at|fmt }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if payload.delivery_failures %}
+<h1 style="font-size: 1em; border-bottom: 1px solid #ccc; color: #c00;">Delivery Issues</h1>
+<ul>
+  {% for f in payload.delivery_failures %}
+  <li>{{ f.alert_type }}: {{ f.detail }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if not payload.new_matches and not payload.starting_soon and not payload.registration_calendar %}
+<p style="color: #666;">No new activity today.</p>
+{% endif %}
+
+{% endif %}
+
+<hr style="margin-top: 32px;">
+<p style="font-size: 0.8em; color: #999;">Youth Activity Scheduler &middot; {{ payload.for_date }}</p>
+</body>
+</html>

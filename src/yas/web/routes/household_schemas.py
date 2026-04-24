@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -26,3 +28,7 @@ class HouseholdPatch(BaseModel):
     quiet_hours_start: str | None = None
     quiet_hours_end: str | None = None
     daily_llm_cost_cap_usd: float | None = None
+    smtp_config_json: dict[str, Any] | None = None
+    ha_config_json: dict[str, Any] | None = None
+    ntfy_config_json: dict[str, Any] | None = None
+    pushover_config_json: dict[str, Any] | None = None

@@ -43,6 +43,9 @@ def create_app(
         }
 
     from yas.web.routes import (
+        alert_routing_router,
+        alerts_router,
+        digest_preview_router,
         enrollments_router,
         household_router,
         kids_router,
@@ -52,6 +55,9 @@ def create_app(
         watchlist_router,
     )
 
+    app.include_router(alert_routing_router)
+    app.include_router(alerts_router)
+    app.include_router(digest_preview_router)
     app.include_router(sites_router)
     app.include_router(household_router)
     app.include_router(kids_router)

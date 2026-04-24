@@ -384,7 +384,7 @@ Reads `alert_routing` table (created in Phase 1 migration; currently unused). On
    - **New matches**: `matches` rows where `computed_at >= now - 24h` AND `matches.kid_id = kid.id`
    - **Starting soon**: active offerings matched to this kid with `start_date IN (today, today + 14d]`
    - **Registration calendar**: active offerings matched to this kid with `registration_opens_at IN (now, now + 14d]`
-   - **Delivery failures**: `alerts` rows where `skipped=true AND sent_at >= previous_digest_timestamp_for_kid OR now - 24h, whichever is earlier`. `previous_digest_timestamp_for_kid` is the most recent `alerts.sent_at` where `type=digest AND kid_id=this kid`.
+   - **Delivery failures**: `alerts` rows where `skipped=true AND scheduled_for >= previous_digest_timestamp_for_kid OR now - 24h, whichever is earlier`. `previous_digest_timestamp_for_kid` is the most recent `alerts.sent_at` where `type=digest AND kid_id=this kid`. (Uses `scheduled_for` because skipped alerts never stamp `sent_at` — the delivery loop only sets `sent_at` on successful sends.)
    - **Stagnant site ids**: from today's `detect_stagnant_sites()` result
    - **Silent page changes**: `schedule_posted` alerts scheduled in the last 24h (always skipped from direct delivery per routing; digest is their only surface)
 2. LLM top-line via `llm_summary.generate_top_line` with cost-cap gate. Falls back to templated `"{kid.name}'s activities — {n_new} new matches, {n_soon_reg} opening soon"` on any failure.

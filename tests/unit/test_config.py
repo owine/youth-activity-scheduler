@@ -93,3 +93,38 @@ def test_discovery_settings_overrides(monkeypatch):
     s = _settings()
     assert s.discovery_max_candidates == 30
     assert s.discovery_min_score == 0.7
+
+
+def test_alert_settings_defaults(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    assert s.alerts_enabled is True
+    assert s.alert_delivery_tick_s == 60
+    assert s.alert_coalesce_normal_s == 600
+    assert s.alert_max_pushes_per_hour == 5
+    assert s.alert_digest_time_utc == "07:00"
+    assert s.alert_detector_time_utc == "09:00"
+    assert s.alert_stagnant_site_days == 30
+    assert s.alert_no_matches_kid_days == 7
+    assert s.alert_countdown_past_due_grace_s == 86400
+    assert s.alert_digest_empty_skip is True
+
+
+def test_alert_channel_secrets_optional(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    s = _settings()
+    # All None by default — channel adapters disable themselves when None.
+    assert s.smtp_password is None
+    assert s.forwardemail_api_token is None
+    assert s.ntfy_auth_token is None
+    assert s.pushover_user_key is None
+    assert s.pushover_app_token is None
+
+
+def test_alert_channel_secrets_from_env(monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("YAS_SMTP_PASSWORD", "hunter2")
+    monkeypatch.setenv("YAS_PUSHOVER_USER_KEY", "u123")
+    s = _settings()
+    assert s.smtp_password == "hunter2"
+    assert s.pushover_user_key == "u123"
