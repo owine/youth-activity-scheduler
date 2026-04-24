@@ -135,6 +135,104 @@ Geocoding: the worker geocodes new location addresses every
 policy. Addresses that can't be resolved are recorded in `geocode_attempts` so
 they're not retried until they change.
 
+## Alerting
+
+Alerts can be delivered via email (SMTP), Home Assistant webhooks, ntfy.sh, and Pushover.
+Channels are configured by storing JSON in household settings.
+
+### Configuring channels
+
+Channels are enabled by setting JSON config in the household via `PATCH /api/household`:
+
+**Email (SMTP):**
+```bash
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{
+    "smtp_config_json": {
+      "transport": "smtp",
+      "host": "smtp.gmail.com",
+      "port": 587,
+      "secure": true,
+      "user": "your-email@gmail.com",
+      "password": "your-app-password",
+      "from_address": "your-email@gmail.com"
+    }
+  }'
+```
+
+Secrets like `password` are resolved from environment variables if set. For example,
+if `smtp_config_json` contains `"password": "$GMAIL_PASSWORD"`, the worker will
+substitute `$GMAIL_PASSWORD` from the environment at send time.
+
+**Pushover:**
+```bash
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{
+    "pushover_config_json": {
+      "user_key": "your-pushover-user-key"
+    }
+  }'
+```
+
+Set environment variable `YAS_PUSHOVER_API_TOKEN` to enable Pushover delivery.
+
+**Home Assistant:**
+```bash
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{
+    "ha_config_json": {
+      "webhook_url": "https://your-ha-instance/api/webhook/yas-alerts"
+    }
+  }'
+```
+
+**ntfy.sh:**
+```bash
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{
+    "ntfy_config_json": {
+      "topic": "my-yas-alerts",
+      "base_url": "https://ntfy.sh"
+    }
+  }'
+```
+
+### Testing email delivery locally
+
+Use the Mailpit SMTP server sidecar for local email testing. Run:
+
+```bash
+docker compose -f docker-compose.yml \
+               $([ $(uname) = Darwin ] && echo '-f docker-compose.macos.yml') \
+               -f docker-compose.smoke.yml \
+               up -d
+```
+
+Configure SMTP to point to Mailpit:
+```bash
+curl -sS -X PATCH localhost:8080/api/household -H 'content-type: application/json' \
+  -d '{
+    "smtp_config_json": {
+      "transport": "smtp",
+      "host": "mailpit",
+      "port": 1025,
+      "secure": false
+    }
+  }'
+```
+
+View sent emails in the Mailpit web UI at http://localhost:8025.
+
+### Previewing digests
+
+Preview what a daily digest would contain (without sending) via:
+
+```bash
+curl -sS 'localhost:8080/api/digest/preview?kid_id=1' | jq .
+```
+
+Response includes `subject`, `body_plain`, and `body_html` fields.
+
 ## Development
 
 ```bash
