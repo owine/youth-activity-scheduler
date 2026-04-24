@@ -53,16 +53,14 @@ async def daily_digest_loop(
             if now.time() >= target and last_run != today:
                 async with session_scope(engine) as session:
                     kids = (
-                        await session.execute(
-                            select(Kid).where(Kid.active.is_(True))
-                        )
-                    ).scalars().all()
+                        (await session.execute(select(Kid).where(Kid.active.is_(True))))
+                        .scalars()
+                        .all()
+                    )
 
                     # Load cost cap from household settings (falls back to default).
                     household = (
-                        await session.execute(
-                            select(HouseholdSettings).limit(1)
-                        )
+                        await session.execute(select(HouseholdSettings).limit(1))
                     ).scalar_one_or_none()
                     cost_cap = (
                         household.daily_llm_cost_cap_usd

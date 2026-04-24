@@ -163,17 +163,19 @@ async def _do_crawl(
                 await s.execute(select(Offering).where(Offering.id == oid))
             ).scalar_one()
             fresh_matches = (
-                await s.execute(
-                    select(Match).where(
-                        Match.offering_id == oid,
-                        Match.computed_at >= tick_start,
+                (
+                    await s.execute(
+                        select(Match).where(
+                            Match.offering_id == oid,
+                            Match.computed_at >= tick_start,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for match in fresh_matches:
-                kid_row = (
-                    await s.execute(select(Kid).where(Kid.id == match.kid_id))
-                ).scalar_one()
+                kid_row = (await s.execute(select(Kid).where(Kid.id == match.kid_id))).scalar_one()
                 watchlist_hit = (match.reasons or {}).get("watchlist_hit")
                 if watchlist_hit:
                     await enqueue_watchlist_hit(

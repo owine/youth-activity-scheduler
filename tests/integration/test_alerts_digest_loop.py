@@ -68,9 +68,7 @@ async def _run_one_tick(engine: Any, settings: Settings, llm: Any = None) -> Non
         # Immediately raise so the loop exits after exactly one tick.
         raise asyncio.CancelledError
 
-    task = asyncio.create_task(
-        _patched_digest_loop(engine, settings, llm, _capturing_sleep)
-    )
+    task = asyncio.create_task(_patched_digest_loop(engine, settings, llm, _capturing_sleep))
     try:
         await asyncio.wait_for(task, timeout=10.0)
     except (TimeoutError, asyncio.CancelledError):
@@ -87,6 +85,7 @@ async def _run_one_tick(engine: Any, settings: Settings, llm: Any = None) -> Non
 async def _patched_digest_loop(engine: Any, settings: Settings, llm: Any, fake_sleep: Any) -> None:
     """Wrap daily_digest_loop with a patched asyncio.sleep."""
     import yas.worker.digest_loop as _mod
+
     original = _mod.asyncio.sleep  # type: ignore[attr-defined]
     _mod.asyncio.sleep = fake_sleep  # type: ignore[attr-defined]
     try:
@@ -122,8 +121,10 @@ async def test_digest_empty_day_skipped_but_logs_debug(tmp_path, capsys):  # typ
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     assert alerts == [], "Empty-day digest must NOT be enqueued"
 
     captured = capsys.readouterr()
@@ -157,8 +158,10 @@ async def test_digest_no_matches_kid_under_threshold_sends(tmp_path):  # type: i
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts) == 1, "Kid under no-matches threshold must get a digest"
 
 
@@ -184,8 +187,10 @@ async def test_digest_loop_enqueues_for_each_active_kid(tmp_path):  # type: igno
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     kid_ids = {a.kid_id for a in alerts}
     assert kid_ids == {1, 2}, "Must enqueue one digest per active kid"
 
@@ -205,8 +210,10 @@ async def test_digest_loop_skips_inactive_kids(tmp_path):  # type: ignore[no-unt
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     assert alerts == [], "Inactive kids must not receive a digest"
 
 
@@ -230,8 +237,10 @@ async def test_digest_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     # Dedup upsert merges duplicate unsent rows into one.
     assert len(alerts) == 1, "Duplicate digest runs must be collapsed to one row"
 
@@ -255,6 +264,8 @@ async def test_digest_empty_skip_false_always_enqueues(tmp_path):  # type: ignor
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts) == 1, "Empty-skip=False must still enqueue on empty days"

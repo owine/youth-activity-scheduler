@@ -85,7 +85,9 @@ def _kid(
     )
 
 
-def _match(kid_id: int, offering_id: int, *, score: float = 0.85, computed_at: datetime | None = None) -> Match:
+def _match(
+    kid_id: int, offering_id: int, *, score: float = 0.85, computed_at: datetime | None = None
+) -> Match:
     return Match(
         kid_id=kid_id,
         offering_id=offering_id,
@@ -152,7 +154,7 @@ async def test_gather_payload_new_matches_only_within_window(tmp_path: Any) -> N
         s.add(_match(kid.id, o_out.id, computed_at=WINDOW_START - timedelta(hours=1)))
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
             s,
@@ -195,12 +197,15 @@ async def test_gather_payload_starting_soon_14_day_window(tmp_path: Any) -> None
         s.add(_match(kid.id, o_far.id, computed_at=WINDOW_START - timedelta(hours=1)))
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert len(payload.starting_soon) == 1
@@ -235,12 +240,15 @@ async def test_gather_payload_registration_calendar_14_day_window(tmp_path: Any)
         s.add(_match(kid.id, o_far.id, computed_at=WINDOW_START - timedelta(hours=1)))
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert len(payload.registration_calendar) == 1
@@ -259,32 +267,44 @@ async def test_gather_payload_delivery_failures_since_last_digest(tmp_path: Any)
         last_digest_sent = WINDOW_START + timedelta(hours=6)
 
         # A digest alert sent after window_start → defines the failure cutoff
-        s.add(_alert(
-            kid.id, AlertType.digest.value,
-            sent_at=last_digest_sent,
-            scheduled_for=last_digest_sent,
-        ))
+        s.add(
+            _alert(
+                kid.id,
+                AlertType.digest.value,
+                sent_at=last_digest_sent,
+                scheduled_for=last_digest_sent,
+            )
+        )
         # Skipped alert AFTER the last digest → should be included
-        s.add(_alert(
-            kid.id, AlertType.new_match.value,
-            skipped=True,
-            scheduled_for=last_digest_sent + timedelta(hours=1),
-            payload_json={"_last_error": "channel timeout"},
-        ))
+        s.add(
+            _alert(
+                kid.id,
+                AlertType.new_match.value,
+                skipped=True,
+                scheduled_for=last_digest_sent + timedelta(hours=1),
+                payload_json={"_last_error": "channel timeout"},
+            )
+        )
         # Skipped alert BEFORE the last digest → should NOT be included
-        s.add(_alert(
-            kid.id, AlertType.new_match.value,
-            skipped=True,
-            scheduled_for=last_digest_sent - timedelta(hours=1),
-        ))
+        s.add(
+            _alert(
+                kid.id,
+                AlertType.new_match.value,
+                skipped=True,
+                scheduled_for=last_digest_sent - timedelta(hours=1),
+            )
+        )
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert len(payload.delivery_failures) == 1
@@ -309,12 +329,15 @@ async def test_gather_payload_site_stagnant_includes_detector_output(tmp_path: A
         s.add(_offering(site.id, page.id, first_seen=stale_first_seen))
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert site.id in payload.site_stagnant_ids
@@ -330,12 +353,15 @@ async def test_gather_payload_under_no_matches_threshold_flag(tmp_path: Any) -> 
         s.add(kid)
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert payload.under_no_matches_threshold is True
@@ -360,12 +386,15 @@ async def test_gather_payload_not_under_threshold_when_matches_exist(tmp_path: A
         s.add(_match(kid.id, o.id))
 
     async with session_scope(engine) as s:
-        kid_row = (await s.get(Kid, kid.id))
+        kid_row = await s.get(Kid, kid.id)
         assert kid_row is not None
         payload = await gather_digest_payload(
-            s, kid_row,
-            window_start=WINDOW_START, window_end=WINDOW_END,
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid_row,
+            window_start=WINDOW_START,
+            window_end=WINDOW_END,
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     assert payload.under_no_matches_threshold is False

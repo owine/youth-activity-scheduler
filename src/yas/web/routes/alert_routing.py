@@ -71,9 +71,7 @@ async def patch_alert_routing(
     async with session_scope(_engine(request)) as s:
         # Fetch the routing row
         row = (
-            await s.execute(
-                select(AlertRouting).where(AlertRouting.type == alert_type.value)
-            )
+            await s.execute(select(AlertRouting).where(AlertRouting.type == alert_type.value))
         ).scalar_one_or_none()
 
         if row is None:
@@ -85,9 +83,7 @@ async def patch_alert_routing(
         # Validate channels if provided
         if body.channels is not None:
             # Load household to check configured channels
-            household = (
-                await s.execute(select(HouseholdSettings).limit(1))
-            ).scalar_one_or_none()
+            household = (await s.execute(select(HouseholdSettings).limit(1))).scalar_one_or_none()
             configured = _get_configured_channels(household)
 
             # Check for unknown channel names

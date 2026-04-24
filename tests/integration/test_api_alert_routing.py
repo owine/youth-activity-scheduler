@@ -29,12 +29,14 @@ async def client(tmp_path, monkeypatch):
         s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
         s.add(Site(id=1, name="X", base_url="https://x"))
         # Seed household settings with email config
-        s.add(HouseholdSettings(
-            id=1,
-            smtp_config_json={"host": "localhost", "port": 587},
-            ntfy_config_json=None,
-            pushover_config_json=None,
-        ))
+        s.add(
+            HouseholdSettings(
+                id=1,
+                smtp_config_json={"host": "localhost", "port": 587},
+                ntfy_config_json=None,
+                pushover_config_json=None,
+            )
+        )
         await s.flush()
     app = create_app(engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

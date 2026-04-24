@@ -19,6 +19,7 @@ _PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _cfg(**kwargs: object) -> dict:
     base: dict = {
         "user_key_env": "YAS_PO_USER",
@@ -56,6 +57,7 @@ def _parse_form(request: httpx.Request) -> dict[str, list[str]]:
 # Capabilities
 # ---------------------------------------------------------------------------
 
+
 def test_pushover_capabilities(monkeypatch):
     monkeypatch.setenv("YAS_PO_USER", "user123")
     monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
@@ -67,6 +69,7 @@ def test_pushover_capabilities(monkeypatch):
 # ---------------------------------------------------------------------------
 # Basic POST
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pushover_posts_to_api_url(monkeypatch):
@@ -109,6 +112,7 @@ async def test_pushover_form_fields_token_user_title_message(monkeypatch):
 # URL fields
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_pushover_url_and_url_title_set_when_url_given(monkeypatch):
     monkeypatch.setenv("YAS_PO_USER", "user123")
@@ -148,6 +152,7 @@ async def test_pushover_url_fields_absent_when_no_url(monkeypatch):
 # ---------------------------------------------------------------------------
 # Priority — named must-have test
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pushover_priority_2_for_reg_opens_now(monkeypatch):
@@ -192,6 +197,7 @@ async def test_pushover_priority_0_for_non_emergency(monkeypatch):
 # ---------------------------------------------------------------------------
 # Devices
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pushover_devices_comma_joined_when_list_nonempty(monkeypatch):
@@ -247,6 +253,7 @@ async def test_pushover_device_field_absent_when_empty_list(monkeypatch):
 # ---------------------------------------------------------------------------
 # Response / SendResult taxonomy
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_pushover_status_1_ok(monkeypatch):
@@ -341,6 +348,7 @@ async def test_pushover_http_4xx_status_0_non_transient(monkeypatch):
 # Transport errors
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_pushover_timeout_is_transient(monkeypatch):
     monkeypatch.setenv("YAS_PO_USER", "user123")
@@ -376,6 +384,7 @@ async def test_pushover_connect_error_is_transient(monkeypatch):
 # ---------------------------------------------------------------------------
 # Missing env vars
 # ---------------------------------------------------------------------------
+
 
 def test_pushover_missing_user_key_env_raises(monkeypatch):
     monkeypatch.delenv("YAS_PO_USER", raising=False)
@@ -416,9 +425,7 @@ async def test_pushover_malformed_json_response(monkeypatch):
     monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
 
     with respx.mock() as m:
-        m.post(_PUSHOVER_URL).mock(
-            return_value=httpx.Response(200, text="<html>error</html>")
-        )
+        m.post(_PUSHOVER_URL).mock(return_value=httpx.Response(200, text="<html>error</html>"))
         ch = PushoverChannel(_cfg())
         result = await ch.send(_msg())
         await ch.aclose()

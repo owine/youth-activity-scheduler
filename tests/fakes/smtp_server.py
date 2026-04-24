@@ -30,11 +30,13 @@ class _Handler:
 
     async def handle_DATA(self, server, session, envelope):
         msg: Message = BytesParser(policy=default_policy).parsebytes(envelope.content)
-        self._sink.append(CapturedMessage(
-            from_addr=envelope.mail_from,
-            to_addrs=tuple(envelope.rcpt_tos),
-            message=cast(EmailMessage, msg),
-        ))
+        self._sink.append(
+            CapturedMessage(
+                from_addr=envelope.mail_from,
+                to_addrs=tuple(envelope.rcpt_tos),
+                message=cast(EmailMessage, msg),
+            )
+        )
         return "250 OK"
 
 

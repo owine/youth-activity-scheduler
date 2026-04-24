@@ -19,6 +19,7 @@ from yas.db.models._types import AlertType
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _msg(
     subject: str = "Test Subject",
     body_plain: str = "Plain body text.",
@@ -36,6 +37,7 @@ def _msg(
 # ---------------------------------------------------------------------------
 # SMTP transport tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_smtp_transport_sends_message():
@@ -128,6 +130,7 @@ async def test_smtp_transport_send_result_detail():
 @pytest.mark.asyncio
 async def test_smtp_4xx_is_transient(monkeypatch):
     """4xx SMTP response → ok=False, transient_failure=True (RFC 5321: retry later)."""
+
     async def _fake_send(*args, **kwargs):
         raise aiosmtplib.SMTPResponseException(450, "Requested mail action not taken")
 
@@ -152,6 +155,7 @@ async def test_smtp_4xx_is_transient(monkeypatch):
 @pytest.mark.asyncio
 async def test_smtp_5xx_is_non_transient(monkeypatch):
     """5xx SMTP response → ok=False, transient_failure=False (RFC 5321: permanent failure)."""
+
     async def _fake_send(*args, **kwargs):
         raise aiosmtplib.SMTPResponseException(554, "Transaction failed")
 
@@ -175,6 +179,7 @@ async def test_smtp_5xx_is_non_transient(monkeypatch):
 @pytest.mark.asyncio
 async def test_smtp_transport_421_transient(monkeypatch):
     """421 (service unavailable) → transient."""
+
     async def _fake_send(*args, **kwargs):
         raise aiosmtplib.SMTPResponseException(421, "Service not available")
 
@@ -198,6 +203,7 @@ async def test_smtp_transport_421_transient(monkeypatch):
 @pytest.mark.asyncio
 async def test_smtp_transport_connect_error_transient(monkeypatch):
     """SMTPConnectError → transient failure."""
+
     async def _fake_send(*args, **kwargs):
         raise aiosmtplib.SMTPConnectError("Connection refused")
 
@@ -221,6 +227,7 @@ async def test_smtp_transport_connect_error_transient(monkeypatch):
 @pytest.mark.asyncio
 async def test_smtp_transport_timeout_transient(monkeypatch):
     """TimeoutError → transient failure."""
+
     async def _fake_send(*args, **kwargs):
         raise TimeoutError()
 
@@ -283,6 +290,7 @@ async def test_smtp_recipients_refused_is_transient():
 # ---------------------------------------------------------------------------
 # ForwardEmail transport tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_forwardemail_transport_posts_to_api(monkeypatch):
@@ -497,6 +505,7 @@ async def test_forwardemail_token_env_missing_raises(monkeypatch):
 # ---------------------------------------------------------------------------
 # EmailChannel tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_email_channel_selects_smtp(monkeypatch):

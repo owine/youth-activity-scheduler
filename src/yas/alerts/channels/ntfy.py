@@ -26,13 +26,9 @@ class NtfyChannel:
         if auth_token_env is not None:
             token = os.environ.get(auth_token_env)
             if token is None:
-                raise ValueError(
-                    f"channel disabled: missing env var {auth_token_env}"
-                )
+                raise ValueError(f"channel disabled: missing env var {auth_token_env}")
             if token == "":
-                raise ValueError(
-                    f"channel disabled: env var {auth_token_env} is set but empty"
-                )
+                raise ValueError(f"channel disabled: env var {auth_token_env} is set but empty")
             self._token: str | None = token
         else:
             self._token = None

@@ -36,7 +36,7 @@ async def test_seed_idempotent(tmp_path):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
     async with session_scope(engine) as s:
-        await seed_default_routing(s)   # second call is a no-op
+        await seed_default_routing(s)  # second call is a no-op
     async with session_scope(engine) as s:
         rows = (await s.execute(select(AlertRouting))).scalars().all()
         assert len(rows) == len(AlertType)
@@ -58,9 +58,11 @@ async def test_get_routing_respects_disabled_flag(tmp_path):
     engine = await _engine(tmp_path)
     async with session_scope(engine) as s:
         await seed_default_routing(s)
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
+            )
+        ).scalar_one()
         row.enabled = False
     async with session_scope(engine) as s:
         _channels, enabled = await get_routing(s, AlertType.new_match)

@@ -78,7 +78,9 @@ async def generate_top_line(
         "starting_soon_count": len(payload.starting_soon),
         "registration_opens_soon_count": len(payload.registration_calendar),
         "top_new_matches": [m.get("offering_name", "") for m in payload.new_matches[:3]],
-        "top_registration_opens": [r.get("offering_name", "") for r in payload.registration_calendar[:3]],
+        "top_registration_opens": [
+            r.get("offering_name", "") for r in payload.registration_calendar[:3]
+        ],
     }
     user = json.dumps(user_json)
 

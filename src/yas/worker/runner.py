@@ -107,9 +107,7 @@ async def run_worker(
     if settings.alerts_enabled and notifiers is None:
         async with session_scope(engine) as s:
             await seed_default_routing(s)
-            household = (
-                await s.execute(select(HouseholdSettings).limit(1))
-            ).scalar_one_or_none()
+            household = (await s.execute(select(HouseholdSettings).limit(1))).scalar_one_or_none()
         notifiers = _build_notifiers(household, settings)
 
     log.info("worker.start")

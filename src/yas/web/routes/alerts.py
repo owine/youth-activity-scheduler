@@ -100,9 +100,7 @@ async def get_alert(request: Request, alert_id: int) -> AlertOut:
 async def resend_alert(request: Request, alert_id: int) -> AlertOut:
     async with session_scope(_engine(request)) as s:
         # Fetch the original alert
-        original = (
-            await s.execute(select(Alert).where(Alert.id == alert_id))
-        ).scalar_one_or_none()
+        original = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
         if original is None:
             raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
 

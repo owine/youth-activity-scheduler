@@ -25,18 +25,33 @@ async def _setup(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with session_scope(engine) as s:
-        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1),
-                  alert_on={"new_match": True, "reg_opens": True}))
-        s.add(Kid(id=2, name="Alex", dob=date(2018, 1, 1),
-                  alert_on={"new_match": False, "reg_opens": True}))
+        s.add(
+            Kid(
+                id=1,
+                name="Sam",
+                dob=date(2019, 5, 1),
+                alert_on={"new_match": True, "reg_opens": True},
+            )
+        )
+        s.add(
+            Kid(
+                id=2,
+                name="Alex",
+                dob=date(2018, 1, 1),
+                alert_on={"new_match": False, "reg_opens": True},
+            )
+        )
         s.add(Site(id=1, name="X", base_url="https://x"))
         await s.flush()
         s.add(Page(id=1, site_id=1, url="https://x/p"))
         await s.flush()
         s.add(
             Offering(
-                id=1, site_id=1, page_id=1,
-                name="Spring Soccer", normalized_name="spring soccer",
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Spring Soccer",
+                normalized_name="spring soccer",
                 program_type=ProgramType.soccer.value,
                 registration_url="https://x/register",
             )
@@ -45,6 +60,7 @@ async def _setup(tmp_path):
 
 
 # --- dedup_key -----------------------------------------------------------------
+
 
 def test_dedup_key_new_match_has_kid_and_offering():
     key = dedup_key_for(AlertType.new_match, kid_id=1, offering_id=42)
@@ -73,12 +89,17 @@ def test_dedup_key_no_matches_for_kid():
 
 # --- enqueue_new_match ---------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_new_match_inserts_first_time(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         aid = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={"k": "v"},
+            s,
+            kid_id=1,
+            offering_id=1,
+            score=0.9,
+            reasons={"k": "v"},
         )
     assert aid is not None
     async with session_scope(engine) as s:
@@ -98,8 +119,8 @@ async def test_enqueue_new_match_updates_on_dedup_hit(tmp_path):
         await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={"v": 2})
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
-        assert len(rows) == 1                              # no duplicate
-        assert rows[0].payload_json["score"] == 0.9         # updated
+        assert len(rows) == 1  # no duplicate
+        assert rows[0].payload_json["score"] == 0.9  # updated
 
 
 @pytest.mark.asyncio
@@ -116,18 +137,24 @@ async def test_enqueue_new_match_respects_kid_alert_on_toggle(tmp_path):
 
 # --- enqueue_watchlist_hit -----------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_watchlist_hit_always_inserts(tmp_path):
     engine = await _setup(tmp_path)
     # Even a kid with new_match=False should still get watchlist alerts.
     async with session_scope(engine) as s:
         aid = await enqueue_watchlist_hit(
-            s, kid_id=2, offering_id=1, watchlist_entry_id=7, reasons={"pattern": "soccer"},
+            s,
+            kid_id=2,
+            offering_id=1,
+            watchlist_entry_id=7,
+            reasons={"pattern": "soccer"},
         )
     assert aid is not None
 
 
 # --- enqueue_registration_countdowns ------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
@@ -135,7 +162,10 @@ async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
     opens_at = datetime.now(UTC) + timedelta(days=3)
     async with session_scope(engine) as s:
         ids = await enqueue_registration_countdowns(
-            s, offering_id=1, kid_id=1, opens_at=opens_at,
+            s,
+            offering_id=1,
+            kid_id=1,
+            opens_at=opens_at,
         )
     assert len(ids) == 3
     async with session_scope(engine) as s:
@@ -156,7 +186,10 @@ async def test_enqueue_registration_countdowns_skips_past_due(tmp_path):
     opens_at = datetime.now(UTC) + timedelta(minutes=30)
     async with session_scope(engine) as s:
         ids = await enqueue_registration_countdowns(
-            s, offering_id=1, kid_id=1, opens_at=opens_at,
+            s,
+            offering_id=1,
+            kid_id=1,
+            opens_at=opens_at,
         )
     assert len(ids) == 1
     async with session_scope(engine) as s:
@@ -195,7 +228,10 @@ async def test_enqueue_registration_countdowns_payload_matches_schema(tmp_path):
     opens_at = datetime.now(UTC) + timedelta(days=3)
     async with session_scope(engine) as s:
         await enqueue_registration_countdowns(
-            s, offering_id=1, kid_id=1, opens_at=opens_at,
+            s,
+            offering_id=1,
+            kid_id=1,
+            opens_at=opens_at,
         )
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
@@ -205,6 +241,7 @@ async def test_enqueue_registration_countdowns_payload_matches_schema(tmp_path):
 
 
 # --- enqueue_crawl_failed ------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
@@ -221,13 +258,14 @@ async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
 
 # --- enqueue_site_stagnant + enqueue_no_matches_for_kid -----------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_site_stagnant_one_per_site(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         await enqueue_site_stagnant(s, site_id=1, days_silent=31)
     async with session_scope(engine) as s:
-        await enqueue_site_stagnant(s, site_id=1, days_silent=32)    # next day
+        await enqueue_site_stagnant(s, site_id=1, days_silent=32)  # next day
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 1
@@ -248,6 +286,7 @@ async def test_enqueue_no_matches_for_kid_one_per_kid(tmp_path):
 
 # --- enqueue_digest ------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_digest_dedups_per_day(tmp_path):
     engine = await _setup(tmp_path)
@@ -256,8 +295,7 @@ async def test_enqueue_digest_dedups_per_day(tmp_path):
     async with session_scope(engine) as s:
         await enqueue_digest(s, kid_id=1, for_date=today, payload=payload)
     async with session_scope(engine) as s:
-        await enqueue_digest(s, kid_id=1, for_date=today,
-                             payload={**payload, "subject": "updated"})
+        await enqueue_digest(s, kid_id=1, for_date=today, payload={**payload, "subject": "updated"})
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 1
@@ -265,6 +303,7 @@ async def test_enqueue_digest_dedups_per_day(tmp_path):
 
 
 # --- enqueue_push_cap ----------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_enqueue_push_cap_dedups_per_hour_bucket(tmp_path):

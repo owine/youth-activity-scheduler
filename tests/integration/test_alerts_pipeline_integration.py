@@ -58,6 +58,7 @@ class FakeFetcher:
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 async def _make_engine(tmp_path: Any, name: str = "alerts.db") -> Any:
     engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/{name}")
     async with engine.begin() as conn:
@@ -136,8 +137,10 @@ async def test_pipeline_enqueues_new_match_alert_on_fresh_match(tmp_path: Any) -
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
         assert len(alerts) == 1, f"Expected 1 new_match alert, got {len(alerts)}"
         assert alerts[0].kid_id == kid_id
 
@@ -183,11 +186,15 @@ async def test_pipeline_enqueues_watchlist_hit_even_when_new_match_disabled(
 
     async with session_scope(engine) as s:
         watchlist_alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.watchlist_hit.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.watchlist_hit.value)))
+            .scalars()
+            .all()
+        )
         new_match_alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
 
     assert len(watchlist_alerts) >= 1, "Expected at least one watchlist_hit alert"
     assert len(new_match_alerts) == 0, "Expected no new_match alert when new_match is disabled"
@@ -228,13 +235,17 @@ async def test_pipeline_enqueues_countdowns_when_offering_has_registration_opens
             AlertType.reg_opens_now.value,
         ]
         countdown_alerts = (
-            await s.execute(
-                select(Alert).where(
-                    Alert.type.in_(countdown_types),
-                    Alert.kid_id == kid_id,
+            (
+                await s.execute(
+                    select(Alert).where(
+                        Alert.type.in_(countdown_types),
+                        Alert.kid_id == kid_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     assert len(countdown_alerts) == 3, (
         f"Expected 3 countdown alerts (24h, 1h, now), got {len(countdown_alerts)}"
@@ -266,8 +277,10 @@ async def test_pipeline_enqueues_crawl_failed_on_third_consecutive_failure(
 
     async with session_scope(engine) as s:
         early_alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value)))
+            .scalars()
+            .all()
+        )
     assert len(early_alerts) == 0, "No crawl_failed alert should exist before the 3rd failure"
 
     # Third failure — alert should now exist.
@@ -278,8 +291,10 @@ async def test_pipeline_enqueues_crawl_failed_on_third_consecutive_failure(
 
     async with session_scope(engine) as s:
         alerts_after_3 = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts_after_3) == 1, (
         f"Expected exactly 1 crawl_failed alert after third failure, got {len(alerts_after_3)}"
     )
@@ -292,8 +307,10 @@ async def test_pipeline_enqueues_crawl_failed_on_third_consecutive_failure(
 
     async with session_scope(engine) as s:
         alerts_after_4 = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.crawl_failed.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts_after_4) == 1, (
         f"Expected still 1 crawl_failed alert after fourth failure (dedup), got {len(alerts_after_4)}"
     )
@@ -331,17 +348,23 @@ async def test_countdown_rewrite_on_registration_date_change(tmp_path: Any) -> N
     # Collect first-pass scheduled_for values.
     async with session_scope(engine) as s:
         v1_alerts = (
-            await s.execute(
-                select(Alert).where(
-                    Alert.kid_id == kid_id,
-                    Alert.type.in_([
-                        AlertType.reg_opens_24h.value,
-                        AlertType.reg_opens_1h.value,
-                        AlertType.reg_opens_now.value,
-                    ]),
+            (
+                await s.execute(
+                    select(Alert).where(
+                        Alert.kid_id == kid_id,
+                        Alert.type.in_(
+                            [
+                                AlertType.reg_opens_24h.value,
+                                AlertType.reg_opens_1h.value,
+                                AlertType.reg_opens_now.value,
+                            ]
+                        ),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         v1_scheduled = {a.type: a.scheduled_for for a in v1_alerts}
     assert len(v1_alerts) == 3
 
@@ -361,7 +384,9 @@ async def test_countdown_rewrite_on_registration_date_change(tmp_path: Any) -> N
     )
     # Use a different visible text so the normalized content hash differs from v1,
     # forcing the pipeline to re-extract instead of short-circuiting on hash match.
-    _PAGE_HTML_V2 = "<!doctype html><html><body><main><h1>Soccer Camp</h1><p>Updated.</p></body></main></html>"
+    _PAGE_HTML_V2 = (
+        "<!doctype html><html><body><main><h1>Soccer Camp</h1><p>Updated.</p></body></main></html>"
+    )
     fetcher_v2 = FakeFetcher(html=_PAGE_HTML_V2)
 
     async with session_scope(engine) as s:
@@ -371,19 +396,25 @@ async def test_countdown_rewrite_on_registration_date_change(tmp_path: Any) -> N
 
     async with session_scope(engine) as s:
         v2_alerts = (
-            await s.execute(
-                select(Alert).where(
-                    Alert.kid_id == kid_id,
-                    Alert.type.in_([
-                        AlertType.reg_opens_24h.value,
-                        AlertType.reg_opens_1h.value,
-                        AlertType.reg_opens_now.value,
-                    ]),
-                    Alert.sent_at.is_(None),
-                    Alert.skipped.is_(False),
+            (
+                await s.execute(
+                    select(Alert).where(
+                        Alert.kid_id == kid_id,
+                        Alert.type.in_(
+                            [
+                                AlertType.reg_opens_24h.value,
+                                AlertType.reg_opens_1h.value,
+                                AlertType.reg_opens_now.value,
+                            ]
+                        ),
+                        Alert.sent_at.is_(None),
+                        Alert.skipped.is_(False),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         v2_scheduled = {a.type: a.scheduled_for for a in v2_alerts}
 
     assert len(v2_alerts) == 3, f"Expected 3 alerts after date change, got {len(v2_alerts)}"
@@ -431,8 +462,10 @@ async def test_enqueue_new_match_dedups_across_pipeline_and_matcher_paths(
 
     async with session_scope(engine) as s:
         new_match_alerts = (
-            await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value))
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
         match_rows = (await s.execute(select(Match))).scalars().all()
 
     # There must be exactly one Match row and exactly one new_match alert.

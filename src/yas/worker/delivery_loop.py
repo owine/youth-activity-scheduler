@@ -34,17 +34,21 @@ async def alert_delivery_loop(
 
                 now = datetime.now(UTC)
                 due_rows = (
-                    await s.execute(
-                        select(Alert)
-                        .where(
-                            Alert.sent_at.is_(None),
-                            Alert.skipped.is_(False),
-                            Alert.scheduled_for <= now,
+                    (
+                        await s.execute(
+                            select(Alert)
+                            .where(
+                                Alert.sent_at.is_(None),
+                                Alert.skipped.is_(False),
+                                Alert.scheduled_for <= now,
+                            )
+                            .order_by(Alert.scheduled_for)
+                            .limit(100)
                         )
-                        .order_by(Alert.scheduled_for)
-                        .limit(100)
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
 
                 due = _apply_grace_window(
                     list(due_rows),

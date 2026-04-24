@@ -15,8 +15,10 @@ def test_send_result_shape():
 
 def test_notifier_message_urgent_default_false():
     m = NotifierMessage(
-        kid_id=1, alert_type=AlertType.new_match,
-        subject="Sub", body_plain="body",
+        kid_id=1,
+        alert_type=AlertType.new_match,
+        subject="Sub",
+        body_plain="body",
     )
     assert m.urgent is False
     assert m.body_html is None
@@ -25,10 +27,13 @@ def test_notifier_message_urgent_default_false():
 @pytest.mark.asyncio
 async def test_fake_notifier_records_sends():
     from tests.fakes.notifier import FakeNotifier
+
     f = FakeNotifier(name="fake", capabilities={NotifierCapability.email})
     msg = NotifierMessage(
-        kid_id=1, alert_type=AlertType.new_match,
-        subject="s", body_plain="b",
+        kid_id=1,
+        alert_type=AlertType.new_match,
+        subject="s",
+        body_plain="b",
     )
     result = await f.send(msg)
     assert f.name == "fake"

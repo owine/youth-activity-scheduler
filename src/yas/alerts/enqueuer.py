@@ -208,18 +208,22 @@ async def enqueue_registration_countdowns(
     """Delete any existing unsent reg_opens_* rows for this (kid, offering) and
     insert up to three fresh ones at T-24h, T-1h, T. Skips past-due schedules."""
     # Load the offering to get its name and registration_url for the payload.
-    offering = (await session.execute(select(Offering).where(Offering.id == offering_id))).scalar_one()
+    offering = (
+        await session.execute(select(Offering).where(Offering.id == offering_id))
+    ).scalar_one()
 
     # Delete prior unsent countdowns for this pair.
     await session.execute(
         delete(Alert).where(
             Alert.kid_id == kid_id,
             Alert.offering_id == offering_id,
-            Alert.type.in_([
-                AlertType.reg_opens_24h.value,
-                AlertType.reg_opens_1h.value,
-                AlertType.reg_opens_now.value,
-            ]),
+            Alert.type.in_(
+                [
+                    AlertType.reg_opens_24h.value,
+                    AlertType.reg_opens_1h.value,
+                    AlertType.reg_opens_now.value,
+                ]
+            ),
             Alert.sent_at.is_(None),
             Alert.skipped.is_(False),
         )
@@ -242,7 +246,9 @@ async def enqueue_registration_countdowns(
         if scheduled_for < now:
             continue
         dk = dedup_key_for(
-            alert_type, kid_id=kid_id, offering_id=offering_id,
+            alert_type,
+            kid_id=kid_id,
+            offering_id=offering_id,
             scheduled_for=scheduled_for,
         )
         aid = await _upsert_alert(

@@ -38,6 +38,7 @@ _MAX_RETRIES = 3  # after attempt 3 → skipped
 # Minimal subject / body renderers (Task 10 will provide rich digest rendering)
 # ---------------------------------------------------------------------------
 
+
 def _render_subject(
     alert_type: str,
     payload: dict[str, Any],
@@ -65,10 +66,12 @@ def _render_body(
 # can exercise it in isolation.
 # ---------------------------------------------------------------------------
 
-_COUNTDOWN_TYPES: frozenset[str] = frozenset({
-    AlertType.reg_opens_24h.value,
-    AlertType.reg_opens_1h.value,
-})
+_COUNTDOWN_TYPES: frozenset[str] = frozenset(
+    {
+        AlertType.reg_opens_24h.value,
+        AlertType.reg_opens_1h.value,
+    }
+)
 
 
 def _apply_grace_window(
@@ -113,6 +116,7 @@ def _apply_grace_window(
 # ---------------------------------------------------------------------------
 # Core orchestrator
 # ---------------------------------------------------------------------------
+
 
 async def send_alert_group(
     session: AsyncSession,
@@ -172,8 +176,7 @@ async def send_alert_group(
     # Push cap check (shared across all push channels) -------------------------
     # Global per-kid push budget across ALL configured push notifiers (not just this alert's routing).
     push_channels = [
-        name for name, n in notifiers.items()
-        if NotifierCapability.push in n.capabilities
+        name for name, n in notifiers.items() if NotifierCapability.push in n.capabilities
     ]
     push_cap_checked = False
 
@@ -267,15 +270,11 @@ async def send_alert_group(
 
     if any_transient:
         # Apply retry back-off using the max attempt count across all coalesced members.
-        current_attempts = max(
-            (a.payload_json.get("_attempts", 0) or 0) for a in members
-        )
+        current_attempts = max((a.payload_json.get("_attempts", 0) or 0) for a in members)
         new_attempts = current_attempts + 1
         if new_attempts > _MAX_RETRIES:
-            detail = (
-                "transient failed after "
-                f"{_MAX_RETRIES} retries: "
-                + "; ".join(permanent_errors.values() or ["transient"])
+            detail = f"transient failed after {_MAX_RETRIES} retries: " + "; ".join(
+                permanent_errors.values() or ["transient"]
             )
             _mark_all_skipped(members, detail)
         else:
@@ -293,9 +292,7 @@ async def send_alert_group(
         return
 
     if permanent_errors:
-        errors_summary = "; ".join(
-            f"{ch}: {msg}" for ch, msg in permanent_errors.items()
-        )
+        errors_summary = "; ".join(f"{ch}: {msg}" for ch, msg in permanent_errors.items())
         for a in members:
             a.skipped = True
             a.payload_json = {**a.payload_json, "_errors": permanent_errors}
@@ -309,6 +306,7 @@ async def send_alert_group(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
 
 def _mark_all_skipped(alerts: list[Alert], detail: str) -> None:
     for a in alerts:

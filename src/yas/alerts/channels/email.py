@@ -82,9 +82,7 @@ class _SMTPTransport:
         elif password_env is not None:
             resolved = os.environ.get(password_env)
             if resolved is None:
-                raise ValueError(
-                    f"channel disabled: missing env var {password_env}"
-                )
+                raise ValueError(f"channel disabled: missing env var {password_env}")
             self._password = resolved
         else:
             self._password = None
@@ -159,9 +157,7 @@ class _ForwardEmailTransport:
     ) -> None:
         token = os.environ.get(api_token_env)
         if token is None:
-            raise ValueError(
-                f"channel disabled: missing env var {api_token_env}"
-            )
+            raise ValueError(f"channel disabled: missing env var {api_token_env}")
         self._token = token
         self._from_addr = from_addr
         self._to_addrs = to_addrs

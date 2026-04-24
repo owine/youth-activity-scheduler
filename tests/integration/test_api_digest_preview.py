@@ -59,10 +59,12 @@ async def client(tmp_path, monkeypatch):
             )
         )
         # Create household settings
-        s.add(HouseholdSettings(
-            id=1,
-            smtp_config_json={"host": "localhost", "port": 587},
-        ))
+        s.add(
+            HouseholdSettings(
+                id=1,
+                smtp_config_json={"host": "localhost", "port": 587},
+            )
+        )
         await s.flush()
     app = create_app(engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

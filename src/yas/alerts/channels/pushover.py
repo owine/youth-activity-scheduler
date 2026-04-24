@@ -103,7 +103,9 @@ class PushoverChannel:
         # on HTTP 200 (e.g. {"status":0, "errors":["application token is invalid"]}).
         # Classify as non-transient so retries don't exhaust on a bad config.
         errors = body.get("errors", [])
-        detail = f"http {code} errors={errors}" if errors else f"http {code} status={body.get('status')}"
+        detail = (
+            f"http {code} errors={errors}" if errors else f"http {code} status={body.get('status')}"
+        )
         return SendResult(ok=False, transient_failure=False, detail=detail)
 
     async def aclose(self) -> None:

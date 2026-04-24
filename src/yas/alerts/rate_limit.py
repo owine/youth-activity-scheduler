@@ -12,13 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
 
-_NEVER_COALESCE = frozenset({
-    AlertType.reg_opens_now.value,
-    AlertType.reg_opens_1h.value,
-    AlertType.watchlist_hit.value,
-    AlertType.crawl_failed.value,
-    AlertType.digest.value,
-})
+_NEVER_COALESCE = frozenset(
+    {
+        AlertType.reg_opens_now.value,
+        AlertType.reg_opens_1h.value,
+        AlertType.watchlist_hit.value,
+        AlertType.crawl_failed.value,
+        AlertType.digest.value,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -41,12 +43,14 @@ def coalesce(due: list[Any], *, window_s: int) -> list[AlertGroup]:
         members = pending.pop(key, [])
         if not members:
             return
-        groups.append(AlertGroup(
-            lead=members[0],
-            members=members,
-            kid_id=key[0],
-            alert_type=key[1],
-        ))
+        groups.append(
+            AlertGroup(
+                lead=members[0],
+                members=members,
+                kid_id=key[0],
+                alert_type=key[1],
+            )
+        )
 
     for a in sorted_alerts:
         if a.type in _NEVER_COALESCE:
@@ -77,7 +81,9 @@ def should_rate_limit_push(sent_count: int, max_per_hour: int) -> bool:
 
 
 async def count_pushes_sent_in_last_hour(
-    session: AsyncSession, kid_id: int, push_channels: list[str],
+    session: AsyncSession,
+    kid_id: int,
+    push_channels: list[str],
 ) -> int:
     """Count alerts.sent_at >= now-1h where any configured push channel was used."""
     if not push_channels:
@@ -95,14 +101,18 @@ async def count_pushes_sent_in_last_hour(
     if count == 0:
         return 0
     alerts = (
-        await session.execute(
-            select(Alert).where(
-                Alert.kid_id == kid_id,
-                Alert.sent_at.isnot(None),
-                Alert.sent_at >= window_start,
+        (
+            await session.execute(
+                select(Alert).where(
+                    Alert.kid_id == kid_id,
+                    Alert.sent_at.isnot(None),
+                    Alert.sent_at >= window_start,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return sum(1 for a in alerts if any(c in push_channels for c in (a.channels or [])))
 
 

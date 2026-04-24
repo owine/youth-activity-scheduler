@@ -45,13 +45,9 @@ async def preview_digest(
             raise HTTPException(status_code=404, detail=f"kid {kid_id} not found")
 
         # Load household settings for cost cap
-        household = (
-            await s.execute(select(HouseholdSettings).limit(1))
-        ).scalar_one_or_none()
+        household = (await s.execute(select(HouseholdSettings).limit(1))).scalar_one_or_none()
         cost_cap = (
-            household.daily_llm_cost_cap_usd
-            if household is not None
-            else _DEFAULT_COST_CAP_USD
+            household.daily_llm_cost_cap_usd if household is not None else _DEFAULT_COST_CAP_USD
         )
 
         # Gather payload

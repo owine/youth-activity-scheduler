@@ -51,9 +51,7 @@ async def _run_one_tick(engine: Any, settings: Settings) -> None:
     async def _capturing_sleep(seconds: float) -> None:
         raise asyncio.CancelledError
 
-    task = asyncio.create_task(
-        _patched_detector_loop(engine, settings, _capturing_sleep)
-    )
+    task = asyncio.create_task(_patched_detector_loop(engine, settings, _capturing_sleep))
     try:
         await asyncio.wait_for(task, timeout=10.0)
     except (TimeoutError, asyncio.CancelledError):
@@ -70,6 +68,7 @@ async def _run_one_tick(engine: Any, settings: Settings) -> None:
 async def _patched_detector_loop(engine: Any, settings: Settings, fake_sleep: Any) -> None:
     """Wrap daily_detector_loop with a patched asyncio.sleep."""
     import yas.worker.detector_loop as _mod
+
     original = _mod.asyncio.sleep  # type: ignore[attr-defined]
     _mod.asyncio.sleep = fake_sleep  # type: ignore[attr-defined]
     try:
@@ -125,10 +124,10 @@ async def test_detector_loop_enqueues_site_stagnant_alerts(tmp_path):  # type: i
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(
-                select(Alert).where(Alert.type == AlertType.site_stagnant.value)
-            )
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.site_stagnant.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts) == 1
     assert alerts[0].site_id == 1
 
@@ -154,10 +153,10 @@ async def test_detector_loop_enqueues_no_matches_kid_alerts(tmp_path):  # type: 
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(
-                select(Alert).where(Alert.type == AlertType.no_matches_for_kid.value)
-            )
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.no_matches_for_kid.value)))
+            .scalars()
+            .all()
+        )
     assert len(alerts) == 1
     assert alerts[0].kid_id == 1
 
@@ -182,10 +181,10 @@ async def test_detector_loop_only_fires_once_per_day(tmp_path):  # type: ignore[
 
     async with session_scope(engine) as s:
         alerts = (
-            await s.execute(
-                select(Alert).where(Alert.type == AlertType.site_stagnant.value)
-            )
-        ).scalars().all()
+            (await s.execute(select(Alert).where(Alert.type == AlertType.site_stagnant.value)))
+            .scalars()
+            .all()
+        )
     # Dedup upsert merges duplicate unsent rows into one.
     assert len(alerts) == 1, "Duplicate detector runs must collapse to one Alert row"
 

@@ -30,6 +30,7 @@ from yas.worker.delivery_loop import alert_delivery_loop
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _settings(**kwargs: Any) -> Settings:
     return Settings(
         anthropic_api_key="test-key",
@@ -75,11 +76,14 @@ async def _make_engine(tmp_path):  # type: ignore[no-untyped-def]
     # Seed a kid so FK constraints on alerts.kid_id pass.
     async with session_scope(engine) as s:
         from datetime import date
-        s.add(Kid(
-            id=1,
-            name="Alice",
-            dob=date(2015, 6, 1),
-        ))
+
+        s.add(
+            Kid(
+                id=1,
+                name="Alice",
+                dob=date(2015, 6, 1),
+            )
+        )
     return engine
 
 
@@ -102,6 +106,7 @@ async def _seed_household(
 # Named must-have tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-untyped-def]
     """reg_opens_now always fires on push channels even within quiet hours."""
@@ -109,9 +114,11 @@ async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-
     async with session_scope(engine) as s:
         await seed_default_routing(s)
         # Force push routing for reg_opens_now
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.reg_opens_now.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.reg_opens_now.value)
+            )
+        ).scalar_one()
         row.channels = ["ntfy"]
 
     async with session_scope(engine) as s:
@@ -146,9 +153,11 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
     async with session_scope(engine) as s:
         await seed_default_routing(s)
         # Use email routing for new_match so we can pre-seed sent alerts manually.
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
+            )
+        ).scalar_one()
         row.channels = ["ntfy"]
 
     now = datetime.now(UTC)
@@ -185,7 +194,9 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
     async with session_scope(engine) as s:
         alerts = (await s.execute(select(Alert))).scalars().all()
         # The capped alert must be marked skipped with "rate capped".
-        capped_alerts = [a for a in alerts if a.payload_json.get("_skipped_reason") == "rate capped"]
+        capped_alerts = [
+            a for a in alerts if a.payload_json.get("_skipped_reason") == "rate capped"
+        ]
         push_cap_alerts = [a for a in alerts if a.type == AlertType.push_cap.value]
 
         assert capped_alerts, "The rate-capped alert should be marked skipped with 'rate capped'"
@@ -273,6 +284,7 @@ async def test_startup_grace_window_fires_recent_past_due_countdown_once(tmp_pat
 # Additional integration tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ignore[no-untyped-def]
     """Happy path: one alert, routed to email channel → sent."""
@@ -339,7 +351,11 @@ async def test_transient_failure_retries_with_backoff(tmp_path):  # type: ignore
         updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
         assert updated.sent_at is None, "Should not be marked sent after transient failure"
         assert updated.skipped is False, "Should not be skipped after first transient failure"
-        sched = updated.scheduled_for.replace(tzinfo=None) if updated.scheduled_for.tzinfo else updated.scheduled_for
+        sched = (
+            updated.scheduled_for.replace(tzinfo=None)
+            if updated.scheduled_for.tzinfo
+            else updated.scheduled_for
+        )
         now_naive = now.replace(tzinfo=None)
         # Should be rescheduled ~60s in the future (attempt 1).
         assert sched > now_naive, "scheduled_for should be in the future"
@@ -383,9 +399,11 @@ async def test_quiet_hours_suppresses_push_but_not_email(tmp_path):  # type: ign
     async with session_scope(engine) as s:
         await seed_default_routing(s)
         # Override routing for watchlist_hit to include both push and email.
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.watchlist_hit.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.watchlist_hit.value)
+            )
+        ).scalar_one()
         row.channels = ["ntfy", "email"]
         row.enabled = True
 
@@ -426,9 +444,11 @@ async def test_routing_disabled_skips_alert(tmp_path):  # type: ignore[no-untype
 
     async with session_scope(engine) as s:
         await seed_default_routing(s)
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
+            )
+        ).scalar_one()
         row.enabled = False
 
     async with session_scope(engine) as s:
@@ -466,9 +486,11 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         await seed_default_routing(s)
         # Route watchlist_hit through both push and email so we can inject
         # different failure modes on each channel.
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.watchlist_hit.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.watchlist_hit.value)
+            )
+        ).scalar_one()
         row.channels = ["ntfy", "email"]
         row.enabled = True
 
@@ -499,7 +521,11 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         # Transient wins: alert must NOT be sent or skipped — it should be retried.
         assert updated.sent_at is None, "Should not be marked sent"
         assert updated.skipped is False, "Should not be skipped when transient failure present"
-        sched = updated.scheduled_for.replace(tzinfo=None) if updated.scheduled_for.tzinfo else updated.scheduled_for
+        sched = (
+            updated.scheduled_for.replace(tzinfo=None)
+            if updated.scheduled_for.tzinfo
+            else updated.scheduled_for
+        )
         now_naive = now.replace(tzinfo=None)
         assert sched > now_naive, "scheduled_for should advance for retry"
         assert updated.payload_json.get("_attempts") == 1, "_attempts must be incremented"

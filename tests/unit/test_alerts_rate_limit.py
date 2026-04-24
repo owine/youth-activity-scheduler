@@ -22,7 +22,9 @@ class _FakeAlert:
 
 def _a(id_, kid, atype, offset_s: int) -> _FakeAlert:
     return _FakeAlert(
-        id=id_, kid_id=kid, type=atype.value,
+        id=id_,
+        kid_id=kid,
+        type=atype.value,
         scheduled_for=datetime(2026, 5, 5, 10, 0, tzinfo=UTC) + timedelta(seconds=offset_s),
     )
 
@@ -93,12 +95,15 @@ def test_coalesce_stable_ordering_by_scheduled_for():
     assert groups[0].lead.id == 1
 
 
-@pytest.mark.parametrize("sent,cap,expected", [
-    (0, 5, False),
-    (4, 5, False),
-    (5, 5, True),
-    (10, 5, True),
-])
+@pytest.mark.parametrize(
+    "sent,cap,expected",
+    [
+        (0, 5, False),
+        (4, 5, False),
+        (5, 5, True),
+        (10, 5, True),
+    ],
+)
 def test_should_rate_limit_push(sent, cap, expected):
     assert should_rate_limit_push(sent, cap) is expected
 

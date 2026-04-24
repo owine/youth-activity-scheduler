@@ -44,6 +44,7 @@ def _msg(
 # Capabilities
 # ---------------------------------------------------------------------------
 
+
 def test_ntfy_capabilities():
     ch = NtfyChannel(_cfg())
     assert ch.capabilities == {NotifierCapability.push}
@@ -54,12 +55,11 @@ def test_ntfy_capabilities():
 # Basic POST
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ntfy_posts_to_exact_url():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         result = await ch.send(_msg())
         await ch.aclose()
@@ -72,9 +72,7 @@ async def test_ntfy_posts_to_exact_url():
 @pytest.mark.asyncio
 async def test_ntfy_title_header_is_subject():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(subject="Hello World"))
         await ch.aclose()
@@ -85,9 +83,7 @@ async def test_ntfy_title_header_is_subject():
 @pytest.mark.asyncio
 async def test_ntfy_body_is_body_plain_bytes():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(body_plain="my body text"))
         await ch.aclose()
@@ -99,12 +95,11 @@ async def test_ntfy_body_is_body_plain_bytes():
 # Priority header
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ntfy_priority_high_when_urgent():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(urgent=True))
         await ch.aclose()
@@ -115,9 +110,7 @@ async def test_ntfy_priority_high_when_urgent():
 @pytest.mark.asyncio
 async def test_ntfy_priority_header_absent_when_not_urgent():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(urgent=False))
         await ch.aclose()
@@ -129,12 +122,11 @@ async def test_ntfy_priority_header_absent_when_not_urgent():
 # Click header
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ntfy_click_header_set_when_url_given():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(url="https://example.com/register"))
         await ch.aclose()
@@ -145,9 +137,7 @@ async def test_ntfy_click_header_set_when_url_given():
 @pytest.mark.asyncio
 async def test_ntfy_click_header_absent_when_no_url():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())
         await ch.send(_msg(url=None))
         await ch.aclose()
@@ -159,14 +149,13 @@ async def test_ntfy_click_header_absent_when_no_url():
 # Authorization header
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ntfy_auth_header_when_token_configured(monkeypatch):
     monkeypatch.setenv("YAS_NTFY_TOKEN", "secret-token")
 
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg(auth_token_env="YAS_NTFY_TOKEN"))
         await ch.send(_msg())
         await ch.aclose()
@@ -177,9 +166,7 @@ async def test_ntfy_auth_header_when_token_configured(monkeypatch):
 @pytest.mark.asyncio
 async def test_ntfy_auth_header_absent_when_no_token_env():
     with respx.mock() as m:
-        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(
-            return_value=httpx.Response(200, text="ok")
-        )
+        route = m.post(f"{_BASE_URL}/{_TOPIC}").mock(return_value=httpx.Response(200, text="ok"))
         ch = NtfyChannel(_cfg())  # no auth_token_env
         await ch.send(_msg())
         await ch.aclose()
@@ -204,6 +191,7 @@ def test_ntfy_blank_token_env_raises(monkeypatch):
 # ---------------------------------------------------------------------------
 # HTTP status → SendResult taxonomy
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_ntfy_2xx_ok():
@@ -257,6 +245,7 @@ async def test_ntfy_5xx_transient():
 # Transport errors
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_ntfy_timeout_is_transient():
     with respx.mock() as m:
@@ -286,6 +275,7 @@ async def test_ntfy_connect_error_is_transient():
 # ---------------------------------------------------------------------------
 # URL normalisation
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_ntfy_trailing_slash_base_url_is_normalised():

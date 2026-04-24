@@ -26,8 +26,8 @@ async def _make_engine(tmp_path):
 # ---------------------------------------------------------------------------
 
 NOW = datetime(2026, 4, 23, 12, 0, 0, tzinfo=UTC)
-STALE = NOW - timedelta(days=35)   # older than 30-day threshold
-FRESH = NOW - timedelta(days=5)    # within 30-day threshold
+STALE = NOW - timedelta(days=35)  # older than 30-day threshold
+FRESH = NOW - timedelta(days=5)  # within 30-day threshold
 
 
 def _site(name: str = "s", *, active: bool = True, muted_until: datetime | None = None) -> Site:
@@ -188,8 +188,8 @@ async def test_site_stagnant_expired_mute_does_not_exclude(tmp_path):
 # no_matches_for_kid detector tests
 # ---------------------------------------------------------------------------
 
-OLD_ENOUGH = NOW - timedelta(days=10)    # > 7-day threshold
-TOO_RECENT = NOW - timedelta(days=3)     # < 7-day threshold
+OLD_ENOUGH = NOW - timedelta(days=10)  # > 7-day threshold
+TOO_RECENT = NOW - timedelta(days=3)  # < 7-day threshold
 
 
 @pytest.mark.asyncio
