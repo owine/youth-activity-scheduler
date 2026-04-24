@@ -1,6 +1,6 @@
 # Phase 5a — Read-Only Web Dashboard Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Each task follows @superpowers:test-driven-development (write failing test → minimal impl → green → commit). The exit checklist invokes @superpowers:verification-before-completion. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a single-page React dashboard that surfaces what Phases 1–4 have been writing to the database — a global Inbox, per-kid match views, site overviews, and read-only settings — served as a static bundle by the existing FastAPI app on port 8080.
 
@@ -125,20 +125,40 @@ Note the existing `OfferingSummary` fields and the `select(Match, Offering).join
 
 - [ ] **Step 2: Add a failing test** in `tests/integration/test_api_matches.py`
 
+Use the existing `client` fixture (do not invent a new one). `Offering` requires `page_id` (FK to a `Page`) and `normalized_name` — both non-nullable; the seed block must include them. The pattern below mirrors how the existing tests in this file seed:
+
 ```python
-async def test_match_includes_offering_registration_opens_at_and_site_name(client_with_seeded_match):
-    # client_with_seeded_match seeds: Site(name="Lil Sluggers"), Offering(registration_opens_at=...), Match
-    c = client_with_seeded_match
+from datetime import UTC, datetime
+from yas.db.models import Kid, Match, Offering, Page, Site
+from yas.db.session import session_scope
+
+@pytest.mark.asyncio
+async def test_match_includes_offering_registration_opens_at_and_site_name(client):
+    c, engine = client
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=datetime(2019, 5, 1).date()))
+        s.add(Site(id=1, name="Lil Sluggers", base_url="https://x", needs_browser=False))
+        await s.flush()
+        s.add(Page(id=1, site_id=1, url="https://x/p", kind="schedule"))
+        await s.flush()
+        s.add(Offering(
+            id=1, site_id=1, page_id=1, name="Spring T-Ball", normalized_name="spring t-ball",
+            program_type="other", status="active",
+            registration_opens_at=now,
+        ))
+        await s.flush()
+        s.add(Match(kid_id=1, offering_id=1, score=0.9, reasons={}, computed_at=now))
     r = await c.get("/api/matches?kid_id=1")
     assert r.status_code == 200
     body = r.json()
     assert len(body) == 1
     offering = body[0]["offering"]
     assert offering["site_name"] == "Lil Sluggers"
-    assert offering["registration_opens_at"] is not None  # ISO string
+    assert offering["registration_opens_at"] is not None
 ```
 
-If the existing test file uses a different fixture pattern, mirror that pattern instead of inventing a new one.
+Verify the existing `client` fixture in `tests/integration/test_api_matches.py` — if its yield shape differs (e.g., yields `(client, engine, ...)` not `(client, engine)`), adjust the unpacking. Read the top of the file before writing.
 
 - [ ] **Step 3: Run test, confirm it fails**
 
@@ -226,13 +246,27 @@ This is the embedded `WatchlistOut` inside `KidDetailOut` — NOT the standalone
 
 - [ ] **Step 1: Add a failing test**
 
+Use the existing `client` fixture in `tests/integration/test_api_kids.py` (read its yield shape first):
+
 ```python
-async def test_kid_detail_watchlist_includes_ignore_hard_gates(client_with_seeded_kid_and_watchlist):
-    c = client_with_seeded_kid_and_watchlist  # seeds a kid with one watchlist entry where ignore_hard_gates=True
+from datetime import datetime
+from yas.db.models import Kid, WatchlistEntry
+from yas.db.session import session_scope
+
+@pytest.mark.asyncio
+async def test_kid_detail_watchlist_includes_ignore_hard_gates(client):
+    c, engine = client
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=datetime(2019, 5, 1).date()))
+        await s.flush()
+        s.add(WatchlistEntry(
+            kid_id=1, site_id=None, pattern="baseball", priority="normal",
+            notes=None, active=True, ignore_hard_gates=True,
+        ))
     r = await c.get("/api/kids/1")
     assert r.status_code == 200
     watchlist = r.json()["watchlist"]
-    assert len(watchlist) >= 1
+    assert len(watchlist) == 1
     assert watchlist[0]["ignore_hard_gates"] is True
 ```
 
@@ -321,7 +355,7 @@ uv run pytest tests/integration/test_api_household.py::test_get_household_return
 
 - [ ] **Step 4: Extend `HouseholdOut`**
 
-In `household_schemas.py`:
+In `household_schemas.py`, REPLACE the entire existing `class HouseholdOut(BaseModel):` block with the following — preserve `model_config = ConfigDict(from_attributes=True)`:
 
 ```python
 class HouseholdOut(BaseModel):
@@ -337,36 +371,33 @@ class HouseholdOut(BaseModel):
     daily_llm_cost_cap_usd: float
 ```
 
+Note: `home_address` and `home_location_name` are populated by the route handler (Step 5), not by SQLAlchemy from-attributes — they live on the related `Location` row, not on `HouseholdSettings`.
+
 - [ ] **Step 5: Update `get_household` to join Location**
 
-In `household.py`, change `get_household`:
+In `household.py`, `Location` is already imported (alongside `GeocodeAttempt`, `HouseholdSettings`); no new imports needed. Define a helper and use it in BOTH handlers (do not leave the GET or PATCH handler returning `HouseholdOut.model_validate(hh)` — that would not populate the new fields):
 
 ```python
-from sqlalchemy.orm import joinedload  # if not already
-
-@router.get("", response_model=HouseholdOut)
-async def get_household(request: Request) -> HouseholdOut:
-    async with session_scope(_engine(request)) as s:
-        hh = await _load_or_create(s)
-        loc = None
-        if hh.home_location_id is not None:
-            loc = (
-                await s.execute(select(Location).where(Location.id == hh.home_location_id))
-            ).scalar_one_or_none()
-        return HouseholdOut(
-            id=hh.id,
-            home_location_id=hh.home_location_id,
-            home_address=loc.address if loc else None,
-            home_location_name=loc.name if loc else None,
-            default_max_distance_mi=hh.default_max_distance_mi,
-            digest_time=hh.digest_time,
-            quiet_hours_start=hh.quiet_hours_start,
-            quiet_hours_end=hh.quiet_hours_end,
-            daily_llm_cost_cap_usd=hh.daily_llm_cost_cap_usd,
-        )
+async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
+    loc = None
+    if hh.home_location_id is not None:
+        loc = (
+            await s.execute(select(Location).where(Location.id == hh.home_location_id))
+        ).scalar_one_or_none()
+    return HouseholdOut(
+        id=hh.id,
+        home_location_id=hh.home_location_id,
+        home_address=loc.address if loc else None,
+        home_location_name=loc.name if loc else None,
+        default_max_distance_mi=hh.default_max_distance_mi,
+        digest_time=hh.digest_time,
+        quiet_hours_start=hh.quiet_hours_start,
+        quiet_hours_end=hh.quiet_hours_end,
+        daily_llm_cost_cap_usd=hh.daily_llm_cost_cap_usd,
+    )
 ```
 
-The PATCH handler returns `HouseholdOut.model_validate(hh)` which won't populate the new fields. Update its final return to mirror the GET pattern (re-load location after the changes are flushed).
+Then replace both `return HouseholdOut.model_validate(hh)` call sites in `get_household` and `patch_household` with `return await _to_out(s, hh)`.
 
 - [ ] **Step 6: Run tests + full suite**
 
@@ -1066,7 +1097,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
-from yas.config import get_settings
 from yas.db.models import Alert, CrawlRun, Kid, Match, Offering
 from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.session import session_scope
@@ -1183,10 +1213,12 @@ async def inbox_summary(
             .where(Alert.site_id.is_not(None))
         )).scalar_one()
 
-        # Stagnant: reuse the existing detector with default threshold from settings.
+        # Stagnant: reuse the existing detector. Verified signature in
+        # src/yas/alerts/detectors/site_stagnant.py: kwarg is `threshold_days`,
+        # not `stagnant_after_days`. Config key is `alert_stagnant_site_days`.
         stagnant_ids = await detect_stagnant_sites(
             s,
-            stagnant_after_days=settings.alert_site_stagnant_days,
+            threshold_days=settings.alert_stagnant_site_days,
             now=now,
         )
         stagnant_count = len(stagnant_ids)
@@ -1344,7 +1376,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -1358,11 +1390,19 @@ def _static_dir() -> Path:
 
 
 def install_spa_fallback(app: FastAPI) -> None:
-    """Mount /assets and add the SPA catch-all. MUST be called LAST in app setup."""
+    """Mount /assets, install API 404 guard, add SPA catch-all. MUST be called LAST in app setup."""
     static = _static_dir()
 
     if (static / "assets").exists():
         app.mount("/assets", StaticFiles(directory=static / "assets", html=False), name="assets")
+
+    # API 404 guard: registered BEFORE the SPA catch-all so unknown /api/*
+    # paths return JSON 404 instead of being swallowed by the SPA fallback.
+    # Without this, /api/nonexistent would match /{full_path:path} and return
+    # index.html with status 200.
+    @app.get("/api/{path:path}", include_in_schema=False)
+    async def api_not_found(path: str) -> JSONResponse:
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str) -> FileResponse:
@@ -1496,16 +1536,15 @@ Write `frontend/package.json`:
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^9.17.0",
+    "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.0",
     "vite": "^6.0.5"
   }
 }
@@ -1644,6 +1683,8 @@ createRoot(document.getElementById('root')!).render(
 
 - [ ] **Step 6: Lint + format configs**
 
+ESLint v8 is pinned (not v9) because the config uses the legacy `.eslintrc.cjs` format. ESLint v9 requires flat config (`eslint.config.js`); upgrading is a separate cleanup, not part of 5a.
+
 `frontend/.eslintrc.cjs`:
 
 ```cjs
@@ -1713,7 +1754,7 @@ git commit -m "build: scaffold frontend (vite + react + ts + eslint)"
 - Create: `frontend/src/styles/globals.css`
 - Create: `frontend/components.json`
 - Create: `frontend/src/lib/utils.ts` (shadcn convention)
-- Modify: `frontend/src/main.tsx`, `frontend/src/index.html`, `frontend/package.json`
+- Modify: `frontend/src/main.tsx`, `frontend/index.html` (root, not under src/), `frontend/package.json`
 
 This installs Tailwind, shadcn's tokens, and adds the first batch of shadcn primitives.
 
@@ -2021,7 +2062,7 @@ function KidMatchesPage() {
 }
 ```
 
-Same shape for `kids.$id.watchlist.tsx`, `sites.index.tsx` (route `'/sites/'`), `sites.$id.tsx` (route `'/sites/$id'`), `settings.tsx` (route `'/settings'`). Each renders a placeholder `<h2>`. The router plugin will auto-generate `routeTree.gen.ts` on the next dev/build run.
+Same shape for `kids.$id.watchlist.tsx`, `sites.index.tsx` (route `'/sites'` — no trailing slash; must match the `to="/sites"` Links used in TopBar and SiteActivitySection), `sites.$id.tsx` (route `'/sites/$id'`), `settings.tsx` (route `'/settings'`). Each renders a placeholder `<h2>`. The router plugin will auto-generate `routeTree.gen.ts` on the next dev/build run.
 
 - [ ] **Step 4: Wire router + query providers in main.tsx**
 
@@ -2126,15 +2167,25 @@ export type AlertType =
   | 'no_matches_for_kid'
   | 'push_cap';
 
+// Mirrors src/yas/web/routes/matches_schemas.py::OfferingSummary AFTER Task 1's
+// extension. Date/datetime are ISO strings over the wire.
 export interface OfferingSummary {
   id: number;
-  site_id: number;
-  site_name: string;
   name: string;
+  program_type: string;
+  age_min: number | null;
+  age_max: number | null;
   start_date: string | null;
+  end_date: string | null;
+  days_of_week: string[];
+  time_start: string | null;
+  time_end: string | null;
+  price_cents: number | null;
+  registration_url: string | null;
+  site_id: number;
+  // Added in Task 1:
+  site_name: string;
   registration_opens_at: string | null;
-  price_min: number | null;
-  // ... include every existing field of OfferingSummary; mirror the python class
 }
 
 export interface Match {
@@ -3176,7 +3227,7 @@ export function MatchCard({ match, urgent, onClick }: { match: Match; urgent?: b
           <div className="text-sm text-muted-foreground">
             {o.site_name}
             {o.start_date && ` · ${relDate(o.start_date)}`}
-            {o.price_min != null && ` · ${price(o.price_min)}`}
+            {o.price_cents != null && ` · ${price(o.price_cents / 100)}`}
             {o.registration_opens_at && ` · reg ${relDate(o.registration_opens_at)}`}
           </div>
         </div>
@@ -3255,7 +3306,7 @@ export function MatchDetailDrawer({
             <dl className="mt-6 space-y-2 text-sm">
               <div><dt className="text-muted-foreground">Score</dt><dd>{match.score.toFixed(2)}</dd></div>
               {match.offering.start_date && <div><dt className="text-muted-foreground">Starts</dt><dd>{relDate(match.offering.start_date)}</dd></div>}
-              {match.offering.price_min != null && <div><dt className="text-muted-foreground">Price</dt><dd>{price(match.offering.price_min)}</dd></div>}
+              {match.offering.price_cents != null && <div><dt className="text-muted-foreground">Price</dt><dd>{price(match.offering.price_cents / 100)}</dd></div>}
             </dl>
             <h3 className="mt-6 mb-2 text-xs font-semibold uppercase text-muted-foreground">Match reasons</h3>
             <pre className="text-xs bg-muted p-3 rounded-md overflow-auto">
@@ -3338,7 +3389,12 @@ import { UrgencyGroup } from './UrgencyGroup';
 
 const m = {
   kid_id: 1, offering_id: 1, score: 0.9, reasons: {}, computed_at: '2026-04-24T12:00:00Z',
-  offering: { id: 1, site_id: 1, site_name: 'X', name: 'T-Ball', start_date: null, registration_opens_at: null, price_min: null },
+  offering: {
+    id: 1, site_id: 1, site_name: 'X', name: 'T-Ball', program_type: 'other',
+    age_min: null, age_max: null, start_date: null, end_date: null,
+    days_of_week: [], time_start: null, time_end: null,
+    price_cents: null, registration_url: null, registration_opens_at: null,
+  },
 };
 
 describe('UrgencyGroup', () => {
@@ -3390,7 +3446,7 @@ export function KidTabs({ kidId }: { kidId: number }) {
   return (
     <nav className="border-b border-border flex gap-2 mb-4">
       {tabs.map((t) => {
-        const active = loc.pathname.includes(t.label.toLowerCase());
+        const active = loc.pathname.endsWith(`/${t.label.toLowerCase()}`);
         return (
           <Link
             key={t.to}
@@ -3515,7 +3571,7 @@ import { Badge } from '@/components/ui/badge';
 import { useSites } from '@/lib/queries';
 import { relDate } from '@/lib/format';
 
-export const Route = createFileRoute('/sites/')({ component: SitesPage });
+export const Route = createFileRoute('/sites')({ component: SitesPage });
 
 function SitesPage() {
   const { data, isLoading, isError, refetch } = useSites();
