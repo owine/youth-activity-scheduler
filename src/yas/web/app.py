@@ -12,6 +12,7 @@ from yas.geo.client import Geocoder
 from yas.health import check_readiness
 from yas.llm.client import LLMClient
 from yas.web.deps import AppState
+from yas.web.spa_fallback import install_spa_fallback
 
 
 def create_app(
@@ -74,4 +75,5 @@ def create_app(
     async def _shutdown() -> None:
         await state.engine.dispose()
 
+    install_spa_fallback(app)
     return app
