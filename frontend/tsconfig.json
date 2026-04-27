@@ -14,8 +14,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
     "noUncheckedSideEffectImports": true,
     "skipLibCheck": true,
+    "types": [],
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
