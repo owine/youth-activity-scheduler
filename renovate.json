@@ -1,0 +1,140 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests",
+    "security:openssf-scorecard"
+  ],
+  "timezone": "America/Chicago",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "minimumReleaseAge": null
+  },
+  "osvVulnerabilityAlerts": true,
+  "pep621": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Auto-merge low-risk updates after CI passes",
+      "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Auto-merge minor updates for trusted dev tooling",
+      "matchPackageNames": [
+        "ruff",
+        "mypy",
+        "prettier",
+        "typescript",
+        "vite",
+        "@vitejs/plugin-react"
+      ],
+      "matchUpdateTypes": ["minor"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9 requires flat config",
+      "matchPackageNames": ["eslint"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Group ESLint plugins and TS-ESLint",
+      "matchPackageNames": [
+        "/^eslint-/",
+        "/^@typescript-eslint//"
+      ],
+      "groupName": "eslint plugins"
+    },
+    {
+      "description": "Group React core",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ],
+      "groupName": "react"
+    },
+    {
+      "description": "Group TanStack libraries",
+      "matchPackageNames": ["/^@tanstack//"],
+      "groupName": "tanstack"
+    },
+    {
+      "description": "Group Radix UI primitives (shadcn/ui)",
+      "matchPackageNames": ["/^@radix-ui//"],
+      "groupName": "radix-ui"
+    },
+    {
+      "description": "Group SQLAlchemy ecosystem",
+      "matchPackageNames": ["sqlalchemy", "alembic", "aiosqlite"],
+      "groupName": "sqlalchemy"
+    },
+    {
+      "description": "Group FastAPI / Pydantic / Uvicorn stack",
+      "matchPackageNames": [
+        "fastapi",
+        "uvicorn",
+        "starlette",
+        "pydantic",
+        "pydantic-settings",
+        "python-multipart"
+      ],
+      "groupName": "fastapi-stack"
+    },
+    {
+      "description": "Group HTTP client + parsers",
+      "matchPackageNames": ["httpx", "respx", "selectolax"],
+      "groupName": "http-clients"
+    },
+    {
+      "description": "Hold Playwright bumps for 3 days — large download, breaking changes possible",
+      "matchPackageNames": ["playwright"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Anthropic SDK — review manually, surface fast",
+      "matchPackageNames": ["anthropic"],
+      "automerge": false,
+      "labels": ["dependencies", "review-required"]
+    },
+    {
+      "description": "Major Python deps require manual review",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Major frontend deps require manual review",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Major Docker base image bumps require manual review",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Pin Docker base images to digests for reproducibility",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["pin", "pinDigest"],
+      "automerge": true,
+      "platformAutomerge": true
+    }
+  ]
+}
