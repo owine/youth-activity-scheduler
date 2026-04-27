@@ -10,7 +10,7 @@
   "timezone": "America/Chicago",
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
-  "rangeStrategy": "bump",
+  "rangeStrategy": "pin",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"]

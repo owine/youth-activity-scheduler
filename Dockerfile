@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # --- Stage 1: build the React SPA ---
-FROM node:20-alpine AS frontend-build
+FROM node:20.20.2-alpine AS frontend-build
 WORKDIR /build
 # Cache deps separately
 COPY frontend/package.json frontend/package-lock.json ./
@@ -11,7 +11,7 @@ COPY frontend/ ./
 RUN npm run build  # emits /build/dist with index.html + assets/
 
 # --- Stage 2: Python backend ---
-FROM python:3.12-slim AS base
+FROM python:3.12.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

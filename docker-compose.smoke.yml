@@ -1,6 +1,6 @@
 services:
   mailpit:
-    image: axllent/mailpit:v1
+    image: axllent/mailpit:v1.29.7
     ports:
       - "1025:1025"  # SMTP listener
       - "8025:8025"  # Web UI
