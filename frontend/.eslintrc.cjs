@@ -14,4 +14,14 @@ module.exports = {
   rules: {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
   },
+  overrides: [
+    {
+      // shadcn-generated primitives export both components and variant helpers;
+      // fast-refresh restriction doesn't apply to library-style files.
+      files: ['src/components/ui/*.tsx'],
+      rules: {
+        'react-refresh/only-export-components': 'off',
+      },
+    },
+  ],
 };
