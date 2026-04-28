@@ -233,6 +233,45 @@ curl -sS 'localhost:8080/api/digest/preview?kid_id=1' | jq .
 
 Response includes `subject`, `body_plain`, and `body_html` fields.
 
+## Web UI
+
+A read-only React dashboard ships in this repo under `frontend/`. In production, FastAPI serves the built bundle at `/`.
+
+### Dev loop (two terminals)
+
+```bash
+# Terminal 1: backend
+docker compose up -d  # or: python -m yas api
+
+# Terminal 2: frontend with hot reload
+cd frontend
+npm install
+npm run dev
+# Open http://localhost:5173 — Vite proxies /api to :8080
+```
+
+### Theme
+
+Matches your OS light/dark mode by default. Click the sun/moon/monitor icon in the top bar to override; the choice is saved to localStorage.
+
+### Build
+
+```bash
+cd frontend && npm run build       # emits frontend/dist/
+docker compose build yas-api       # multi-stage build copies dist into /app/static
+```
+
+### End-to-end tests
+
+```bash
+./scripts/e2e_phase5a.sh           # builds, seeds, runs Playwright, tears down
+```
+
+### What's in 5a / 5b
+
+- 5a (this slice): read-only Inbox, Kid matches, Watchlist, Sites, Settings
+- 5b: Add Site wizard, alert ack/dismiss, settings editing, notifier config UI
+
 ## Development
 
 ```bash
