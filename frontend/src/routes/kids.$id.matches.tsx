@@ -7,6 +7,7 @@ import { useKid, useKidMatches } from '@/lib/queries';
 import { groupByUrgency } from '@/lib/matches';
 import { UrgencyGroup } from '@/components/matches/UrgencyGroup';
 import { MatchDetailDrawer } from '@/components/matches/MatchDetailDrawer';
+import { KidTabs } from '@/components/layout/KidTabs';
 import type { Match } from '@/lib/types';
 
 export const Route = createFileRoute('/kids/$id/matches')({ component: KidMatchesPage });
@@ -38,6 +39,7 @@ function KidMatchesPage() {
 
   return (
     <div className="space-y-6">
+      <KidTabs kidId={kidId} />
       <header>
         <h1 className="text-2xl font-semibold">{kid.data.name} — matches</h1>
         <p className="text-sm text-muted-foreground">{total} matches</p>
