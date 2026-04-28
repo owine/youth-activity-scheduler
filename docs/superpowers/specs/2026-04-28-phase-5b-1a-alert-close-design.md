@@ -55,12 +55,12 @@ The index on `closed_at` is for the inbox summary's `IS NULL` predicate. SQLite 
 `src/yas/db/models/_types.py`:
 
 ```python
-class CloseReason(str, Enum):
+class CloseReason(StrEnum):
     acknowledged = "acknowledged"
     dismissed = "dismissed"
 ```
 
-The string-mapped pattern matches the existing `AlertType` and `CrawlStatus` enums in the same file.
+The `StrEnum` pattern matches the existing `AlertType` and `CrawlStatus` enums in the same file.
 
 ### 2.3 Migration
 
@@ -109,8 +109,10 @@ Behaviour:
 
 ```python
 closed_at: datetime | None = None
-close_reason: Literal["acknowledged", "dismissed"] | None = None
+close_reason: CloseReason | None = None
 ```
+
+`close_reason` is typed as the enum (not a `Literal`) so the enum stays the single source of truth for valid values; Pydantic + `from_attributes=True` serialises the enum to its string value automatically.
 
 These flow through to `InboxAlertOut` (which embeds `AlertOut` shape). The frontend can render close-state anywhere it consumes either schema.
 
