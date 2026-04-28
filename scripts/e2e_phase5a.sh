@@ -16,7 +16,7 @@ $COMPOSE up -d yas-worker yas-api
 sleep 8
 
 echo "--- seed e2e fixtures ---"
-$COMPOSE exec -T yas-api uv run python scripts/seed_e2e.py "sqlite+aiosqlite:///data/activities.db"
+$COMPOSE exec -T yas-api uv run python - "sqlite+aiosqlite:////data/activities.db" < scripts/seed_e2e.py
 
 echo "--- run playwright ---"
 cd frontend

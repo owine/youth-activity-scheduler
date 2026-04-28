@@ -4,3 +4,5 @@ dist
 .tsbuild
 *.tsbuildinfo
 *.log
+test-results
+playwright-report
