@@ -40,7 +40,7 @@ This is a tooling and styling-config migration, not a UX redesign. The visual ou
 **Remove:**
 - `tailwindcss@3.4.19` (devDependencies)
 - `tailwindcss-animate@1.0.7` (dependencies)
-- `postcss@8.5.12` (devDependencies)
+- `postcss@8.5.12` (devDependencies) — confirm no other Vite plugin peer-depends on `postcss` first; if one does, leave as a transitive instead of an explicit dep.
 - `autoprefixer@10.5.0` (devDependencies)
 
 **Add:**
@@ -91,8 +91,10 @@ The file grows from 48 lines to ~80 lines and absorbs the theme tokens that prev
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  /* container utility default; if v4 needs explicit utilities for our
-     `container max-w-5xl py-6` usage in AppShell, add them here. */
+  /* No --container-* tokens here. v3's `container: { center: true,
+     padding: '1rem' }` config does not translate to @theme tokens.
+     v4 customises the container utility via `@utility container`
+     (see immediately below). */
 }
 
 @layer base {
@@ -109,7 +111,14 @@ The file grows from 48 lines to ~80 lines and absorbs the theme tokens that prev
     color: hsl(var(--foreground));
   }
 }
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
 ```
+
+The `@utility container` block translates v3's `container: { center: true, padding: '1rem' }` config into v4's customisation idiom. Existing usage (`container max-w-5xl py-6` in `AppShell.tsx`) keeps working because consumers compose `container` with `max-w-5xl` etc.
 
 The `@custom-variant dark` line replaces v3's `darkMode: 'class'` config. The `@theme inline` block declares Tailwind's color/radius tokens, mapping them through to the existing HSL CSS variables defined in `:root`/`.dark`. The `body` rule is rewritten to native CSS (the upgrade tool may leave `@apply` — either form passes).
 
@@ -157,7 +166,7 @@ Catalogued so reviewers recognize them in the diff:
 
 What the tool does NOT do automatically — manual checks:
 
-- **Default border color** changed from `gray-200` to `currentColor` in v4. Phase 5a uses `border-border` everywhere (mapped to `--border`), so the change is benign — but grep `frontend/src` for `\bborder\b(?!-\w)` to confirm no orphan `border` classes exist that would flip from gray to `currentColor`.
+- **Default border color** changed from `gray-200` to `currentColor` in v4. Phase 5a uses `border-border` everywhere (mapped to `--border`), so the change is benign — but search `frontend/src` for orphan `border` classes that would flip from gray to `currentColor`. Use `rg` (PCRE-compatible) since BSD/macOS `grep` doesn't support lookahead: `rg '\bborder\b(?!-)' frontend/src`.
 - **`@apply` in body rule** — `@apply bg-background text-foreground` at `globals.css:46`. Either form (`@apply` or native `background:`/`color:`) is acceptable.
 
 ## 6. Testing and verification
