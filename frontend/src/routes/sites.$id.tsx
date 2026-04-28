@@ -1,10 +1,47 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorBanner } from '@/components/common/ErrorBanner';
+import { useSite, useSiteCrawls } from '@/lib/queries';
+import { CrawlHistoryList } from '@/components/sites/CrawlHistoryList';
+import { fmt } from '@/lib/format';
 
-export const Route = createFileRoute('/sites/$id')({
-  component: SiteDetailPage,
-});
+export const Route = createFileRoute('/sites/$id')({ component: SiteDetailPage });
 
 function SiteDetailPage() {
   const { id } = Route.useParams();
-  return <h2 className="text-2xl">Site {id}</h2>;
+  const siteId = Number(id);
+  const site = useSite(siteId);
+  const crawls = useSiteCrawls(siteId);
+
+  if (site.isLoading) return <Skeleton className="h-32 w-full" />;
+  if (site.isError || !site.data) return <ErrorBanner message="Failed to load site" onRetry={() => site.refetch()} />;
+
+  const s = site.data;
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">{s.name}</h1>
+        <p className="text-sm text-muted-foreground">{s.base_url} · adapter: {s.adapter}</p>
+      </header>
+
+      <section>
+        <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Pages ({s.pages.length})</h2>
+        <ul className="space-y-1.5 text-sm">
+          {s.pages.map((p) => (
+            <li key={p.id} className="rounded-md border border-border p-2">
+              <div className="font-mono text-xs break-all">{p.url}</div>
+              <div className="text-muted-foreground text-xs mt-0.5">
+                {p.kind}{p.last_fetched && ` · last fetched ${fmt(p.last_fetched)}`}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-xs font-semibold uppercase text-muted-foreground mb-2">Recent crawl history</h2>
+        <CrawlHistoryList crawls={crawls.data} isLoading={crawls.isLoading} />
+      </section>
+    </div>
+  );
 }
