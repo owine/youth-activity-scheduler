@@ -35,11 +35,30 @@ async def _load_or_create(session: AsyncSession) -> HouseholdSettings:
     return hh
 
 
+async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
+    loc = None
+    if hh.home_location_id is not None:
+        loc = (
+            await s.execute(select(Location).where(Location.id == hh.home_location_id))
+        ).scalar_one_or_none()
+    return HouseholdOut(
+        id=hh.id,
+        home_location_id=hh.home_location_id,
+        home_address=loc.address if loc else None,
+        home_location_name=loc.name if loc else None,
+        default_max_distance_mi=hh.default_max_distance_mi,
+        digest_time=hh.digest_time,
+        quiet_hours_start=hh.quiet_hours_start,
+        quiet_hours_end=hh.quiet_hours_end,
+        daily_llm_cost_cap_usd=hh.daily_llm_cost_cap_usd,
+    )
+
+
 @router.get("", response_model=HouseholdOut)
 async def get_household(request: Request) -> HouseholdOut:
     async with session_scope(_engine(request)) as s:
         hh = await _load_or_create(s)
-        return HouseholdOut.model_validate(hh)
+        return await _to_out(s, hh)
 
 
 @router.patch("", response_model=HouseholdOut)
@@ -105,4 +124,4 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
             setattr(hh, key, value)
 
         await s.flush()
-        return HouseholdOut.model_validate(hh)
+        return await _to_out(s, hh)

@@ -112,6 +112,7 @@ class WatchlistOut(BaseModel):
     priority: str
     notes: str | None
     active: bool
+    ignore_hard_gates: bool
 
 
 class EnrollmentOut(BaseModel):

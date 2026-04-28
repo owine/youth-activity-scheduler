@@ -9,6 +9,8 @@ class HouseholdOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     home_location_id: int | None
+    home_address: str | None
+    home_location_name: str | None
     default_max_distance_mi: float | None
     digest_time: str
     quiet_hours_start: str | None

@@ -170,3 +170,17 @@ async def test_limit_enforced(client):
     assert r.status_code == 422
     r = await client.get("/api/matches?limit=501")
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_match_includes_offering_registration_opens_at_and_site_name(client):
+    r = await client.get("/api/matches?kid_id=1")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 2
+    # Both matches for kid 1 should have site_name and registration_opens_at in offering
+    for row in body:
+        offering = row["offering"]
+        assert "site_name" in offering
+        assert offering["site_name"] == "X"  # From fixture
+        assert "registration_opens_at" in offering

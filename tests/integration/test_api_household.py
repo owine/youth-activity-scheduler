@@ -119,3 +119,27 @@ async def test_patch_notifier_configs_persist(client):
         assert hh.ntfy_config_json == {"topic": "yas-alerts", "server": "https://ntfy.sh"}
         assert hh.pushover_config_json == {"user_key_env": "YAS_PUSHOVER_USER_KEY"}
         assert hh.ha_config_json == {"base_url": "http://homeassistant.local:8123"}
+
+
+@pytest.mark.asyncio
+async def test_get_household_returns_address_and_name_when_set(client):
+    c, _, _ = client
+    await c.patch(
+        "/api/household",
+        json={"home_address": "123 Main St, Chicago, IL", "home_location_name": "Home"},
+    )
+    r = await c.get("/api/household")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["home_address"] == "123 Main St, Chicago, IL"
+    assert body["home_location_name"] == "Home"
+
+
+@pytest.mark.asyncio
+async def test_get_household_returns_null_address_when_unset(client):
+    c, _, _ = client
+    r = await c.get("/api/household")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["home_address"] is None
+    assert body["home_location_name"] is None

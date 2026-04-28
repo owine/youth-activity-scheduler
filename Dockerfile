@@ -1,5 +1,17 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.12-slim AS base
+
+# --- Stage 1: build the React SPA ---
+FROM node:20.20.2-alpine AS frontend-build
+WORKDIR /build
+# Cache deps separately
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+# Build
+COPY frontend/ ./
+RUN npm run build  # emits /build/dist with index.html + assets/
+
+# --- Stage 2: Python backend ---
+FROM python:3.12.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -33,6 +45,9 @@ RUN mkdir -p /data
 
 ENV YAS_DATABASE_URL=sqlite+aiosqlite:////data/activities.db \
     YAS_DATA_DIR=/data
+
+# Copy the SPA bundle into the static dir consumed by yas.web.spa_fallback
+COPY --from=frontend-build /build/dist /app/static
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD curl -fsS http://localhost:8080/healthz || exit 1

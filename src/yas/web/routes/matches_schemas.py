@@ -23,6 +23,8 @@ class OfferingSummary(BaseModel):
     price_cents: int | None
     registration_url: str | None
     site_id: int
+    registration_opens_at: datetime | None = None
+    site_name: str
 
 
 class MatchOut(BaseModel):
