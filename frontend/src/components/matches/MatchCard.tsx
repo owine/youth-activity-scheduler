@@ -1,0 +1,38 @@
+import type { Match } from '@/lib/types';
+import { Card } from '@/components/ui/card';
+import { price, relDate } from '@/lib/format';
+import { cn } from '@/lib/utils';
+
+export function MatchCard({
+  match,
+  urgent,
+  onClick,
+}: {
+  match: Match;
+  urgent?: boolean;
+  onClick?: () => void;
+}) {
+  const o = match.offering;
+  return (
+    <Card
+      className={cn(
+        'p-3 cursor-pointer hover:bg-accent transition',
+        urgent && 'border-destructive/40',
+      )}
+      onClick={onClick}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <div className="font-semibold">{o.name}</div>
+          <div className="text-sm text-muted-foreground">
+            {o.site_name}
+            {o.start_date && ` · ${relDate(o.start_date)}`}
+            {o.price_cents != null && ` · ${price(o.price_cents / 100)}`}
+            {o.registration_opens_at && ` · reg ${relDate(o.registration_opens_at)}`}
+          </div>
+        </div>
+        <div className="text-sm font-semibold">{match.score.toFixed(2)}</div>
+      </div>
+    </Card>
+  );
+}
