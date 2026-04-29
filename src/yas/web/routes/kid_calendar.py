@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -117,5 +117,9 @@ async def get_kid_calendar(
                     )
                 )
 
-        events.sort(key=lambda e: (e.date, e.time_start or ""))
+        # Sort by (date, time_start). time_start is `time | None`; coerce
+        # all-day events to `time.min` so we always compare time-to-time.
+        # Mixing `time` and `str` in the sort key crashes at runtime when
+        # both an all-day and a timed event fall on the same date.
+        events.sort(key=lambda e: (e.date, e.time_start or time.min))
         return KidCalendarOut(kid_id=kid_id, from_=from_, to=to, events=events)

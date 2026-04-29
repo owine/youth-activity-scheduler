@@ -220,3 +220,39 @@ async def test_excludes_other_kids_events(client):
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
     body = r.json()
     assert all(e.get("enrollment_id") != 11 for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_sort_handles_all_day_and_timed_events_on_same_date(client):
+    """Regression: sort key must not mix `time` and `str` (or `None`).
+
+    All-day events have time_start == None. Timed events have time_start
+    set. If both fall on the same date, the sort key fires a tuple
+    comparison that crashes if we don't coerce to a single comparable type.
+    """
+    c, engine = client
+    await _seed_kid_with_enrollment(engine)
+    async with session_scope(engine) as s:
+        # All-day manual block on 2026-04-28 (Tuesday — same date as the T-Ball enrollment).
+        s.add(
+            UnavailabilityBlock(
+                id=30,
+                kid_id=1,
+                source=UnavailabilitySource.manual.value,
+                label="Day off",
+                days_of_week=["tue"],
+                time_start=None,
+                time_end=None,
+                date_start=date(2026, 4, 1),
+                date_end=date(2026, 6, 30),
+                active=True,
+            )
+        )
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
+    assert r.status_code == 200
+    body = r.json()
+    same_date = [e for e in body["events"] if e["date"] == "2026-04-28"]
+    # One enrollment (timed) + one all-day block on Tuesday.
+    assert len(same_date) == 2
+    assert any(e["all_day"] is True for e in same_date)
+    assert any(e["all_day"] is False for e in same_date)
