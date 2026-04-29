@@ -54,7 +54,7 @@ async def _run_one_tick(engine: Any, settings: Settings) -> None:
     task = asyncio.create_task(_patched_detector_loop(engine, settings, _capturing_sleep))
     try:
         await asyncio.wait_for(task, timeout=10.0)
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError, asyncio.CancelledError:
         pass
     finally:
         if not task.done():

@@ -11,7 +11,7 @@ COPY frontend/ ./
 RUN npm run build  # emits /build/dist with index.html + assets/
 
 # --- Stage 2: Python backend ---
-FROM python:3.12.13-slim AS base
+FROM python:3.14.4-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

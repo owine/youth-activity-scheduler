@@ -86,7 +86,7 @@ class NominatimClient:
                 display_name=str(item.get("display_name", "")),
                 provider="nominatim",
             )
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             return None
 
     async def aclose(self) -> None:

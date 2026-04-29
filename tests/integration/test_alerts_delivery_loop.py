@@ -308,7 +308,7 @@ async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ig
     task = asyncio.create_task(alert_delivery_loop(engine, settings, notifiers))
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=2.5)
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError, asyncio.CancelledError:
         pass
     finally:
         task.cancel()
