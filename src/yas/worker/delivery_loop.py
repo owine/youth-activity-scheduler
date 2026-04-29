@@ -41,6 +41,7 @@ async def alert_delivery_loop(
                                 Alert.sent_at.is_(None),
                                 Alert.skipped.is_(False),
                                 Alert.scheduled_for <= now,
+                                Alert.closed_at.is_(None),
                             )
                             .order_by(Alert.scheduled_for)
                             .limit(100)
