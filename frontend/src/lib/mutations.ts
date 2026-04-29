@@ -2,7 +2,8 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 import { api } from './api';
 import type { CloseReason, InboxAlert, InboxSummary } from './types';
 
-const keyIncludesClosed = (key: QueryKey): boolean => key[3] === 'with-closed';
+const keyIncludesClosed = (key: QueryKey): boolean =>
+  key.length >= 4 && key[3] === 'with-closed';
 
 type Snapshot = ReadonlyArray<readonly [QueryKey, InboxSummary | undefined]>;
 
@@ -39,8 +40,8 @@ export function useCloseAlert() {
       ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
     },
 
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
     },
   });
 }
@@ -68,8 +69,8 @@ export function useReopenAlert() {
       ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
     },
 
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
     },
   });
 }

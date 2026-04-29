@@ -71,13 +71,13 @@ describe('useCloseAlert', () => {
 
   it('rolls back on server error', async () => {
     server.use(
-      http.post('/api/alerts/:id/close', () =>
-        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
-      ),
+      http.post('/api/alerts/:id/close', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
     );
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    const original = seedSummary([seed()]);
-    qc.setQueryData(['inbox', 'summary', 7, 'open-only'], original);
+    const openOnly = seedSummary([seed()]);
+    const withClosed = seedSummary([seed()]);
+    qc.setQueryData(['inbox', 'summary', 7, 'open-only'], openOnly);
+    qc.setQueryData(['inbox', 'summary', 7, 'with-closed'], withClosed);
 
     const { result } = renderHook(() => useCloseAlert(), { wrapper: makeWrapper(qc) });
     await act(async () => {
@@ -85,9 +85,10 @@ describe('useCloseAlert', () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    const after = qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only']);
-    expect(after?.alerts).toHaveLength(1);
-    expect(after!.alerts[0]!.closed_at).toBeNull();
+    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts).toHaveLength(1);
+    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts[0]!.closed_at).toBeNull();
+    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts).toHaveLength(1);
+    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts[0]!.closed_at).toBeNull();
   });
 });
 
