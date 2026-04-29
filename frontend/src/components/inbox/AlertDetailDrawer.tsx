@@ -22,6 +22,10 @@ export function AlertDetailDrawer({
   const inFlight = close.isPending || reopen.isPending;
 
   // Clear any prior error when the drawer's alert changes.
+  // Reset mutation + error state whenever the drawer's alert changes.
+  // close/reopen are TanStack Query mutation objects that get a new identity
+  // on every render; including them in deps would cause an infinite loop.
+  // alert.id is the only stable signal that we're looking at a different alert.
   useEffect(() => {
     startTransition(() => {
       setErrorMsg(null);
