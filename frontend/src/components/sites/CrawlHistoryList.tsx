@@ -3,10 +3,10 @@ import { Badge } from '@/components/ui/badge';
 import type { CrawlRun } from '@/lib/types';
 import { fmt } from '@/lib/format';
 
-const statusVariant: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const statusVariant: Record<string, 'default' | 'secondary' | 'destructive' | 'outline-solid'> = {
   ok: 'secondary',
   failed: 'destructive',
-  skipped: 'outline',
+  skipped: 'outline-solid',
 };
 
 export function CrawlHistoryList({ crawls, isLoading }: { crawls: CrawlRun[] | undefined; isLoading: boolean }) {
@@ -17,7 +17,7 @@ export function CrawlHistoryList({ crawls, isLoading }: { crawls: CrawlRun[] | u
       {crawls.map((c) => (
         <li key={c.id} className="rounded-md border border-border p-2.5 text-sm">
           <div className="flex items-center gap-3">
-            <Badge variant={statusVariant[c.status] ?? 'outline'}>{c.status}</Badge>
+            <Badge variant={statusVariant[c.status] ?? 'outline-solid'}>{c.status}</Badge>
             <span className="text-muted-foreground">{fmt(c.started_at)}</span>
             <span className="ml-auto">{c.pages_fetched} pages · {c.changes_detected} changes</span>
           </div>
