@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
 from yas.db.session import session_scope
-from yas.web.routes.alerts_schemas import AlertListResponse, AlertOut
+from yas.web.routes.alerts_schemas import AlertCloseIn, AlertListResponse, AlertOut
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -123,3 +123,17 @@ async def resend_alert(request: Request, alert_id: int) -> AlertOut:
         await s.flush()
 
         return AlertOut.model_validate(cloned)
+
+
+@router.post("/{alert_id}/close", response_model=AlertOut)
+async def close_alert(request: Request, alert_id: int, body: AlertCloseIn) -> AlertOut:
+    async with session_scope(_engine(request)) as s:
+        alert = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
+        if alert is None:
+            raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
+        if alert.closed_at is None:
+            alert.closed_at = datetime.now(UTC)
+        alert.close_reason = body.reason
+        await s.flush()
+        await s.refresh(alert)
+        return AlertOut.model_validate(alert)
