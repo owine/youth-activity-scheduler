@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 
 from yas.db.base import Base
 from yas.db.models import Alert, CrawlRun, Kid, Match, Offering, Page, Site
-from yas.db.models._types import AlertType, CrawlStatus
+from yas.db.models._types import AlertType, CloseReason, CrawlStatus
 from yas.db.session import create_engine_for, session_scope
 from yas.web.app import create_app
 
@@ -234,3 +234,124 @@ async def test_inbox_falls_back_gracefully_for_unknown_stored_alert_type(client)
     assert a["type"] == "some_legacy_type_not_in_enum"
     assert isinstance(a["summary_text"], str)
     assert len(a["summary_text"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_inbox_summary_excludes_closed_alerts_by_default(client):
+    c, engine = client
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
+        await s.flush()
+        s.add(
+            Alert(
+                id=1,
+                type=AlertType.watchlist_hit,
+                kid_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="open-1",
+                payload_json={},
+            )
+        )
+        s.add(
+            Alert(
+                id=2,
+                type=AlertType.watchlist_hit,
+                kid_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=2),
+                dedup_key="closed-1",
+                payload_json={},
+                closed_at=now,
+                close_reason=CloseReason.acknowledged,
+            )
+        )
+    r = await c.get(
+        "/api/inbox/summary",
+        params={"since": _iso(now - timedelta(days=1)), "until": _iso(now + timedelta(days=1))},
+    )
+    assert r.status_code == 200
+    ids = {a["id"] for a in r.json()["alerts"]}
+    assert ids == {1}
+
+
+@pytest.mark.asyncio
+async def test_inbox_summary_with_include_closed_returns_closed_alerts(client):
+    c, engine = client
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
+        await s.flush()
+        s.add(
+            Alert(
+                id=1,
+                type=AlertType.watchlist_hit,
+                kid_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="open-1",
+                payload_json={},
+            )
+        )
+        s.add(
+            Alert(
+                id=2,
+                type=AlertType.watchlist_hit,
+                kid_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=2),
+                dedup_key="closed-1",
+                payload_json={},
+                closed_at=now,
+                close_reason=CloseReason.dismissed,
+            )
+        )
+    r = await c.get(
+        "/api/inbox/summary",
+        params={
+            "since": _iso(now - timedelta(days=1)),
+            "until": _iso(now + timedelta(days=1)),
+            "include_closed": "true",
+        },
+    )
+    assert r.status_code == 200
+    alerts = r.json()["alerts"]
+    ids_to_reasons = {a["id"]: a["close_reason"] for a in alerts}
+    assert ids_to_reasons == {1: None, 2: "dismissed"}
+
+
+@pytest.mark.asyncio
+async def test_closing_schedule_posted_alert_does_not_reduce_site_activity_count(client):
+    """Regression: site-distinct schedule_posted count is analytics, not inbox.
+
+    Closing a schedule_posted alert should NOT change posted_new_count.
+    """
+    c, engine = client
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        s.add(Site(id=1, name="X", base_url="https://x"))
+        await s.flush()
+        s.add(
+            Alert(
+                id=1,
+                type=AlertType.schedule_posted,
+                site_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="sp-1",
+                payload_json={},
+                closed_at=now,
+                close_reason=CloseReason.acknowledged,
+            )
+        )
+    r = await c.get(
+        "/api/inbox/summary",
+        params={"since": _iso(now - timedelta(days=1)), "until": _iso(now + timedelta(days=1))},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # The closed schedule_posted alert is NOT in the inbox alert list…
+    assert body["alerts"] == []
+    # …but the site-distinct analytics count still sees it.
+    assert body["site_activity"]["posted_new_count"] == 1

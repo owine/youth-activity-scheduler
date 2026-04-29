@@ -34,6 +34,7 @@ async def inbox_summary(
     request: Request,
     since: Annotated[datetime, Query()],
     until: Annotated[datetime, Query()],
+    include_closed: Annotated[bool, Query()] = False,
 ) -> InboxSummaryOut:
     if since >= until:
         raise HTTPException(status_code=422, detail="since must be before until")
@@ -52,6 +53,8 @@ async def inbox_summary(
             .order_by(Alert.scheduled_for.desc())
             .limit(50)
         )
+        if not include_closed:
+            alerts_q = alerts_q.where(Alert.closed_at.is_(None))
         alert_rows = (await s.execute(alerts_q)).all()
         inbox_alerts: list[InboxAlertOut] = []
         for alert, kid_name in alert_rows:
@@ -76,6 +79,8 @@ async def inbox_summary(
                     dedup_key=alert.dedup_key,
                     payload_json=alert.payload_json or {},
                     summary_text=summary,
+                    closed_at=alert.closed_at,
+                    close_reason=alert.close_reason,
                 )
             )
 
