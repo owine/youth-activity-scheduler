@@ -116,3 +116,8 @@ class DayOfWeek(StrEnum):
     fri = "fri"
     sat = "sat"
     sun = "sun"
+
+
+class CloseReason(StrEnum):
+    acknowledged = "acknowledged"
+    dismissed = "dismissed"

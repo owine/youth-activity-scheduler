@@ -9,7 +9,7 @@ from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from yas.db.base import Base
-from yas.db.models._types import AlertType
+from yas.db.models._types import AlertType, CloseReason
 
 
 class Alert(Base):
@@ -34,5 +34,9 @@ class Alert(Base):
     skipped: Mapped[bool] = mapped_column(default=False)
     dedup_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    close_reason: Mapped[CloseReason | None] = mapped_column(String, nullable=True)
 
     __table_args__ = (Index("ix_alerts_unsent_due", "scheduled_for", "sent_at"),)
