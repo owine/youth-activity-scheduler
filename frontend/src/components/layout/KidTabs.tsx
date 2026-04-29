@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 const tabs = [
   { to: '/kids/$id/matches', label: 'Matches' },
   { to: '/kids/$id/watchlist', label: 'Watchlist' },
+  { to: '/kids/$id/calendar', label: 'Calendar' },
 ] as const;
 
 export function KidTabs({ kidId }: { kidId: number }) {

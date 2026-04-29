@@ -15,6 +15,7 @@ import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as SitesIdRouteImport } from './routes/sites.$id'
 import { Route as KidsIdWatchlistRouteImport } from './routes/kids.$id.watchlist'
 import { Route as KidsIdMatchesRouteImport } from './routes/kids.$id.matches'
+import { Route as KidsIdCalendarRouteImport } from './routes/kids.$id.calendar'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -46,12 +47,18 @@ const KidsIdMatchesRoute = KidsIdMatchesRouteImport.update({
   path: '/kids/$id/matches',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
+  id: '/kids/$id/calendar',
+  path: '/kids/$id/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/sites/$id': typeof SitesIdRoute
   '/sites/': typeof SitesIndexRoute
+  '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sites/$id': typeof SitesIdRoute
   '/sites': typeof SitesIndexRoute
+  '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/sites/$id': typeof SitesIdRoute
   '/sites/': typeof SitesIndexRoute
+  '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites/$id'
     | '/sites/'
+    | '/kids/$id/calendar'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites/$id'
     | '/sites'
+    | '/kids/$id/calendar'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sites/$id'
     | '/sites/'
+    | '/kids/$id/calendar'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesById: FileRoutesById
@@ -104,6 +116,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SitesIdRoute: typeof SitesIdRoute
   SitesIndexRoute: typeof SitesIndexRoute
+  KidsIdCalendarRoute: typeof KidsIdCalendarRoute
   KidsIdMatchesRoute: typeof KidsIdMatchesRoute
   KidsIdWatchlistRoute: typeof KidsIdWatchlistRoute
 }
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KidsIdMatchesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kids/$id/calendar': {
+      id: '/kids/$id/calendar'
+      path: '/kids/$id/calendar'
+      fullPath: '/kids/$id/calendar'
+      preLoaderRoute: typeof KidsIdCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SitesIdRoute: SitesIdRoute,
   SitesIndexRoute: SitesIndexRoute,
+  KidsIdCalendarRoute: KidsIdCalendarRoute,
   KidsIdMatchesRoute: KidsIdMatchesRoute,
   KidsIdWatchlistRoute: KidsIdWatchlistRoute,
 }
