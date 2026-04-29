@@ -40,6 +40,12 @@ This is the v1 terminal-state criterion's calendar deliverable, scoped narrowly:
 
 `GET /api/kids/{kid_id}/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
+**Boundary semantics, in one place:**
+- The request window `[from, to)` is **half-open** (inclusive `from`, exclusive `to`) — matches the existing `/api/inbox/summary` convention.
+- Enrollments included: only those with `status == 'enrolled'`. `interested`, `waitlisted`, and `cancelled` are excluded. (If a future slice needs to render waitlisted enrollments differently, add a `?include_statuses=` query param then.)
+- Unavailability included: `active == true` and the block's `[date_start, date_end]` (closed interval, both inclusive when present) overlaps `[from, to)`.
+- Source-row date bounds (`offering.start_date`/`end_date`, `block.date_start`/`date_end`) are **closed** intervals (both endpoints inclusive when set). The request window is **half-open**. The expansion helper's docstring is the source of truth.
+
 **Path params:**
 - `kid_id` (int) — must exist and belong to the household. 404 if not found.
 
@@ -117,10 +123,10 @@ def expand_recurring(
     days_of_week: list[str],   # e.g. ["mon", "wed", "fri"]
     time_start: time | None,
     time_end: time | None,
-    date_start: date | None,    # inclusive lower bound (None = unbounded)
-    date_end: date | None,      # inclusive upper bound (None = unbounded)
-    range_from: date,           # inclusive
-    range_to: date,             # exclusive
+    date_start: date | None,    # inclusive lower bound on the source row (None = unbounded)
+    date_end: date | None,      # inclusive upper bound on the source row (None = unbounded)
+    range_from: date,           # inclusive lower bound of the request window
+    range_to: date,             # exclusive upper bound of the request window
 ) -> Iterator[OccurrenceTuple]:
     """Yield (date, time_start, time_end, all_day) tuples for each
     weekday in `days_of_week` falling within the intersection of
