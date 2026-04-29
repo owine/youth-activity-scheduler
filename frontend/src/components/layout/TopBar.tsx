@@ -10,7 +10,7 @@ export function TopBar() {
   const alertCount = data?.alerts.length ?? 0;
 
   return (
-    <header className="border-b border-border bg-background/95 backdrop-blur px-4 py-2.5 flex items-center gap-4">
+    <header className="border-b border-border bg-background/95 backdrop-blur-sm px-4 py-2.5 flex items-center gap-4">
       <Link to="/" className="text-lg font-semibold">YAS</Link>
       <div className="flex-1">
         <KidSwitcher />
