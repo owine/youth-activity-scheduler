@@ -2,7 +2,7 @@
 name = "yas"
 version = "0.1.0"
 description = "Youth Activity Scheduler — self-hosted crawler + alerter for youth program sites"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 readme = "README.md"
 dependencies = [
   "sqlalchemy[asyncio]==2.0.49",
@@ -45,7 +45,7 @@ packages = ["src/yas"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -59,7 +59,7 @@ ignore = ["E501"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 files = ["src/yas"]
 plugins = ["pydantic.mypy"]
