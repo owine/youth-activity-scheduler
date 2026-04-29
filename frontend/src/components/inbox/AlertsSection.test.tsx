@@ -17,6 +17,8 @@ const alerts = [
     dedup_key: 'k',
     payload_json: {},
     summary_text: 'Watchlist hit for Sam',
+    closed_at: null,
+    close_reason: null,
   },
 ];
 
