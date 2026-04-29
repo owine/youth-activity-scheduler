@@ -10,7 +10,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!r.ok) {
-    let body: unknown = null;
+    let body: unknown;
     try {
       body = await r.json();
     } catch {

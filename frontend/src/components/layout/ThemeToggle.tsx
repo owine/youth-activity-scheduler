@@ -8,11 +8,7 @@ const Icon = { system: Monitor, light: Sun, dark: Moon } as const;
 const label: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
 export function ThemeToggle() {
-  const [t, setT] = useState<Theme>('system');
-
-  useEffect(() => {
-    setT(getStoredTheme());
-  }, []);
+  const [t, setT] = useState<Theme>(() => getStoredTheme());
 
   // React to OS-level changes when in system mode.
   useEffect(() => {
