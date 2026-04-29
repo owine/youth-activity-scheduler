@@ -137,3 +137,15 @@ async def close_alert(request: Request, alert_id: int, body: AlertCloseIn) -> Al
         await s.flush()
         await s.refresh(alert)
         return AlertOut.model_validate(alert)
+
+
+@router.post("/{alert_id}/reopen", response_model=AlertOut)
+async def reopen_alert(request: Request, alert_id: int) -> AlertOut:
+    async with session_scope(_engine(request)) as s:
+        alert = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
+        if alert is None:
+            raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
+        alert.closed_at = None
+        alert.close_reason = None
+        await s.flush()
+        return AlertOut.model_validate(alert)

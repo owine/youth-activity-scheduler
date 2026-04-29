@@ -109,3 +109,30 @@ async def test_close_returns_422_for_invalid_reason(client):
     c, _ = client
     r = await c.post("/api/alerts/1/close", json={"reason": "snoozed"})
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reopen_clears_both_fields(client):
+    c, _ = client
+    await c.post("/api/alerts/1/close", json={"reason": "acknowledged"})
+    r = await c.post("/api/alerts/1/reopen")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["closed_at"] is None
+    assert body["close_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_reopen_already_open_is_idempotent(client):
+    c, _ = client
+    r = await c.post("/api/alerts/1/reopen")
+    assert r.status_code == 200
+    assert r.json()["closed_at"] is None
+    assert r.json()["close_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_reopen_returns_404_for_unknown_id(client):
+    c, _ = client
+    r = await c.post("/api/alerts/9999/reopen")
+    assert r.status_code == 404
