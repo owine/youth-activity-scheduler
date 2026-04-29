@@ -6,6 +6,7 @@ import type {
   Household,
   InboxSummary,
   KidBrief,
+  KidCalendarResponse,
   KidDetail,
   Match,
   Site,
@@ -91,5 +92,24 @@ export function useAlertRouting() {
   return useQuery({
     queryKey: ['alert_routing'],
     queryFn: () => api.get<AlertRouting[]>('/api/alert_routing'),
+  });
+}
+
+export function useKidCalendar({
+  kidId,
+  from,
+  to,
+}: {
+  kidId: number;
+  from: string;
+  to: string;
+}) {
+  return useQuery({
+    queryKey: ['kids', kidId, 'calendar', from, to],
+    queryFn: () =>
+      api.get<KidCalendarResponse>(
+        `/api/kids/${kidId}/calendar?from=${from}&to=${to}`,
+      ),
+    enabled: Number.isFinite(kidId) && !!from && !!to,
   });
 }

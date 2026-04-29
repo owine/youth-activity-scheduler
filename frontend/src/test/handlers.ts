@@ -61,4 +61,26 @@ export const handlers = [
       close_reason: null,
     });
   }),
+  http.get('/api/kids/:id/calendar', ({ params, request }) => {
+    const url = new URL(request.url);
+    return HttpResponse.json({
+      kid_id: Number(params.id),
+      from: url.searchParams.get('from'),
+      to: url.searchParams.get('to'),
+      events: [],
+    });
+  }),
+  http.patch('/api/enrollments/:id', async ({ params, request }) => {
+    const body = (await request.json()) as { status?: string };
+    return HttpResponse.json({
+      id: Number(params.id),
+      kid_id: 1,
+      offering_id: 1,
+      status: body.status ?? 'cancelled',
+      enrolled_at: null,
+      notes: null,
+      created_at: '2026-04-29T12:00:00Z',
+    });
+  }),
+  http.delete('/api/unavailability/:id', () => new HttpResponse(null, { status: 204 })),
 ];
