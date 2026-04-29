@@ -11,6 +11,9 @@
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
   "rangeStrategy": "pin",
+  "docker-compose": {
+    "enabled": false
+  },
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on monday"]
@@ -25,47 +28,21 @@
   },
   "packageRules": [
     {
-      "description": "Auto-merge low-risk updates after CI passes",
-      "matchUpdateTypes": ["patch", "pin", "digest", "lockFileMaintenance"],
+      "description": "Default: bundle every non-major update into a single weekly PR; auto-merge once CI passes (any time of day, even though branches only land Mondays)",
+      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "lockFileMaintenance"],
+      "groupName": "all non-major dependencies",
       "automerge": true,
-      "platformAutomerge": true
+      "platformAutomerge": true,
+      "automergeSchedule": ["at any time"]
     },
     {
-      "description": "Auto-merge minor updates for trusted dev tooling",
-      "matchPackageNames": [
-        "ruff",
-        "mypy",
-        "prettier",
-        "typescript",
-        "vite",
-        "@vitejs/plugin-react"
-      ],
-      "matchUpdateTypes": ["minor"],
-      "automerge": true,
-      "platformAutomerge": true
-    },
-    {
-      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9 requires flat config",
-      "matchPackageNames": ["eslint"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
-      "description": "Group ESLint plugins and TS-ESLint",
-      "matchPackageNames": [
-        "/^eslint-/",
-        "/^@typescript-eslint//"
-      ],
+      "description": "Group ESLint plugins and TS-ESLint (overrides default)",
+      "matchPackageNames": ["/^eslint-/", "/^@typescript-eslint//"],
       "groupName": "eslint plugins"
     },
     {
       "description": "Group React core",
-      "matchPackageNames": [
-        "react",
-        "react-dom",
-        "@types/react",
-        "@types/react-dom"
-      ],
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
       "groupName": "react"
     },
     {
@@ -84,7 +61,7 @@
       "groupName": "sqlalchemy"
     },
     {
-      "description": "Group FastAPI / Pydantic / Uvicorn stack",
+      "description": "Group FastAPI / Pydantic / Uvicorn stack (peer-dep coupled)",
       "matchPackageNames": [
         "fastapi",
         "uvicorn",
@@ -101,40 +78,58 @@
       "groupName": "http-clients"
     },
     {
+      "description": "Group Vite + plugin (peer-dep coupled — plugin majors track Vite majors)",
+      "matchPackageNames": ["vite", "@vitejs/plugin-react"],
+      "groupName": "vite"
+    },
+    {
+      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9+ requires flat config",
+      "matchPackageNames": ["eslint"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Hold Playwright bumps for 3 days — large download, breaking changes possible",
       "matchPackageNames": ["playwright"],
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Anthropic SDK — review manually, surface fast",
+      "description": "Anthropic SDK — review manually; do not auto-merge",
       "matchPackageNames": ["anthropic"],
       "automerge": false,
       "labels": ["dependencies", "review-required"]
     },
     {
-      "description": "Major Python deps require manual review",
+      "description": "Major Python deps require manual review — separate PR per dep",
       "matchManagers": ["pep621"],
       "matchUpdateTypes": ["major"],
       "automerge": false
     },
     {
-      "description": "Major frontend deps require manual review",
+      "description": "Major frontend deps require manual review — separate PR per dep (or per smart-group bundle)",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["major"],
       "automerge": false
     },
     {
       "description": "Major Docker base image bumps require manual review",
-      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["major"],
       "automerge": false
     },
     {
-      "description": "Pin Docker base images to digests for reproducibility",
-      "matchManagers": ["dockerfile", "docker-compose"],
+      "description": "Major GitHub Action bumps — auto-merge fine if CI passes (digests are pinned)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Auto-merge Dockerfile pin/digest updates any time",
+      "matchManagers": ["dockerfile"],
       "matchUpdateTypes": ["pin", "pinDigest"],
       "automerge": true,
-      "platformAutomerge": true
+      "platformAutomerge": true,
+      "automergeSchedule": ["at any time"]
     }
   ]
 }
