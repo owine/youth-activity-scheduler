@@ -65,7 +65,7 @@ class CalendarEventOut(BaseModel):
 
 The composite event id for matches is `match:{offering_id}:{date}` (no separate match-row id is needed in this codebase since matches are uniquely keyed by `(kid_id, offering_id)`).
 
-Match events MAY include `offering_id` (not nullable for matches) and `location_id` (from the joined offering), reusing existing fields.
+Match events MUST populate `offering_id` (the join key for `useEnrollOffering`) and SHOULD populate `location_id` from the joined offering when set. Both reuse existing optional fields on `CalendarEventOut`.
 
 ### 2.3 Existing endpoints used
 
@@ -205,7 +205,10 @@ interface EnrollOfferingInput {
 
 export function useEnrollOffering() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, EnrollOfferingInput, { snapshots: ... }>({
+  type Ctx = {
+    snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
+  };
+  return useMutation<unknown, Error, EnrollOfferingInput, Ctx>({
     mutationFn: ({ kidId, offeringId }) =>
       api.post('/api/enrollments', {
         kid_id: kidId,
@@ -251,6 +254,7 @@ Optimistic-only: removes the match. The new enrollment occurrences and the new l
 - **Server returns 4xx/5xx on `POST /api/enrollments`** → rollback restores the match event; banner shows. Retry available.
 - **Existing tests calling without `include_matches`** → unchanged behavior; no match events appear.
 - **Race: cancel-enrollment in flight, user toggles "Show matches" on** → cancel mutation's optimistic update applies to all variants via the `['kids', kidId, 'calendar']` prefix; toggle on triggers a fresh fetch on the new key. Both consistent with the canonical pattern.
+- **Toggle on, kid has zero matches** → server returns the same shape with no `kind="match"` events. Toggle remains visible and active; calendar simply has no extra overlay. We do NOT hide or disable the toggle based on emptiness — that would require an extra request just to gate the toggle.
 
 ## 6. Testing
 
@@ -260,6 +264,7 @@ Backend:
    - Score threshold: a match at `0.59` is excluded; a match at `0.6` is included; a match at `0.61` is included.
    - Excludes offerings the kid is already enrolled in (`status='enrolled'`).
    - Excludes offerings the kid is interested in (`status='interested'`).
+   - Excludes offerings the kid is waitlisted for (`status='waitlisted'`).
    - Includes offerings only cancelled (`status='cancelled'`) — the kid is no longer committed.
    - When the flag is absent, response shape is unchanged (no match events).
 
