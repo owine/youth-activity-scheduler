@@ -102,7 +102,7 @@ Both mutations share a tiny helper for snapshot/rollback to avoid duplication.
 - Buttons disabled while mutation is in-flight; spinner inside the active button.
 - On success, the drawer closes (selection state cleared in `AlertsSection`).
 - On failure, the drawer stays open and renders an `<ErrorBanner>` above the action footer with the error message; buttons re-enable.
-- Drawer cannot be dismissed (overlay click / Escape) while a mutation is in-flight, to keep the rollback path coherent.
+- User-initiated dismiss (overlay click / Escape) is suppressed while a mutation is in-flight, to keep the rollback path coherent. The success auto-close fires from `onSuccess` after the mutation settles, not during in-flight state, so it is not affected.
 
 ## 4. Inbox toggle
 
@@ -150,7 +150,7 @@ Closed rows render with `opacity-60` and a small "Closed" pill; clicking opens t
 
 `AlertsSection` owns the `includeClosed` state (component-local, no URL param). Initial value: `false`.
 
-The `keyIncludesClosed(key)` helper used in `onMutate` reads the toggle state from the query key (`'with-closed'` vs `'open-only'`), since `setQueryData` updates run against every cached `InboxSummary` variant.
+The `keyIncludesClosed(key)` helper used in `onMutate` reads the toggle state from the query key (`'with-closed'` vs `'open-only'`) since `setQueryData` updates run against every cached `InboxSummary` variant. It's a one-liner: `(key: QueryKey) => key[3] === 'with-closed'`. Co-located in `mutations.ts`.
 
 ## 5. Worker change
 
@@ -168,7 +168,7 @@ select(Alert)
 
 A regression test in `tests/integration/test_alerts_delivery_loop.py`: seed an alert with `closed_at` set and `scheduled_for` in the past, run one tick of the delivery loop, assert nothing was sent and `sent_at` remains null.
 
-**Reopen interaction.** After this change, reopening an alert clears `closed_at` and the worker's next tick picks it up (by design: the user explicitly un-cancelled the send).
+**Reopen interaction.** Per 5b-1a §3, reopen clears both `closed_at` and `close_reason`. After the worker change, reopening an alert therefore makes it eligible again for the worker's next tick (by design: the user explicitly un-cancelled the send).
 
 ## 6. Type changes
 
@@ -208,6 +208,7 @@ Frontend (Vitest + React Testing Library; match the file naming and fixture styl
 4. **MSW handlers** in `frontend/src/test/handlers.ts` —
    - `POST /api/alerts/:id/close` → returns updated AlertOut.
    - `POST /api/alerts/:id/reopen` → returns updated AlertOut.
+   - Rollback tests use a per-test `server.use(...)` override to return 500 from the close/reopen handler.
 
 Backend:
 
