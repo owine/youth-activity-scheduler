@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.23.0
 
 # --- Stage 1: build the React SPA ---
-FROM node:20.20.2-alpine AS frontend-build
+FROM node:24.15.0-alpine AS frontend-build
 WORKDIR /build
 # Cache deps separately
 COPY frontend/package.json frontend/package-lock.json ./
