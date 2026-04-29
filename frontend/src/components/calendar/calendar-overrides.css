@@ -1,0 +1,26 @@
+/* Minimal Tailwind-friendly overrides for react-big-calendar's base styles. */
+
+.rbc-event-enrollment {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border: none;
+}
+
+.rbc-event-unavailability {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  border: none;
+}
+
+.rbc-today {
+  background-color: hsl(var(--accent));
+}
+
+.rbc-toolbar button {
+  color: hsl(var(--foreground));
+}
+
+.rbc-toolbar button.rbc-active {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
