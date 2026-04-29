@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AlertsSection } from './AlertsSection';
+
+function wrap(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 const alerts = [
   {
@@ -24,12 +30,12 @@ const alerts = [
 
 describe('AlertsSection', () => {
   it('renders empty state', () => {
-    render(<AlertsSection alerts={[]} />);
+    wrap(<AlertsSection alerts={[]} />);
     expect(screen.getByText(/no alerts this week/i)).toBeInTheDocument();
   });
 
   it('renders rows and opens drawer on click', () => {
-    render(<AlertsSection alerts={alerts as never} />);
+    wrap(<AlertsSection alerts={alerts as never} />);
     fireEvent.click(screen.getByText('Watchlist hit for Sam'));
     // Drawer renders the summary text
     expect(screen.getAllByText('Watchlist hit for Sam').length).toBeGreaterThan(0);
