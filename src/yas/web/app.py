@@ -57,6 +57,7 @@ def create_app(
         unavailability_router,
         watchlist_router,
     )
+    from yas.web.routes.kid_calendar import router as kid_calendar_router
 
     app.include_router(alert_routing_router)
     app.include_router(alerts_router)
@@ -66,6 +67,7 @@ def create_app(
     app.include_router(household_router)
     app.include_router(inbox_router)
     app.include_router(kids_router)
+    app.include_router(kid_calendar_router)
     app.include_router(watchlist_router)
     app.include_router(unavailability_router)
     app.include_router(enrollments_router)

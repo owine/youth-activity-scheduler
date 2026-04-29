@@ -18,6 +18,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(r.status, body);
   }
+  if (r.status === 204) {
+    return undefined as T;
+  }
   return r.json() as Promise<T>;
 }
 
@@ -30,5 +33,14 @@ export const api = {
       method: 'POST',
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+  },
+  patch<T>(path: string, body?: unknown) {
+    return request<T>(path, {
+      method: 'PATCH',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  },
+  delete<T = void>(path: string) {
+    return request<T>(path, { method: 'DELETE' });
   },
 };

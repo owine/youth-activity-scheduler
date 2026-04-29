@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api } from './api';
-import type { CloseReason, InboxAlert, InboxSummary } from './types';
+import type { CloseReason, InboxAlert, InboxSummary, KidCalendarResponse } from './types';
 
 const keyIncludesClosed = (key: QueryKey): boolean =>
   key.length >= 4 && key[3] === 'with-closed';
@@ -71,6 +71,85 @@ export function useReopenAlert() {
 
     onSettled: async () => {
       await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+    },
+  });
+}
+
+interface CancelEnrollmentInput {
+  kidId: number;
+  enrollmentId: number;
+}
+
+export function useCancelEnrollment() {
+  const qc = useQueryClient();
+  type Ctx = {
+    snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
+  };
+  return useMutation<unknown, Error, CancelEnrollmentInput, Ctx>({
+    mutationFn: ({ enrollmentId }) =>
+      api.patch(`/api/enrollments/${enrollmentId}`, { status: 'cancelled' }),
+
+    onMutate: async ({ kidId, enrollmentId }) => {
+      await qc.cancelQueries({ queryKey: ['kids', kidId, 'calendar'] });
+      const snapshots = qc.getQueriesData<KidCalendarResponse>({
+        queryKey: ['kids', kidId, 'calendar'],
+      });
+
+      for (const [key, data] of snapshots) {
+        if (!data) continue;
+        const filtered = data.events.filter(
+          (e) =>
+            e.enrollment_id !== enrollmentId &&
+            e.from_enrollment_id !== enrollmentId,
+        );
+        qc.setQueryData<KidCalendarResponse>(key, { ...data, events: filtered });
+      }
+      return { snapshots };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+
+    onSettled: async (_data, _err, { kidId }) => {
+      await qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] });
+    },
+  });
+}
+
+interface DeleteUnavailabilityInput {
+  kidId: number;
+  blockId: number;
+}
+
+export function useDeleteUnavailability() {
+  const qc = useQueryClient();
+  type Ctx = {
+    snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
+  };
+  return useMutation<unknown, Error, DeleteUnavailabilityInput, Ctx>({
+    mutationFn: ({ blockId }) => api.delete(`/api/unavailability/${blockId}`),
+
+    onMutate: async ({ kidId, blockId }) => {
+      await qc.cancelQueries({ queryKey: ['kids', kidId, 'calendar'] });
+      const snapshots = qc.getQueriesData<KidCalendarResponse>({
+        queryKey: ['kids', kidId, 'calendar'],
+      });
+
+      for (const [key, data] of snapshots) {
+        if (!data) continue;
+        const filtered = data.events.filter((e) => e.block_id !== blockId);
+        qc.setQueryData<KidCalendarResponse>(key, { ...data, events: filtered });
+      }
+      return { snapshots };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+
+    onSettled: async (_data, _err, { kidId }) => {
+      await qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] });
     },
   });
 }

@@ -3,8 +3,8 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
-import { useCloseAlert, useReopenAlert } from './mutations';
-import type { InboxSummary } from './types';
+import { useCloseAlert, useReopenAlert, useCancelEnrollment, useDeleteUnavailability } from './mutations';
+import type { InboxSummary, KidCalendarResponse } from './types';
 
 function makeWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -109,5 +109,180 @@ describe('useReopenAlert', () => {
     const reopened = after!.alerts[0]!;
     expect(reopened.closed_at).toBeNull();
     expect(reopened.close_reason).toBeNull();
+  });
+});
+
+const seedCal = (events: KidCalendarResponse['events']): KidCalendarResponse => ({
+  kid_id: 1,
+  from: '2026-04-27',
+  to: '2026-05-04',
+  events,
+});
+
+describe('useCancelEnrollment', () => {
+  it('removes all enrollment occurrences and linked-block occurrences for that enrollment', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04'],
+      seedCal([
+        {
+          id: 'enrollment:42:2026-04-28',
+          kind: 'enrollment',
+          date: '2026-04-28',
+          time_start: '16:00:00',
+          time_end: '17:00:00',
+          all_day: false,
+          title: 'T-Ball',
+          enrollment_id: 42,
+          offering_id: 7,
+          status: 'enrolled',
+        },
+        {
+          id: 'unavailability:21:2026-04-28',
+          kind: 'unavailability',
+          date: '2026-04-28',
+          time_start: '16:00:00',
+          time_end: '17:00:00',
+          all_day: false,
+          title: 'T-Ball',
+          block_id: 21,
+          source: 'enrollment',
+          from_enrollment_id: 42,
+        },
+        {
+          id: 'unavailability:20:2026-04-28',
+          kind: 'unavailability',
+          date: '2026-04-28',
+          time_start: '08:30:00',
+          time_end: '15:00:00',
+          all_day: false,
+          title: 'School',
+          block_id: 20,
+          source: 'school',
+          from_enrollment_id: null,
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useCancelEnrollment(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, enrollmentId: 42 });
+    });
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+    ]);
+    expect(after?.events).toHaveLength(1);
+    expect(after!.events[0]!.block_id).toBe(20);
+  });
+
+  it('rolls back on server error', async () => {
+    server.use(
+      http.patch('/api/enrollments/:id', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const original = seedCal([
+      {
+        id: 'enrollment:42:2026-04-28',
+        kind: 'enrollment',
+        date: '2026-04-28',
+        time_start: '16:00:00',
+        time_end: '17:00:00',
+        all_day: false,
+        title: 'T-Ball',
+        enrollment_id: 42,
+        offering_id: 7,
+        status: 'enrolled',
+      },
+    ]);
+    qc.setQueryData(['kids', 1, 'calendar', '2026-04-27', '2026-05-04'], original);
+
+    const { result } = renderHook(() => useCancelEnrollment(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ kidId: 1, enrollmentId: 42 })
+        .catch(() => {});
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+    ]);
+    expect(after?.events).toHaveLength(1);
+    expect(after!.events[0]!.enrollment_id).toBe(42);
+  });
+});
+
+describe('useDeleteUnavailability', () => {
+  it('removes the matching unavailability event from cache', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04'],
+      seedCal([
+        {
+          id: 'unavailability:20:2026-04-28',
+          kind: 'unavailability',
+          date: '2026-04-28',
+          time_start: '08:30:00',
+          time_end: '15:00:00',
+          all_day: false,
+          title: 'School',
+          block_id: 20,
+          source: 'school',
+          from_enrollment_id: null,
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() => useDeleteUnavailability(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, blockId: 20 });
+    });
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+    ]);
+    expect(after?.events).toEqual([]);
+  });
+
+  it('rolls back on server error', async () => {
+    server.use(
+      http.delete('/api/unavailability/:id', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const original = seedCal([
+      {
+        id: 'unavailability:20:2026-04-28',
+        kind: 'unavailability',
+        date: '2026-04-28',
+        time_start: '08:30:00',
+        time_end: '15:00:00',
+        all_day: false,
+        title: 'School',
+        block_id: 20,
+        source: 'school',
+        from_enrollment_id: null,
+      },
+    ]);
+    qc.setQueryData(['kids', 1, 'calendar', '2026-04-27', '2026-05-04'], original);
+
+    const { result } = renderHook(() => useDeleteUnavailability(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, blockId: 20 }).catch(() => {});
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+    ]);
+    expect(after?.events).toHaveLength(1);
   });
 });

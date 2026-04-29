@@ -1,0 +1,78 @@
+import { useState, useMemo } from 'react';
+import { createFileRoute } from '@tanstack/react-router';
+import { startOfWeek, addDays, startOfMonth, endOfMonth, format } from 'date-fns';
+import type { View } from 'react-big-calendar';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ErrorBanner } from '@/components/common/ErrorBanner';
+import { useKid, useKidCalendar } from '@/lib/queries';
+import { KidTabs } from '@/components/layout/KidTabs';
+import { CalendarView } from '@/components/calendar/CalendarView';
+import { CalendarEventPopover } from '@/components/calendar/CalendarEventPopover';
+import type { CalendarEvent } from '@/lib/types';
+
+export const Route = createFileRoute('/kids/$id/calendar')({ component: KidCalendarPage });
+
+const BUFFER_DAYS = 3;
+
+function rangeFor(view: View, cursor: Date): { from: string; to: string } {
+  if (view === 'month') {
+    const monthStart = startOfMonth(cursor);
+    const monthEnd = endOfMonth(cursor);
+    const weekStart = startOfWeek(monthStart, { weekStartsOn: 0 });
+    return {
+      from: format(addDays(weekStart, -BUFFER_DAYS), 'yyyy-MM-dd'),
+      to: format(addDays(monthEnd, 7 + BUFFER_DAYS), 'yyyy-MM-dd'),
+    };
+  }
+  const weekStart = startOfWeek(cursor, { weekStartsOn: 0 });
+  return {
+    from: format(addDays(weekStart, -BUFFER_DAYS), 'yyyy-MM-dd'),
+    to: format(addDays(weekStart, 7 + BUFFER_DAYS), 'yyyy-MM-dd'),
+  };
+}
+
+function KidCalendarPage() {
+  const { id } = Route.useParams();
+  const kidId = Number(id);
+  const kid = useKid(kidId);
+
+  const [view, setView] = useState<View>('week');
+  const [cursor, setCursor] = useState<Date>(new Date());
+  const { from, to } = useMemo(() => rangeFor(view, cursor), [view, cursor]);
+
+  const calendar = useKidCalendar({ kidId, from, to });
+  const [selected, setSelected] = useState<CalendarEvent | null>(null);
+
+  if (kid.isLoading) return <Skeleton className="h-32 w-full" />;
+  if (kid.isError) {
+    return <ErrorBanner message={(kid.error as Error).message} onRetry={() => kid.refetch()} />;
+  }
+  if (!kid.data) return null;
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold mb-2">{kid.data.name}'s calendar</h1>
+      <KidTabs kidId={kidId} />
+      {calendar.isError && (
+        <ErrorBanner
+          message={(calendar.error as Error).message}
+          onRetry={() => calendar.refetch()}
+        />
+      )}
+      <CalendarView
+        events={calendar.data?.events ?? []}
+        view={view}
+        onView={setView}
+        date={cursor}
+        onNavigate={setCursor}
+        onSelectEvent={setSelected}
+      />
+      <CalendarEventPopover
+        kidId={kidId}
+        event={selected}
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+      />
+    </div>
+  );
+}

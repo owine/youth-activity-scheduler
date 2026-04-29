@@ -161,3 +161,31 @@ export interface Household {
   quiet_hours_end: string | null;
   daily_llm_cost_cap_usd: number;
 }
+
+export type CalendarEventKind = 'enrollment' | 'unavailability';
+
+export interface CalendarEvent {
+  id: string;            // composite "kind:source-id:date"
+  kind: CalendarEventKind;
+  date: string;          // YYYY-MM-DD
+  time_start: string | null;   // "HH:MM:SS" or null for all-day
+  time_end: string | null;
+  all_day: boolean;
+  title: string;
+  // enrollment-only:
+  enrollment_id?: number | null;
+  offering_id?: number | null;
+  location_id?: number | null;
+  status?: string | null;
+  // unavailability-only:
+  block_id?: number | null;
+  source?: string | null;
+  from_enrollment_id?: number | null;
+}
+
+export interface KidCalendarResponse {
+  kid_id: number;
+  from: string;  // YYYY-MM-DD
+  to: string;
+  events: CalendarEvent[];
+}
