@@ -25,3 +25,6 @@ repos:
         # native secret scanning + push protection for defence-in-depth.
         language_version: python3
         stages: [pre-commit]
+        # ggshield decides what to scan internally (staged ranges); don't
+        # let pre-commit pass file paths as CLI args.
+        pass_filenames: false
