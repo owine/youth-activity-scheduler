@@ -529,3 +529,43 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         now_naive = now.replace(tzinfo=None)
         assert sched > now_naive, "scheduled_for should advance for retry"
         assert updated.payload_json.get("_attempts") == 1, "_attempts must be incremented"
+
+
+@pytest.mark.asyncio
+async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[no-untyped-def]
+    """Regression: closing an alert before scheduled_for cancels its delivery."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+        )
+        # Close it before the worker tick.
+        a.closed_at = now
+        s.add(a)
+        await s.flush()
+
+    email_notifier = _email_notifier("email")
+    notifiers: dict[str, FakeNotifier] = {"email": email_notifier}
+    settings = _settings(alert_delivery_tick_s=1, alert_coalesce_normal_s=600)
+
+    task = asyncio.create_task(alert_delivery_loop(engine, settings, notifiers))
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=2.5)
+    except TimeoutError, asyncio.CancelledError:
+        pass
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    async with session_scope(engine) as s:
+        alerts = (await s.execute(select(Alert))).scalars().all()
+    assert len(alerts) == 1
+    assert alerts[0].sent_at is None  # not delivered
+    assert email_notifier.call_count == 0  # notifier never called

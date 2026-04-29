@@ -17,15 +17,18 @@ const minus = (days: number) => {
   return d.toISOString();
 };
 
-export function useInboxSummary(days = 7) {
+export function useInboxSummary(opts?: { days?: number; includeClosed?: boolean }) {
+  const days = opts?.days ?? 7;
+  const includeClosed = opts?.includeClosed ?? false;
   return useQuery({
-    queryKey: ['inbox', 'summary', days],
+    queryKey: ['inbox', 'summary', days, includeClosed ? 'with-closed' : 'open-only'],
     queryFn: () => {
       const since = minus(days);
       const until = new Date().toISOString();
-      return api.get<InboxSummary>(
-        `/api/inbox/summary?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`,
-      );
+      const url = `/api/inbox/summary?since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}${
+        includeClosed ? '&include_closed=true' : ''
+      }`;
+      return api.get<InboxSummary>(url);
     },
     refetchInterval: 60_000,
   });

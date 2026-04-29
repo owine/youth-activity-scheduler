@@ -26,4 +26,39 @@ export const handlers = [
     }),
   ),
   http.get('/api/alert_routing', () => HttpResponse.json([])),
+  http.post('/api/alerts/:id/close', async ({ request, params }) => {
+    const body = (await request.json()) as { reason: 'acknowledged' | 'dismissed' };
+    return HttpResponse.json({
+      id: Number(params.id),
+      type: 'watchlist_hit',
+      kid_id: 1,
+      offering_id: null,
+      site_id: null,
+      channels: ['email'],
+      scheduled_for: '2026-04-24T12:00:00Z',
+      sent_at: null,
+      skipped: false,
+      dedup_key: 'k',
+      payload_json: {},
+      closed_at: '2026-04-29T12:00:00Z',
+      close_reason: body.reason,
+    });
+  }),
+  http.post('/api/alerts/:id/reopen', ({ params }) => {
+    return HttpResponse.json({
+      id: Number(params.id),
+      type: 'watchlist_hit',
+      kid_id: 1,
+      offering_id: null,
+      site_id: null,
+      channels: ['email'],
+      scheduled_for: '2026-04-24T12:00:00Z',
+      sent_at: null,
+      skipped: false,
+      dedup_key: 'k',
+      payload_json: {},
+      closed_at: null,
+      close_reason: null,
+    });
+  }),
 ];

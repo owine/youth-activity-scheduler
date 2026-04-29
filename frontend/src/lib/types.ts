@@ -2,6 +2,8 @@
 // When backend types change, update both sides; tests/integration will
 // fail loudly if shapes drift.
 
+export type CloseReason = 'acknowledged' | 'dismissed';
+
 export type AlertType =
   | 'watchlist_hit'
   | 'new_match'
@@ -59,6 +61,8 @@ export interface InboxAlert {
   dedup_key: string;
   payload_json: Record<string, unknown>;
   summary_text: string;
+  closed_at: string | null;
+  close_reason: CloseReason | null;
 }
 
 export interface InboxKidMatchCount {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
@@ -9,7 +10,8 @@ import { useInboxSummary } from '@/lib/queries';
 export const Route = createFileRoute('/')({ component: InboxPage });
 
 function InboxPage() {
-  const { data, isLoading, isError, error, refetch } = useInboxSummary();
+  const [includeClosed, setIncludeClosed] = useState(false);
+  const { data, isLoading, isError, error, refetch } = useInboxSummary({ includeClosed });
 
   if (isLoading) {
     return (
@@ -38,7 +40,7 @@ function InboxPage() {
           {data.new_matches_by_kid.length} kid{data.new_matches_by_kid.length === 1 ? '' : 's'}
         </p>
       </header>
-      <AlertsSection alerts={data.alerts} />
+      <AlertsSection alerts={data.alerts} onIncludeClosedChange={setIncludeClosed} />
       <NewMatchesByKidSection rows={data.new_matches_by_kid} />
       <SiteActivitySection activity={data.site_activity} />
     </div>

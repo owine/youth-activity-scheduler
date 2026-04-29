@@ -15,7 +15,7 @@ function wrap() {
 
 describe('useInboxSummary', () => {
   it('returns summary on success', async () => {
-    const { result } = renderHook(() => useInboxSummary(7), { wrapper: wrap() });
+    const { result } = renderHook(() => useInboxSummary({ days: 7 }), { wrapper: wrap() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.alerts).toEqual([]);
   });
@@ -24,7 +24,7 @@ describe('useInboxSummary', () => {
     server.use(
       http.get('/api/inbox/summary', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
     );
-    const { result } = renderHook(() => useInboxSummary(7), { wrapper: wrap() });
+    const { result } = renderHook(() => useInboxSummary({ days: 7 }), { wrapper: wrap() });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
