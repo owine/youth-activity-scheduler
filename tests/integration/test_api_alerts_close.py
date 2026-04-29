@@ -136,3 +136,19 @@ async def test_reopen_returns_404_for_unknown_id(client):
     c, _ = client
     r = await c.post("/api/alerts/9999/reopen")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_close_after_reopen_sets_new_closed_at(client):
+    c, _ = client
+    first = await c.post("/api/alerts/1/close", json={"reason": "acknowledged"})
+    closed_at_1 = first.json()["closed_at"]
+    assert closed_at_1 is not None
+
+    await c.post("/api/alerts/1/reopen")
+
+    third = await c.post("/api/alerts/1/close", json={"reason": "acknowledged"})
+    assert third.status_code == 200
+    closed_at_2 = third.json()["closed_at"]
+    assert closed_at_2 is not None
+    assert closed_at_2 != closed_at_1
