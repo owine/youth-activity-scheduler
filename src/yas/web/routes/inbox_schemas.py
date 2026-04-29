@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from yas.db.models._types import CloseReason
+
 
 class InboxAlertOut(BaseModel):
     """Enriched alert shape for the inbox endpoint.
@@ -30,6 +32,8 @@ class InboxAlertOut(BaseModel):
     dedup_key: str
     payload_json: dict[str, Any]
     summary_text: str
+    closed_at: datetime | None = None
+    close_reason: CloseReason | None = None
 
 
 class InboxKidMatchCountOut(BaseModel):

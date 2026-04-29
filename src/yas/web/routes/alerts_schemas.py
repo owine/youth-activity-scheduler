@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from yas.db.models._types import CloseReason
+
 
 class AlertOut(BaseModel):
     """Alert detail for GET responses."""
@@ -24,6 +26,8 @@ class AlertOut(BaseModel):
     skipped: bool
     dedup_key: str
     payload_json: dict[str, Any]
+    closed_at: datetime | None = None
+    close_reason: CloseReason | None = None
 
 
 class AlertListResponse(BaseModel):
@@ -33,3 +37,9 @@ class AlertListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AlertCloseIn(BaseModel):
+    """Request body for POST /api/alerts/{id}/close."""
+
+    reason: CloseReason
