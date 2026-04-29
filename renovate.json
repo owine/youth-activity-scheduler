@@ -83,6 +83,12 @@
       "groupName": "vite"
     },
     {
+      "description": "Don't track `python` in pep621 — `requires-python` is a metadata range declaring minimum supported Python, not a pinnable runtime version. Pinning it would lock the project to one exact Python version.",
+      "matchManagers": ["pep621"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    },
+    {
       "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9+ requires flat config",
       "matchPackageNames": ["eslint"],
       "matchUpdateTypes": ["major"],
