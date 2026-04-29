@@ -28,6 +28,9 @@
 }
 
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
