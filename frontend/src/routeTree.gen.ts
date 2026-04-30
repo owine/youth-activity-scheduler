@@ -12,9 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
+import { Route as KidsIndexRouteImport } from './routes/kids.index'
 import { Route as SitesIdRouteImport } from './routes/sites.$id'
+import { Route as KidsNewRouteImport } from './routes/kids.new'
 import { Route as KidsIdWatchlistRouteImport } from './routes/kids.$id.watchlist'
 import { Route as KidsIdMatchesRouteImport } from './routes/kids.$id.matches'
+import { Route as KidsIdEditRouteImport } from './routes/kids.$id.edit'
 import { Route as KidsIdCalendarRouteImport } from './routes/kids.$id.calendar'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -32,9 +35,19 @@ const SitesIndexRoute = SitesIndexRouteImport.update({
   path: '/sites/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KidsIndexRoute = KidsIndexRouteImport.update({
+  id: '/kids/',
+  path: '/kids/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SitesIdRoute = SitesIdRouteImport.update({
   id: '/sites/$id',
   path: '/sites/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KidsNewRoute = KidsNewRouteImport.update({
+  id: '/kids/new',
+  path: '/kids/new',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KidsIdWatchlistRoute = KidsIdWatchlistRouteImport.update({
@@ -47,6 +60,11 @@ const KidsIdMatchesRoute = KidsIdMatchesRouteImport.update({
   path: '/kids/$id/matches',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KidsIdEditRoute = KidsIdEditRouteImport.update({
+  id: '/kids/$id/edit',
+  path: '/kids/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
   id: '/kids/$id/calendar',
   path: '/kids/$id/calendar',
@@ -56,18 +74,24 @@ const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
+  '/kids/': typeof KidsIndexRoute
   '/sites/': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
+  '/kids/$id/edit': typeof KidsIdEditRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
+  '/kids': typeof KidsIndexRoute
   '/sites': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
+  '/kids/$id/edit': typeof KidsIdEditRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -75,9 +99,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
+  '/kids/': typeof KidsIndexRoute
   '/sites/': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
+  '/kids/$id/edit': typeof KidsIdEditRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -86,27 +113,36 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/settings'
+    | '/kids/new'
     | '/sites/$id'
+    | '/kids/'
     | '/sites/'
     | '/kids/$id/calendar'
+    | '/kids/$id/edit'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/settings'
+    | '/kids/new'
     | '/sites/$id'
+    | '/kids'
     | '/sites'
     | '/kids/$id/calendar'
+    | '/kids/$id/edit'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   id:
     | '__root__'
     | '/'
     | '/settings'
+    | '/kids/new'
     | '/sites/$id'
+    | '/kids/'
     | '/sites/'
     | '/kids/$id/calendar'
+    | '/kids/$id/edit'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesById: FileRoutesById
@@ -114,9 +150,12 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
+  KidsNewRoute: typeof KidsNewRoute
   SitesIdRoute: typeof SitesIdRoute
+  KidsIndexRoute: typeof KidsIndexRoute
   SitesIndexRoute: typeof SitesIndexRoute
   KidsIdCalendarRoute: typeof KidsIdCalendarRoute
+  KidsIdEditRoute: typeof KidsIdEditRoute
   KidsIdMatchesRoute: typeof KidsIdMatchesRoute
   KidsIdWatchlistRoute: typeof KidsIdWatchlistRoute
 }
@@ -144,11 +183,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kids/': {
+      id: '/kids/'
+      path: '/kids'
+      fullPath: '/kids/'
+      preLoaderRoute: typeof KidsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sites/$id': {
       id: '/sites/$id'
       path: '/sites/$id'
       fullPath: '/sites/$id'
       preLoaderRoute: typeof SitesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kids/new': {
+      id: '/kids/new'
+      path: '/kids/new'
+      fullPath: '/kids/new'
+      preLoaderRoute: typeof KidsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/kids/$id/watchlist': {
@@ -165,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KidsIdMatchesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kids/$id/edit': {
+      id: '/kids/$id/edit'
+      path: '/kids/$id/edit'
+      fullPath: '/kids/$id/edit'
+      preLoaderRoute: typeof KidsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/kids/$id/calendar': {
       id: '/kids/$id/calendar'
       path: '/kids/$id/calendar'
@@ -178,9 +238,12 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
+  KidsNewRoute: KidsNewRoute,
   SitesIdRoute: SitesIdRoute,
+  KidsIndexRoute: KidsIndexRoute,
   SitesIndexRoute: SitesIndexRoute,
   KidsIdCalendarRoute: KidsIdCalendarRoute,
+  KidsIdEditRoute: KidsIdEditRoute,
   KidsIdMatchesRoute: KidsIdMatchesRoute,
   KidsIdWatchlistRoute: KidsIdWatchlistRoute,
 }

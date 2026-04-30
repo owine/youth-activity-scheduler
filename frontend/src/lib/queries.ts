@@ -46,7 +46,7 @@ export function useKid(id: number) {
   return useQuery({
     queryKey: ['kids', id],
     queryFn: () => api.get<KidDetail>(`/api/kids/${id}`),
-    enabled: Number.isFinite(id),
+    enabled: Number.isFinite(id) && id > 0,
   });
 }
 
@@ -54,7 +54,7 @@ export function useKidMatches(kidId: number) {
   return useQuery({
     queryKey: ['matches', kidId],
     queryFn: () => api.get<Match[]>(`/api/matches?kid_id=${kidId}&limit=200`),
-    enabled: Number.isFinite(kidId),
+    enabled: Number.isFinite(kidId) && kidId > 0,
   });
 }
 

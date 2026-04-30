@@ -104,11 +104,21 @@ export interface WatchlistEntry {
   notes: string | null;
   active: boolean;
   ignore_hard_gates: boolean;
+  created_at: string;
 }
 
 export interface KidDetail extends KidBrief {
+  availability: Record<string, unknown>;
+  max_distance_mi: number | null;
+  alert_score_threshold: number;
+  alert_on: Record<string, boolean>;
+  school_weekdays: string[];
+  school_time_start: string | null;
+  school_time_end: string | null;
+  school_year_ranges: Array<{ start: string; end: string }>;
+  school_holidays: string[];
+  notes: string | null;
   watchlist: WatchlistEntry[];
-  // ... add the other embedded arrays the UI uses (matches, enrollments)
 }
 
 export interface Page {
@@ -166,10 +176,10 @@ export interface Household {
 export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match';
 
 export interface CalendarEvent {
-  id: string;            // composite "kind:source-id:date"
+  id: string; // composite "kind:source-id:date"
   kind: CalendarEventKind;
-  date: string;          // YYYY-MM-DD
-  time_start: string | null;   // "HH:MM:SS" or null for all-day
+  date: string; // YYYY-MM-DD
+  time_start: string | null; // "HH:MM:SS" or null for all-day
   time_end: string | null;
   all_day: boolean;
   title: string;
@@ -189,7 +199,7 @@ export interface CalendarEvent {
 
 export interface KidCalendarResponse {
   kid_id: number;
-  from: string;  // YYYY-MM-DD
+  from: string; // YYYY-MM-DD
   to: string;
   events: CalendarEvent[];
 }
