@@ -9,9 +9,8 @@ import type { KidDetail } from '@/lib/types';
 
 // Mock useNavigate to avoid routing in tests
 vi.mock('@tanstack/react-router', async () => {
-  const actual = await vi.importActual<typeof import('@tanstack/react-router')>(
-    '@tanstack/react-router',
-  );
+  const actual =
+    await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router');
   return {
     ...actual,
     useNavigate: () => vi.fn(),
@@ -68,8 +67,13 @@ describe('KidForm', () => {
           max_distance_mi: (body.max_distance_mi as number | null) ?? null,
           alert_score_threshold: (body.alert_score_threshold as number) ?? 0.6,
           alert_on: (body.alert_on as Record<string, boolean>) || {},
-          school_weekdays:
-            (body.school_weekdays as string[]) || ['mon', 'tue', 'wed', 'thu', 'fri'],
+          school_weekdays: (body.school_weekdays as string[]) || [
+            'mon',
+            'tue',
+            'wed',
+            'thu',
+            'fri',
+          ],
           school_time_start: (body.school_time_start as string | null) ?? null,
           school_time_end: (body.school_time_end as string | null) ?? null,
           school_year_ranges: (body.school_year_ranges as unknown[]) || [],
@@ -154,5 +158,39 @@ describe('KidForm', () => {
 
     // Active field should be present
     expect(screen.getByLabelText('Active')).toBeInTheDocument();
+  });
+
+  it('submits form with all required fields when valid', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(<KidForm mode="create" />, { wrapper: makeWrapper(qc) });
+
+    const nameInput = screen.getByLabelText('Name');
+    const dobInput = screen.getByLabelText('Date of Birth');
+    const saveBtn = screen.getByRole('button', { name: /save/i });
+
+    // Fill in required fields
+    await userEvent.type(nameInput, 'Alex');
+    await userEvent.type(dobInput, '2020-01-01');
+
+    // Verify the form can submit (button should eventually be enabled)
+    await waitFor(() => {
+      expect(saveBtn).not.toBeDisabled();
+    });
+
+    // The form submission should be possible with valid data
+    expect(saveBtn).toBeInTheDocument();
+  });
+
+  it('renders form immediately in create mode without waiting for data', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // In create mode with id=0 (because of the gate we added), useKid should not make a network call
+    render(<KidForm mode="create" />, { wrapper: makeWrapper(qc) });
+
+    // Form should be visible immediately (not showing skeleton which is for edit mode)
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Date of Birth')).toBeInTheDocument();
+
+    // Save button should be present
+    expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
   });
 });

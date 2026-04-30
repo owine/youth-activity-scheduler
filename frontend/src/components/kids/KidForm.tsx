@@ -12,11 +12,46 @@ import { SchoolHolidaysField } from './SchoolHolidaysField';
 import { SchoolYearRangesField } from './SchoolYearRangesField';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { KidDetail } from '@/lib/types';
 
 interface KidFormProps {
   mode: 'create' | 'edit';
   id?: number;
 }
+
+function kidToFormValues(k: KidDetail): KidFormValues {
+  return {
+    name: k.name,
+    dob: k.dob,
+    interests: k.interests,
+    school_weekdays: k.school_weekdays as KidFormValues['school_weekdays'],
+    school_time_start: k.school_time_start,
+    school_time_end: k.school_time_end,
+    school_year_ranges: k.school_year_ranges,
+    school_holidays: k.school_holidays,
+    max_distance_mi: k.max_distance_mi,
+    alert_score_threshold: k.alert_score_threshold,
+    alert_on: k.alert_on,
+    notes: k.notes,
+    active: k.active,
+  };
+}
+
+const DEFAULT_CREATE_VALUES: KidFormValues = {
+  name: '',
+  dob: '',
+  interests: [],
+  school_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'] as KidFormValues['school_weekdays'],
+  school_time_start: null,
+  school_time_end: null,
+  school_year_ranges: [],
+  school_holidays: [],
+  max_distance_mi: null,
+  alert_score_threshold: 0.6,
+  alert_on: {},
+  notes: null,
+  active: true,
+};
 
 export function KidForm({ mode, id }: KidFormProps) {
   const navigate = useNavigate();
@@ -31,22 +66,8 @@ export function KidForm({ mode, id }: KidFormProps) {
 
   // Create form hook before checking loading state to satisfy Rules of Hooks
   const form = useForm({
-    defaultValues: {
-      name: '',
-      dob: '',
-      interests: [],
-      school_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
-      school_time_start: null,
-      school_time_end: null,
-      school_year_ranges: [],
-      school_holidays: [],
-      max_distance_mi: null,
-      alert_score_threshold: 0.6,
-      alert_on: {},
-      notes: null,
-      active: true,
-      ...(mode === 'edit' && kidQuery.data ? kidQuery.data : {}),
-    } as KidFormValues,
+    defaultValues:
+      mode === 'edit' && kidQuery.data ? kidToFormValues(kidQuery.data) : DEFAULT_CREATE_VALUES,
     validators: {
       onChange: kidSchema,
     },
@@ -242,20 +263,14 @@ export function KidForm({ mode, id }: KidFormProps) {
       <form.Field
         name="school_year_ranges"
         children={(field) => (
-          <SchoolYearRangesField
-            value={field.state.value}
-            onChange={field.handleChange}
-          />
+          <SchoolYearRangesField value={field.state.value} onChange={field.handleChange} />
         )}
       />
 
       <form.Field
         name="school_holidays"
         children={(field) => (
-          <SchoolHolidaysField
-            value={field.state.value}
-            onChange={field.handleChange}
-          />
+          <SchoolHolidaysField value={field.state.value} onChange={field.handleChange} />
         )}
       />
 
@@ -333,10 +348,7 @@ export function KidForm({ mode, id }: KidFormProps) {
       <form.Field
         name="alert_on"
         children={(field) => (
-          <AlertOnField
-            value={field.state.value}
-            onChange={field.handleChange}
-          />
+          <AlertOnField value={field.state.value} onChange={field.handleChange} />
         )}
       />
 
