@@ -263,16 +263,16 @@ export function WatchlistEntrySheet({
                 </div>
               )}
             />
-          </form>
 
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button type="button" variant="outline" onClick={handleCancel} disabled={inFlight}>
-              Cancel
-            </Button>
-            <Button type="submit" onClick={() => form.handleSubmit()} disabled={inFlight}>
-              {inFlight ? 'Saving...' : 'Save'}
-            </Button>
-          </div>
+            <div className="flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={handleCancel} disabled={inFlight}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={inFlight}>
+                {inFlight ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          </form>
         </SheetContent>
       </Sheet>
 

@@ -14,9 +14,7 @@ import { KidTabs } from '@/components/layout/KidTabs';
 import { WatchlistEntrySheet } from '@/components/watchlist/WatchlistEntrySheet';
 import type { WatchlistEntry } from '@/lib/types';
 
-export const Route = createFileRoute('/kids/$id/watchlist')({ component: KidWatchlistPage });
-
-function KidWatchlistPage() {
+export function KidWatchlistPage() {
   const { id } = Route.useParams();
   const kidId = Number(id);
   const { data, isLoading, isError, refetch } = useKid(kidId);
@@ -119,3 +117,5 @@ function KidWatchlistPage() {
     </div>
   );
 }
+
+export const Route = createFileRoute('/kids/$id/watchlist')({ component: KidWatchlistPage });
