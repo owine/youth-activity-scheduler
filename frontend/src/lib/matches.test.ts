@@ -27,6 +27,7 @@ function makeMatch(overrides: Partial<Match['offering']> = {}): Match {
       price_cents: null,
       registration_url: null,
       registration_opens_at: null,
+      muted_until: null,
       ...overrides,
     },
   };

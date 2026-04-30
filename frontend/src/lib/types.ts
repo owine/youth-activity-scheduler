@@ -36,6 +36,7 @@ export interface OfferingSummary {
   // Added in Task 1:
   site_name: string;
   registration_opens_at: string | null;
+  muted_until: string | null;
 }
 
 export interface Match {
