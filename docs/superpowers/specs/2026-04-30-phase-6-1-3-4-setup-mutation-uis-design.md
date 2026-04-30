@@ -23,8 +23,9 @@ This is a three-slice cluster brainstormed together because they share UX patter
 
 - New routes: `/kids` (list), `/kids/new`, `/kids/$id/edit`.
 - One shared `<KidForm>` component with `mode: 'create' | 'edit'`.
-- Edit pencil icon on kid header (visible across `/kids/$id/*` tabs).
+- Edit pencil icon on kid header (visible across `/kids/$id/*` tabs; added to `frontend/src/components/layout/KidTabs.tsx`).
 - New sheet `<WatchlistEntrySheet>` for add/edit; delete-with-confirm on each row.
+- New shared `<ConfirmDialog>` primitive (reused by kid-form dirty cancel + watchlist delete).
 - Add buttons + click-to-edit affordances on `/kids/$id/watchlist`.
 - "Crawl now" + "Pause/Resume" buttons on `/sites/$id`.
 - Seven new TanStack Query mutation hooks (canonical 5b-1b pattern).
@@ -91,7 +92,7 @@ All three slices ship together in one PR (or as 2-3 sub-PRs from one branch if t
 | `/kids/new` | `<KidForm mode="create" />` | Add form. Submit success → `/kids/$id/matches` (the just-created kid's matches view). Cancel → `/kids`. |
 | `/kids/$id/edit` | `<KidForm mode="edit" id={id} />` | Edit form. Submit success → `/kids/$id/matches`. Cancel → `/kids/$id/matches`. |
 
-`/kids/$id/edit` is **NOT** a tab in `KidTabs` (semantically odd; Edit is an action, not a view). Entry point is the **edit pencil icon in the kid header** rendered across all `/kids/$id/*` tab pages.
+`/kids/$id/edit` is **NOT** a tab in `KidTabs` (semantically odd; Edit is an action, not a view). Entry point is the **edit pencil icon in the kid header** — which currently lives in `frontend/src/components/layout/KidTabs.tsx` (the same component renders the kid name + tab nav). Add the pencil there as a sibling of the tab nav, linking to `/kids/$id/edit`. Hidden on `/kids/$id/edit` itself (no self-link).
 
 ### 4.2 `<KidForm>` field UX
 
@@ -106,9 +107,9 @@ Backed by TanStack Form + zod. Single component, `mode: 'create' | 'edit'`. In e
 | `school_time_start` / `school_time_end` | time, optional | two `<input type="time">` side-by-side. If both empty, school unavailability is skipped | start < end if both set; both empty allowed |
 | `school_year_ranges` | `list[{start, end}]` | `react-day-picker mode="multiple"` of date ranges. Selected ranges as chips below the calendar (`Sep 2 2026 → Jun 14 2027 ×`) | each range start ≤ end; ranges may overlap (matcher unions them) |
 | `school_holidays` | `list[date]` | `react-day-picker mode="multiple"` of single dates. Selected dates as chips below | all valid dates; no past restriction |
-| `max_distance_mi` | `float | None` | slider 1–50 mi + "no limit" checkbox. Default: no limit | 1–500 if set |
+| `max_distance_mi` | `float | None` | slider 1–50 mi + "no limit" checkbox. Default: no limit | 1–50 if set (matches the slider's range; 50 mi is well above the realistic max for kid activities) |
 | `alert_score_threshold` | float | slider 0.0–1.0 (step 0.05). Default 0.6. Tooltip explains "matches below this score don't trigger alerts" | 0.0 ≤ x ≤ 1.0 |
-| `alert_on` | `dict[str, bool]` | collapsed "Alert types" section — list of 6 toggles (new_match, watchlist_hit, reg_opens_*, schedule_posted, site_stagnant, no_matches_for_kid). All default true | object with bool values |
+| `alert_on` | `dict[str, bool]` | collapsed "Alert types" section. **Three toggles** (per-kid mute is the goal; per-alert-type granularity is YAGNI): `new_match`, `watchlist_hit`, `reg_opens` (single toggle covering reg_opens_24h + reg_opens_1h + reg_opens_now — they're one logical event tier). All default `true`. Site-targeted alerts (`schedule_posted`, `site_stagnant`, `crawl_failed`) are not per-kid; not surfaced here. | object with bool values; only the three keys above are written by the form. Backend already treats missing keys as `default=True` via `_kid_alert_on()` |
 | `notes` | `str | None` | `<textarea>` | ≤2000 chars |
 | `active` | bool | toggle, **edit-only** (Add always creates `active=true`). Soft-delete affordance | bool |
 | `availability` | free-form JSON | **excluded from form** — unused in current matcher | n/a |
@@ -121,7 +122,8 @@ Backed by TanStack Form + zod. Single component, `mode: 'create' | 'edit'`. In e
 - **Cancel button**:
   - If form is clean: navigate immediately
   - If dirty: confirm dialog "Discard changes?" → user picks "Discard" or "Keep editing"
-- **Browser-level navigation away from dirty form** (back button, route change) → same confirm dialog. Implementation via TanStack Router's `useBlocker` or equivalent.
+- **Browser-level navigation away from dirty form** (back button, route change) → same confirm dialog. Implementation via TanStack Router's `useBlocker` hook (available in `@tanstack/react-router` 1.168.x — already in use).
+- **Confirm dialog component is new shared infra.** No existing dialog primitive in `frontend/src/components/ui/`. We add `<ConfirmDialog>` as part of this slice, built on `radix-ui`'s `AlertDialog` primitive (matches the existing `MuteButton` pattern of using `radix-ui` directly without a shadcn wrapper). Reused by: kid-form dirty cancel, watchlist entry delete confirm. (Crawl-now and Pause/Resume don't need confirms.)
 
 ### 4.4 `<KidsListPage>`
 
