@@ -120,7 +120,7 @@ The component is purely presentational. Mutation, error handling, optimistic sta
 
 `frontend/src/components/calendar/CalendarEventPopover.tsx` — the `kind === 'match'` branch gains a `<MuteButton>` alongside the existing Enroll button + View details link. Wires to `useUpdateOfferingMute`.
 
-After clicking a duration, the calendar query gets invalidated (Section 6); on the next render, the muted offering's match events vanish from the calendar (per Q4: muted offerings hidden from match overlay), and the popover closes when its `event` becomes null upstream. To prevent a flicker (popover open with no event), the mutation hook does NOT close the popover synchronously — the parent route handles selection cleanup via the existing `selected !== null` plumbing. Actually, for cleanest UX: after a successful mute mutation, the popover's `onSuccess` callback clears the local selection and closes the popover. Same pattern as the existing Enroll branch.
+After clicking a duration, the popover's `onSuccess` callback clears the local selection and closes the popover (same pattern as the existing Enroll branch). The mutation also invalidates the calendar query so when the popover re-opens later, the muted offering's match events are gone (per Q4: muted offerings hidden from match overlay).
 
 The popover does NOT show an Unmute button on muted matches because muted matches don't appear on the calendar in the first place. To unmute an offering, the user goes to the matches list or site detail page.
 
@@ -236,12 +236,13 @@ async def _is_site_muted(session: AsyncSession, *, site_id: int) -> bool:
     return s_muted is not None and s_muted > now
 ```
 
-Insertion points:
-- `enqueue_new_match` — call `_is_muted(session, offering_id=offering_id)` after the `_kid_alert_on` check; return None if muted.
-- `enqueue_watchlist_hit` — same insertion.
-- `enqueue_schedule_posted` — call `_is_site_muted(session, site_id=site_id)`; return None if muted.
-- Reg-opens enqueue paths (find them during implementation; gate the same way as new_match).
-- `enqueue_crawl_failed` (or whatever fires `crawl_failed`) — gate on `_is_site_muted`.
+Insertion points (all in `src/yas/alerts/enqueuer.py`):
+- `enqueue_new_match` (offering-targeted) — call `_is_muted(session, offering_id=offering_id)` after the `_kid_alert_on` check; return None if muted.
+- `enqueue_watchlist_hit` (offering-targeted) — same insertion.
+- `enqueue_registration_countdowns` (offering-targeted) — gate via `_is_muted` once per offering, before the inner loop emits the three countdown variants.
+- `enqueue_schedule_posted` (site-targeted) — call `_is_site_muted(session, site_id=site_id)`; return None if muted.
+- `enqueue_crawl_failed` (site-targeted) — same `_is_site_muted` gate.
+- `enqueue_site_stagnant` (site-targeted) — already gated upstream by the detector (`alerts/detectors/site_stagnant.py:26`), but adding the same `_is_site_muted` gate here is harmless defense-in-depth and keeps the enqueuer module uniform. Decision: add it.
 
 ### 6.2 Offering route
 
@@ -312,8 +313,10 @@ The `await s.refresh(offering)` after flush mirrors the SQLite-tz-roundtrip less
 
 `src/yas/web/routes/kid_calendar.py` — extend the `select(Match, Offering)` query in the `if include_matches:` block:
 
+The route handler already captures `now = datetime.now(UTC)` once at the top — reuse it (don't call `datetime.now(UTC)` per row):
+
 ```python
-from sqlalchemy import or_, select  # add or_ to imports if not already there
+from sqlalchemy import or_, select  # add or_ to imports
 
 # inside the include_matches block:
 match_rows = (
@@ -324,13 +327,11 @@ match_rows = (
         .where(Match.kid_id == kid_id)
         .where(Match.score >= _MATCH_THRESHOLD)
         .where(~Match.offering_id.in_(committed_offering_ids))
-        .where(or_(Offering.muted_until.is_(None), Offering.muted_until <= datetime.now(UTC)))
-        .where(or_(Site.muted_until.is_(None), Site.muted_until <= datetime.now(UTC)))
+        .where(or_(Offering.muted_until.is_(None), Offering.muted_until <= now))
+        .where(or_(Site.muted_until.is_(None), Site.muted_until <= now))
     )
 ).all()
 ```
-
-(Use the `now` variable already in scope at the top of the route handler — capture once, reuse.)
 
 ### 6.4 No new dependencies
 
@@ -344,14 +345,10 @@ All work in this slice uses existing libraries.
 - **Concurrent mute clicks**: `isPending` disables the button; second click ignored.
 - **Calendar match popover open on a match that just got muted in another tab**: stale render; no auto-refetch on calendar route. Acceptable for single-household.
 - **`Offering.muted_until` set in the past via direct API**: `_is_muted` correctly treats as unmuted. UI's `isMuted` helper agrees.
-- **Race: site mute → offering on that site has a pending watchlist_hit alert that was already inserted**: existing alerts in the queue fire normally (the worker's delivery loop doesn't re-check mute state — by design, it's a delivery system, not a policy engine). Mute affects future enqueues only. This matches how 5b-1b's worker change handles closed alerts (filtered at the worker query level for closed; for mute we filter at enqueue time).
-
-Wait — that's actually a question. Should the worker also re-check mute at delivery time? The 5b-1b worker change filtered out closed alerts at the worker query. Mute is similar in spirit. Decision: NO, mute filters at enqueue time only. Reasoning:
-1. If a user mutes a site, they don't want NEW alerts. Pending alerts for the site/offering may already represent something the user wants to know about (the user enqueued the watchlist).
-2. Symmetry with 5b-1a/b: close was specifically a user-driven "I'm done with this alert"; the worker filter on `closed_at IS NULL` was specifically for that lifecycle. Mute is a different mechanism (suppressing future enqueues), not a per-alert state.
-3. Adding a worker-side mute check duplicates logic for limited benefit.
-
-Document this explicitly in the spec so a future reviewer doesn't think it's an oversight.
+- **Race: site mute → offering on that site has a pending alert already inserted**: pending alerts in the queue fire normally. **Decision: mute filters at enqueue time only; the delivery worker does NOT re-check mute.** Rationale:
+  1. If a user mutes a site, they want NO new alerts. A pending alert was enqueued before the mute and may represent something the user explicitly asked about (e.g., a watchlist hit). Suppressing it at delivery time would feel surprising.
+  2. Symmetry with 5b-1a/b is intentionally only partial: `closed_at IS NULL` is a per-alert lifecycle state and the worker correctly gates on it. Mute is a per-row-on-Site/Offering policy, not a per-alert state.
+  3. A worker-side mute check would duplicate logic for limited benefit and complicate the queue invariants.
 
 ## 8. Testing
 
@@ -380,7 +377,7 @@ Frontend:
    - Clicking a duration option fires `onChange` with the right ISO string.
    - Clicking Unmute fires `onChange(null)`.
 6. `frontend/src/lib/mutations.test.tsx` (extend) — `useUpdateSiteMute` and `useUpdateOfferingMute`: PATCH fires with right payload; `useUpdateOfferingMute` optimistic match-removal works; rollback on error.
-7. MSW handlers: `PATCH /api/sites/:id` (already exists?) and `PATCH /api/offerings/:id` (new).
+7. MSW handlers: `PATCH /api/sites/:id` (NOT yet in `frontend/src/test/handlers.ts` — add) and `PATCH /api/offerings/:id` (new).
 
 Manual smoke (before merge):
 - Mute a site from sites detail → site row reflects state.
