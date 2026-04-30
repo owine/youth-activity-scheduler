@@ -27,8 +27,8 @@ The roadmap describes Phase 6-2 as "two-path flow: paste URL → either (a) conf
 
 Existing backend pieces (no changes):
 - `POST /api/sites` — body `{name, base_url, needs_browser?, default_cadence_s?, crawl_hints?, pages?}`. Returns `SiteOut` with `id`. The optional `pages` array is unused by the wizard; we add pages after discover.
-- `POST /api/sites/{id}/discover` — body `{min_score?, max_candidates?}` (both optional). Returns `{site_id, seed_url, stats, candidates: [{url, title, kind, score, reason}]}`. Calls Claude under the hood; can take 5–30s. Returns 502 on LLM error, 503 if LLM not configured.
-- `POST /api/sites/{id}/pages` — body `{url, kind}` where `kind ∈ {schedule, registration, list, other}`. Returns `PageOut`.
+- `POST /api/sites/{id}/discover` — body `{min_score?, max_candidates?}` (both optional). Returns `{site_id, seed_url, stats, candidates: [{url, title, kind, score, reason}]}`. **Note:** `CandidateOut.kind` is `Literal["html", "pdf"]` (content type — what the URL points to). Calls Claude under the hood; can take 5–30s. Returns 502 on LLM error, 503 if LLM not configured.
+- `POST /api/sites/{id}/pages` — body `{url, kind}` where `kind ∈ {schedule, registration, list, other}` — **note this is a different enum from `CandidateOut.kind`**: this is the page's *purpose* (what role it plays for the crawler), not its content type. The backend's `PageIn.kind` Literal explicitly excludes `pdf`; submitting `kind="pdf"` returns 422 with a clear error. Returns `PageOut`.
 - `POST /api/sites/{id}/crawl-now` — 202-no-body; queues a crawl.
 
 Existing frontend reusable infrastructure:
@@ -84,6 +84,26 @@ If discover fails or returns zero candidates, the Save button stays disabled unt
 
 For N selected pages, POST them sequentially. v1 page counts are 1–5; the latency cost is negligible and partial-failure handling becomes trivial: stop on the first failure, show "Added X of N — retry remaining." `Promise.all` would be marginally faster but harder to surface partial failure.
 
+### D8: Candidate kind → Page kind mapping
+
+The `CandidateOut.kind` enum (`html | pdf`) and `PageIn.kind` enum (`schedule | registration | list | other`) are orthogonal: the first describes content type, the second describes purpose. They don't map automatically. The wizard handles this by:
+
+- **PDFs are filtered out of the candidate list entirely.** Backend rejects `PageIn.kind="pdf"` with 422 (per the `PageIn` Literal comment), and PDFs aren't yet crawlable. The candidate list shows only `kind === "html"` candidates. PDFs surfaced by discover are silently dropped — users don't see a "PDF candidates were excluded" notice in v1; the discover stats still reflect them but they're invisible.
+- **HTML candidates default to `PageIn.kind = "schedule"`.** Since the wizard's purpose is "add a site to track its program offerings," the schedule role is the dominant case. v1 does NOT expose a per-candidate kind override — the user can re-classify pages later via the existing site detail page if needed (Phase 7 polish item, not in this spec).
+- **Manual entries DO expose the kind selector** (`schedule | registration | list | other`), defaulting to `schedule`. Manual entry is the user's escape hatch; if they're typing a URL by hand, they likely also know its role.
+
+This is the simplest mapping that preserves the wizard's "low friction" promise without losing data.
+
+### D9: Form fields freeze post-discover
+
+Once a successful discover returns, the `name` and `base_url` inputs become read-only. An "Edit URL & re-discover" link below the (read-only) URL clears the wizard state — `siteId`, `candidates`, `selectedUrls`, `manualEntries` — and re-enables the inputs. This avoids the ambiguous case where the user edits `base_url` after discover (the existing `siteId` would no longer match the new URL).
+
+The orphan shell from the previous discover is NOT auto-deleted (per D1); the user accumulates one orphan per re-discover. Acceptable v1 cost.
+
+### D10: 503 LLM-not-configured creates an orphan shell
+
+If `useDiscoverPages` returns 503, the wizard has already created a site shell that will never be useful (discover will keep failing). Per D1's stance on orphans, we accept this: the user clicks Discover again to retry (idempotent — discover is read-only for the site row), or they switch to manual entry and complete the wizard normally. We do NOT pre-flight an LLM-availability check; the cost of one failed-but-recoverable orphan is lower than the maintenance burden of an extra preflight endpoint.
+
 ## Architecture
 
 ### Routes
@@ -133,12 +153,12 @@ Pages to create on Save = `[...candidates.filter(c => selectedUrls.has(c.url)), 
 
 Add to `frontend/src/lib/mutations.ts`:
 
-- `useCreateSite()` — `POST /api/sites`. Vars: `{name, base_url}` (other site fields use defaults).
-- `useDiscoverPages()` — `POST /api/sites/{siteId}/discover`. Vars: `{siteId}`. Returns the `DiscoveryResultOut` shape.
-- `useAddPage()` — `POST /api/sites/{siteId}/pages`. Vars: `{siteId, url, kind}`. Returns `PageOut`.
-- `useCrawlNow` already exists (Phase 6-4).
+- `useCreateSite()` — `POST /api/sites`. Vars: `{name: string; base_url: string}` (other backend fields use server defaults). Returns `SiteOut`. Invalidates `['sites']` on success.
+- `useDiscoverPages()` — `POST /api/sites/{siteId}/discover`. Vars: `{siteId: number}` (does NOT accept `min_score` / `max_candidates`; D4's threshold is client-side filtering, server returns its full default set). Returns `DiscoveryResultOut`. Invalidates **nothing** — discover is read-only for the site row.
+- `useAddPage()` — `POST /api/sites/{siteId}/pages`. Vars: `{siteId: number; url: string; kind: 'schedule' | 'registration' | 'list' | 'other'}`. Returns `PageOut`. Invalidates `['sites', siteId]` (page list lives on the site detail) on success.
+- `useCrawlNow` already exists (Phase 6-4); no changes.
 
-All four follow the canonical 5b-1b pattern. Non-optimistic (these are creates that flip lists; just invalidate `['sites']` and `['sites', siteId]` on success).
+All hooks follow the canonical 5b-1b pattern (cancelQueries → snapshot → setQueryData → onError restore → awaited onSettled invalidate where applicable). Non-optimistic — these are creates flipping list state, not toggles. `useDiscoverPages` skips the cancel/snapshot/invalidate dance entirely since it doesn't mutate cached data; it's a "mutation" only because POST has side effects (LLM call, cost).
 
 ### Files
 
@@ -198,15 +218,15 @@ navigate({to: '/sites/$id', params: {id: String(siteId)}})
 | `useDiscoverPages` 502 | ErrorBanner: "Discovery failed — try again, or add URLs manually." `discoverState = 'error'`. ManualPageEntry visible. "Retry discover" button reuses the existing `siteId`. |
 | `useDiscoverPages` 503 | ErrorBanner: "Discovery requires Claude API access. Add URLs manually below." Same shape as 502; copy differs. |
 | `useDiscoverPages` returns 0 candidates | `discoverState = 'success'`, `candidates = []`. CandidateList renders an empty-state message. ManualPageEntry is the path. |
-| `useAddPage` partial failure (3rd of 5 fails) | Stop sequentially. `setSaveState('error')` + ErrorBanner: "Added 2 of 5 pages — fix and retry." Successfully-added URLs are removed from `selectedUrls` and `manualEntries`. User clicks Save again to retry remaining. |
+| `useAddPage` partial failure (3rd of 5 fails) | Stop sequentially. `setSaveState('error')` + ErrorBanner: "Added 2 of 5 pages — fix and retry." **Successfully-added URLs are removed from `selectedUrls` and `manualEntries`.** The failed URL stays in state (selected or manual) so the user sees it as still pending. Subsequent Save click POSTs only the remaining (failed + un-attempted) URLs. |
 | `useCrawlNow` fails after pages succeeded | Soft-fail: log to console, navigate anyway. Wizard's primary work (adding pages) succeeded. |
 | URL validation fail (zod) | Inline field error; mutation never fires. |
-| Manual URL duplicates a candidate URL | Reject the manual add with inline "already in candidates" error. |
+| Manual URL duplicates a candidate URL OR another manual entry | Reject the manual add with inline "URL already in list" error. Comparison is exact-string after `URL` normalization (e.g., trailing slash, scheme casing). Duplicate check spans both candidate URLs and existing manual entries. |
 
 ### Cancel behavior
 
 - **Pre-discover (siteId === null)**: form may be dirty (name/base_url typed). Show ConfirmDialog if dirty (KidForm pattern). Clean cancel navigates to `/sites`.
-- **Post-discover (siteId set)**: navigate immediately to `/sites`. The orphan shell stays in the DB; user can clean it up via SQL or future delete-site UI. No auto-DELETE — keeps the implementation simple per D1.
+- **Post-discover (siteId set)**: navigate immediately to `/sites`. The orphan shell stays in the DB silently; the user is not informed of its existence (no message, no toast). Cleanup is deferred to a future DELETE-site UI. No auto-DELETE in this PR — keeps the implementation simple per D1.
 
 ## Validation
 
@@ -228,19 +248,21 @@ const manualEntrySchema = z.object({
 
 ## Testing
 
-**Frontend test count target:** ~21 new tests, raising 138 → ~159.
+**Frontend test count target:** ~24 new tests, raising 138 → ~162.
 
-### `SiteWizard.test.tsx` (~8 tests)
+### `SiteWizard.test.tsx` (~9 tests)
 
 1. Renders name + base_url inputs and a disabled "Discover pages" button.
 2. Discover button enables when name + base_url are valid.
 3. Discover click POSTs `/api/sites` then `/api/sites/{id}/discover` (MSW request capture).
 4. Successful discover renders the candidate list with score ≥ 0.7 pre-checked.
-5. Discover error renders ErrorBanner; manual entry remains usable.
-6. Save button disabled when 0 pages selected/added.
-7. Save click POSTs `/pages` per page sequentially, then `/crawl-now`, then navigates to `/sites/$id`.
-8. Partial page-add failure leaves remaining + ErrorBanner.
-9. (Bonus if cheap:) Dirty cancel pre-discover → ConfirmDialog; clean cancel doesn't.
+5. **PDF candidates are filtered out of the rendered list** (verifies D8): MSW returns mixed html+pdf candidates; assert only html ones render.
+6. **Post-discover, name + base_url inputs are read-only** with an "Edit URL & re-discover" link that resets state (verifies D9).
+7. Discover error renders ErrorBanner; manual entry remains usable.
+8. Save button disabled when 0 pages selected/added.
+9. Save click POSTs `/pages` per page sequentially with `kind: 'schedule'` for all, then `/crawl-now`, then navigates to `/sites/$id`.
+10. Partial page-add failure leaves remaining (the failed URL stays selected/manual) + ErrorBanner.
+11. Dirty cancel pre-discover → ConfirmDialog; clean cancel doesn't.
 
 ### `CandidateList.test.tsx` (~4 tests)
 
@@ -249,11 +271,12 @@ const manualEntrySchema = z.object({
 3. Collapses score < 0.7 candidates under a `Show N more` disclosure.
 4. Toggling a checkbox calls `onChange` with the updated `Set<string>`.
 
-### `ManualPageEntry.test.tsx` (~3 tests)
+### `ManualPageEntry.test.tsx` (~4 tests)
 
 1. Add URL + kind appends to the list.
 2. Click × removes an entry.
-3. Duplicate URL (against existing candidates or manual entries) shows inline error.
+3. Duplicate URL against an existing candidate shows inline error.
+4. Duplicate URL against another manual entry shows inline error.
 
 ### `mutations.test.tsx` extensions (~6 tests)
 
@@ -286,6 +309,8 @@ After all tests pass and the branch is ready:
 - ✅ Save creates pages sequentially, fires crawl-now (soft-fail), navigates to `/sites/$id`.
 - ✅ Partial page-add failure preserves remaining and shows ErrorBanner.
 - ✅ Pre-discover dirty cancel triggers ConfirmDialog; post-discover cancel navigates immediately.
+- ✅ PDF candidates from discover are filtered out of the candidate list (per D8).
+- ✅ Post-discover, name + base_url are read-only; "Edit URL & re-discover" link resets state (per D9).
 - ✅ Frontend gates clean: `npm run typecheck`, `npm run lint`, `npm run test` (~159 tests).
 - ✅ Manual smoke: end-to-end "add a real site" flow completes in < 2 minutes (closes master §10 criterion #1).
 
