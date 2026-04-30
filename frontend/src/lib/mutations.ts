@@ -161,6 +161,81 @@ export function useEnrollOffering() {
   });
 }
 
+interface UpdateSiteMuteInput {
+  siteId: number;
+  mutedUntil: string | null;
+}
+
+export function useUpdateSiteMute() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, UpdateSiteMuteInput>({
+    mutationFn: ({ siteId, mutedUntil }) =>
+      api.patch(`/api/sites/${siteId}`, { muted_until: mutedUntil }),
+
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['sites'] });
+    },
+
+    onSettled: async (_d, _e, { siteId }) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['sites'] }),
+        qc.invalidateQueries({ queryKey: ['sites', siteId] }),
+        qc.invalidateQueries({ queryKey: ['kids'] }),
+      ]);
+    },
+  });
+}
+
+interface UpdateOfferingMuteInput {
+  offeringId: number;
+  mutedUntil: string | null;
+}
+
+export function useUpdateOfferingMute() {
+  const qc = useQueryClient();
+  type Ctx = {
+    snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
+  };
+  return useMutation<unknown, Error, UpdateOfferingMuteInput, Ctx>({
+    mutationFn: ({ offeringId, mutedUntil }) =>
+      api.patch(`/api/offerings/${offeringId}`, { muted_until: mutedUntil }),
+
+    onMutate: async ({ offeringId, mutedUntil }) => {
+      // Always cancel to flush state; optimistic surgery only when muting.
+      await qc.cancelQueries({ queryKey: ['kids'] });
+      if (mutedUntil == null) return { snapshots: [] };
+
+      await qc.cancelQueries({ queryKey: ['kids'] });
+      const allKidsQueries = qc.getQueriesData<KidCalendarResponse>({
+        queryKey: ['kids'],
+      });
+      const calendarSnapshots = allKidsQueries.filter(
+        ([key]) => key.length >= 3 && key[2] === 'calendar',
+      );
+
+      for (const [key, data] of calendarSnapshots) {
+        if (!data) continue;
+        const filtered = data.events.filter(
+          (e) => !(e.kind === 'match' && e.offering_id === offeringId),
+        );
+        qc.setQueryData<KidCalendarResponse>(key, { ...data, events: filtered });
+      }
+      return { snapshots: calendarSnapshots };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+
+    onSettled: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['matches'] }),
+        qc.invalidateQueries({ queryKey: ['kids'] }),
+      ]);
+    },
+  });
+}
+
 interface DeleteUnavailabilityInput {
   kidId: number;
   blockId: number;
