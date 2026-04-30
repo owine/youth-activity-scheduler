@@ -2,6 +2,8 @@ import type { Match } from '@/lib/types';
 import { Card } from '@/components/ui/card';
 import { price, relDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { MuteButton } from '@/components/common/MuteButton';
+import { useUpdateOfferingMute } from '@/lib/mutations';
 
 export function MatchCard({
   match,
@@ -13,6 +15,8 @@ export function MatchCard({
   onClick?: () => void;
 }) {
   const o = match.offering;
+  const muteOffering = useUpdateOfferingMute();
+
   return (
     <Card
       className={cn(
@@ -31,7 +35,17 @@ export function MatchCard({
             {o.registration_opens_at && ` · reg ${relDate(o.registration_opens_at)}`}
           </div>
         </div>
-        <div className="text-sm font-semibold">{match.score.toFixed(2)}</div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{match.score.toFixed(2)}</span>
+          <MuteButton
+            size="sm"
+            mutedUntil={o.muted_until ?? null}
+            onChange={(mutedUntil) =>
+              muteOffering.mutate({ offeringId: o.id, mutedUntil })
+            }
+            isPending={muteOffering.isPending}
+          />
+        </div>
       </div>
     </Card>
   );

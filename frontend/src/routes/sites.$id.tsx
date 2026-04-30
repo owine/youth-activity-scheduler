@@ -4,6 +4,8 @@ import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { useSite, useSiteCrawls } from '@/lib/queries';
 import { CrawlHistoryList } from '@/components/sites/CrawlHistoryList';
 import { fmt } from '@/lib/format';
+import { MuteButton } from '@/components/common/MuteButton';
+import { useUpdateSiteMute } from '@/lib/mutations';
 
 export const Route = createFileRoute('/sites/$id')({ component: SiteDetailPage });
 
@@ -12,6 +14,7 @@ function SiteDetailPage() {
   const siteId = Number(id);
   const site = useSite(siteId);
   const crawls = useSiteCrawls(siteId);
+  const muteSite = useUpdateSiteMute();
 
   if (site.isLoading) return <Skeleton className="h-32 w-full" />;
   if (site.isError || !site.data) return <ErrorBanner message="Failed to load site" onRetry={() => site.refetch()} />;
@@ -19,9 +22,18 @@ function SiteDetailPage() {
   const s = site.data;
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">{s.name}</h1>
-        <p className="text-sm text-muted-foreground">{s.base_url} · adapter: {s.adapter}</p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">{s.name}</h1>
+          <p className="text-sm text-muted-foreground">{s.base_url} · adapter: {s.adapter}</p>
+        </div>
+        <MuteButton
+          mutedUntil={s.muted_until ?? null}
+          onChange={(mutedUntil) =>
+            muteSite.mutate({ siteId, mutedUntil })
+          }
+          isPending={muteSite.isPending}
+        />
       </header>
 
       <section>

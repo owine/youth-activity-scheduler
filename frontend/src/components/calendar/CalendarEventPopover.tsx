@@ -9,7 +9,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import type { CalendarEvent } from '@/lib/types';
-import { useCancelEnrollment, useDeleteUnavailability, useEnrollOffering } from '@/lib/mutations';
+import { useCancelEnrollment, useDeleteUnavailability, useEnrollOffering, useUpdateOfferingMute } from '@/lib/mutations';
+import { MuteButton } from '@/components/common/MuteButton';
 
 export function CalendarEventPopover({
   kidId,
@@ -25,8 +26,9 @@ export function CalendarEventPopover({
   const cancel = useCancelEnrollment();
   const del = useDeleteUnavailability();
   const enroll = useEnrollOffering();
+  const muteOffering = useUpdateOfferingMute();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const inFlight = cancel.isPending || del.isPending || enroll.isPending;
+  const inFlight = cancel.isPending || del.isPending || enroll.isPending || muteOffering.isPending;
 
   // Reset mutation + error state whenever the selected event changes.
   // event.id is the only stable signal; mutation refs are recreated each render.
@@ -37,6 +39,7 @@ export function CalendarEventPopover({
     cancel.reset();
     del.reset();
     enroll.reset();
+    muteOffering.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id]);
 
@@ -60,6 +63,18 @@ export function CalendarEventPopover({
       {
         onSuccess: onClose,
         onError: (err) => setErrorMsg(err.message || 'Failed to enroll'),
+      },
+    );
+  };
+
+  const handleMute = (mutedUntil: string | null) => {
+    if (!event?.offering_id) return;
+    setErrorMsg(null);
+    muteOffering.mutate(
+      { offeringId: event.offering_id, mutedUntil },
+      {
+        onSuccess: onClose,
+        onError: (err) => setErrorMsg(err.message || 'Failed to update mute'),
       },
     );
   };
@@ -117,6 +132,14 @@ export function CalendarEventPopover({
                   <Button onClick={handleEnroll} disabled={inFlight}>
                     Enroll
                   </Button>
+                  {/* mutedUntil hardcoded null: muted matches are filtered out
+                      server-side (5d-1 spec Q4), so the popover never shows a muted
+                      match. The button always renders the duration picker, never Unmute. */}
+                  <MuteButton
+                    mutedUntil={null}
+                    onChange={handleMute}
+                    isPending={muteOffering.isPending}
+                  />
                   {event.registration_url && (
                     <a
                       href={event.registration_url}
