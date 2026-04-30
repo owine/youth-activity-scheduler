@@ -216,4 +216,18 @@ export const handlers = [
   }),
   http.delete('/api/watchlist/:id', () => new HttpResponse(null, { status: 204 })),
   http.post('/api/sites/:id/crawl-now', () => new HttpResponse(null, { status: 202 })),
+  http.get('/api/sites/:id', ({ params }) =>
+    HttpResponse.json({
+      id: Number(params.id),
+      name: 'X',
+      base_url: 'https://x',
+      adapter: 'llm',
+      needs_browser: false,
+      active: true,
+      default_cadence_s: 86400,
+      muted_until: null,
+      pages: [],
+    }),
+  ),
+  http.get('/api/sites/:id/crawls', () => HttpResponse.json([])),
 ];
