@@ -108,8 +108,17 @@ export interface WatchlistEntry {
 }
 
 export interface KidDetail extends KidBrief {
+  availability: Record<string, unknown>;
+  max_distance_mi: number | null;
+  alert_score_threshold: number;
+  alert_on: Record<string, boolean>;
+  school_weekdays: string[];
+  school_time_start: string | null;
+  school_time_end: string | null;
+  school_year_ranges: Array<{ start: string; end: string }>;
+  school_holidays: string[];
+  notes: string | null;
   watchlist: WatchlistEntry[];
-  // ... add the other embedded arrays the UI uses (matches, enrollments)
 }
 
 export interface Page {
