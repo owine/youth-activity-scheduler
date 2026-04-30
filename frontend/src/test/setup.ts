@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom/vitest';
 import { afterAll, afterEach, beforeAll } from 'vitest';
+import { notifyManager } from '@tanstack/query-core';
 import { server } from './server';
+
+// React Query uses setTimeout(fn, 0) by default, which `act()` may not fully
+// drain in JSDOM. Switch to queueMicrotask so state updates flush synchronously
+// within act() wrappers in tests.
+notifyManager.setScheduler(queueMicrotask);
 
 // Node 22+ ships a built-in localStorage backed by --localstorage-file.
 // When no file path is configured the global is present but broken

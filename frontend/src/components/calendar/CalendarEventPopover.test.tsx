@@ -72,6 +72,11 @@ const matchEventNoUrl: CalendarEvent = {
 };
 
 describe('CalendarEventPopover (match events)', () => {
+  it('renders Mute button on match events', () => {
+    renderPopover(matchEvent);
+    expect(screen.getByRole('button', { name: /^mute$/i })).toBeInTheDocument();
+  });
+
   it('renders match details + Enroll button + View details link', () => {
     renderPopover(matchEvent);
     expect(screen.getByText(/Soccer/i)).toBeInTheDocument();

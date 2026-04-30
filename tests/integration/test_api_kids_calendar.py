@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -462,3 +462,93 @@ async def test_match_overlay_includes_offerings_with_only_cancelled_enrollment(c
     matches = [e for e in body["events"] if e["kind"] == "match"]
     assert len(matches) == 1
     assert matches[0]["offering_id"] == 2
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_excludes_muted_offerings(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    future = datetime.now(UTC) + timedelta(days=30)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+                muted_until=future,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    assert all(e["kind"] != "match" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_excludes_offering_whose_site_is_muted(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    future = datetime.now(UTC) + timedelta(days=30)
+    async with session_scope(engine) as s:
+        site = (await s.execute(select(Site).where(Site.id == 1))).scalar_one()
+        site.muted_until = future
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    assert all(e["kind"] != "match" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_includes_offering_whose_mute_expired(client):
+    """A muted_until in the past doesn't suppress the match."""
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    past = datetime.now(UTC) - timedelta(days=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+                muted_until=past,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    matches = [e for e in body["events"] if e["kind"] == "match"]
+    assert len(matches) == 1

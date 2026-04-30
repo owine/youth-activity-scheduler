@@ -104,6 +104,46 @@ def _kid_alert_on(kid: Kid, key: str, default: bool = True) -> bool:
     return bool(val)
 
 
+async def _is_muted(session: AsyncSession, *, offering_id: int) -> bool:
+    """True if the offering or its parent site is currently muted.
+
+    Used by offering-targeted enqueue functions (new_match, watchlist_hit,
+    reg-opens variants).
+    """
+    now = datetime.now(UTC)
+    row = (
+        await session.execute(
+            select(Offering.muted_until, Site.muted_until)
+            .join(Site, Site.id == Offering.site_id)
+            .where(Offering.id == offering_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return False
+    o_muted, s_muted = row
+    # SQLite returns naive datetimes; treat them as UTC for comparison.
+    if o_muted is not None and o_muted.tzinfo is None:
+        o_muted = o_muted.replace(tzinfo=UTC)
+    if s_muted is not None and s_muted.tzinfo is None:
+        s_muted = s_muted.replace(tzinfo=UTC)
+    return (o_muted is not None and o_muted > now) or (s_muted is not None and s_muted > now)
+
+
+async def _is_site_muted(session: AsyncSession, *, site_id: int) -> bool:
+    """True if the site is currently muted.
+
+    Used by site-targeted enqueue functions (schedule_posted, crawl_failed,
+    site_stagnant).
+    """
+    now = datetime.now(UTC)
+    s_muted = (
+        await session.execute(select(Site.muted_until).where(Site.id == site_id))
+    ).scalar_one_or_none()
+    if s_muted is not None and s_muted.tzinfo is None:
+        s_muted = s_muted.replace(tzinfo=UTC)
+    return s_muted is not None and s_muted > now
+
+
 async def enqueue_new_match(
     session: AsyncSession,
     *,
@@ -115,6 +155,8 @@ async def enqueue_new_match(
     """Insert or update a new_match alert. Respects kid.alert_on.new_match."""
     kid = (await session.execute(select(Kid).where(Kid.id == kid_id))).scalar_one()
     if not _kid_alert_on(kid, "new_match", default=True):
+        return None
+    if await _is_muted(session, offering_id=offering_id):
         return None
     dk = dedup_key_for(AlertType.new_match, kid_id=kid_id, offering_id=offering_id)
     return await _upsert_alert(
@@ -136,9 +178,12 @@ async def enqueue_watchlist_hit(
     offering_id: int,
     watchlist_entry_id: int,
     reasons: dict[str, Any],
-) -> int:
-    """Insert or update a watchlist_hit alert. Bypasses kid.alert_on — the user
-    added the watchlist entry explicitly."""
+) -> int | None:
+    """Insert or update a watchlist_hit alert. Bypasses kid.alert_on (the user
+    added the watchlist entry explicitly) but is suppressed by Site/Offering
+    mute (the user has since changed their mind)."""
+    if await _is_muted(session, offering_id=offering_id):
+        return None
     dk = dedup_key_for(AlertType.watchlist_hit, kid_id=kid_id, offering_id=offering_id)
     return await _upsert_alert(
         session,
@@ -161,7 +206,9 @@ async def enqueue_schedule_posted(
     page_id: int,
     site_id: int,
     summary: str | None,
-) -> int:
+) -> int | None:
+    if await _is_site_muted(session, site_id=site_id):
+        return None
     dk = dedup_key_for(AlertType.schedule_posted, site_id=site_id, page_id=page_id)
     return await _upsert_alert(
         session,
@@ -181,7 +228,9 @@ async def enqueue_crawl_failed(
     site_id: int,
     consecutive_failures: int,
     last_error: str,
-) -> int:
+) -> int | None:
+    if await _is_site_muted(session, site_id=site_id):
+        return None
     dk = dedup_key_for(AlertType.crawl_failed, site_id=site_id)
     return await _upsert_alert(
         session,
@@ -203,14 +252,22 @@ async def enqueue_registration_countdowns(
     *,
     offering_id: int,
     kid_id: int,
-    opens_at: datetime,
+    opens_at: datetime | None = None,
 ) -> list[int]:
     """Delete any existing unsent reg_opens_* rows for this (kid, offering) and
     insert up to three fresh ones at T-24h, T-1h, T. Skips past-due schedules."""
+    if await _is_muted(session, offering_id=offering_id):
+        return []
     # Load the offering to get its name and registration_url for the payload.
     offering = (
         await session.execute(select(Offering).where(Offering.id == offering_id))
     ).scalar_one()
+    if opens_at is None:
+        opens_at = offering.registration_opens_at
+        if opens_at is None:
+            return []
+        if opens_at.tzinfo is None:
+            opens_at = opens_at.replace(tzinfo=UTC)
 
     # Delete prior unsent countdowns for this pair.
     await session.execute(
@@ -270,7 +327,9 @@ async def enqueue_site_stagnant(
     *,
     site_id: int,
     days_silent: int,
-) -> int:
+) -> int | None:
+    if await _is_site_muted(session, site_id=site_id):
+        return None
     site = (await session.execute(select(Site).where(Site.id == site_id))).scalar_one()
     dk = dedup_key_for(AlertType.site_stagnant, site_id=site_id)
     return await _upsert_alert(

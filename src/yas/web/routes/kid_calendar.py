@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.calendar.occurrences import expand_recurring
-from yas.db.models import Enrollment, Kid, Match, Offering, UnavailabilityBlock
+from yas.db.models import Enrollment, Kid, Match, Offering, Site, UnavailabilityBlock
 from yas.db.models._types import EnrollmentStatus
 from yas.db.session import session_scope
 from yas.web.routes.kid_calendar_schemas import CalendarEventOut, KidCalendarOut
@@ -41,6 +41,8 @@ async def get_kid_calendar(
             status_code=422,
             detail=f"range exceeds {_MAX_RANGE_DAYS}-day cap",
         )
+
+    now = datetime.now(UTC)
 
     async with session_scope(_engine(request)) as s:
         kid = (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one_or_none()
@@ -130,9 +132,12 @@ async def get_kid_calendar(
                 await s.execute(
                     select(Match, Offering)
                     .join(Offering, Offering.id == Match.offering_id)
+                    .join(Site, Site.id == Offering.site_id)
                     .where(Match.kid_id == kid_id)
                     .where(Match.score >= _MATCH_THRESHOLD)
                     .where(~Match.offering_id.in_(committed_offering_ids))
+                    .where(or_(Offering.muted_until.is_(None), Offering.muted_until <= now))
+                    .where(or_(Site.muted_until.is_(None), Site.muted_until <= now))
                 )
             ).all()
             for match, offering in match_rows:

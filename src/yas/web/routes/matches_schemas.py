@@ -25,6 +25,7 @@ class OfferingSummary(BaseModel):
     site_id: int
     registration_opens_at: datetime | None = None
     site_name: str
+    muted_until: datetime | None = None
 
 
 class MatchOut(BaseModel):
