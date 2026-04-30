@@ -112,4 +112,27 @@ export const handlers = [
       created_at: '2026-04-29T12:00:00Z',
     }, { status: 201 });
   }),
+  http.patch('/api/sites/:id', async ({ params, request }) => {
+    const body = (await request.json()) as { muted_until?: string | null };
+    return HttpResponse.json({
+      id: Number(params.id),
+      name: 'X',
+      base_url: 'https://x',
+      adapter: 'llm',
+      needs_browser: false,
+      active: true,
+      default_cadence_s: 86400,
+      muted_until: body.muted_until ?? null,
+      pages: [],
+    });
+  }),
+  http.patch('/api/offerings/:id', async ({ params, request }) => {
+    const body = (await request.json()) as { muted_until?: string | null };
+    return HttpResponse.json({
+      id: Number(params.id),
+      name: 'T-Ball',
+      site_id: 1,
+      muted_until: body.muted_until ?? null,
+    });
+  }),
 ];
