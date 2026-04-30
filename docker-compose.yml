@@ -9,6 +9,12 @@ services:
     volumes:
       - ./data:/data
     restart: "no"
+    # The Dockerfile's baked HEALTHCHECK probes localhost:8080/healthz, which
+    # only makes sense for the API service. This container is a one-shot
+    # alembic runner — disable the inherited check so it doesn't report
+    # "unhealthy" before exiting.
+    healthcheck:
+      disable: true
 
   yas-worker:
     <<: *yas-image
@@ -20,6 +26,11 @@ services:
       yas-migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    # Same reason as yas-migrate: the worker doesn't run an HTTP server, so
+    # the inherited Dockerfile HEALTHCHECK fails forever and breaks
+    # `depends_on: service_healthy` chains in deploy scripts.
+    healthcheck:
+      disable: true
 
   yas-api:
     <<: *yas-image
