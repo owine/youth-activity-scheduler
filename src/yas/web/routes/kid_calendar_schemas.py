@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 class CalendarEventOut(BaseModel):
     id: str
-    kind: Literal["enrollment", "unavailability"]
+    kind: Literal["enrollment", "unavailability", "match"]
     date: date
     time_start: time | None = None
     time_end: time | None = None
@@ -23,6 +23,8 @@ class CalendarEventOut(BaseModel):
     block_id: int | None = None
     source: str | None = None
     from_enrollment_id: int | None = None
+    score: float | None = None
+    registration_url: str | None = None
 
 
 class KidCalendarOut(BaseModel):

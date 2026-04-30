@@ -69,12 +69,17 @@ export function CalendarView({
         min={new Date(0, 0, 0, 6, 0, 0)}
         max={new Date(0, 0, 0, 22, 0, 0)}
         onSelectEvent={(rbc) => onSelectEvent((rbc as RbcEvent).resource)}
-        eventPropGetter={(rbc) => ({
-          className:
-            (rbc as RbcEvent).resource.kind === 'enrollment'
-              ? 'rbc-event-enrollment'
-              : 'rbc-event-unavailability',
-        })}
+        eventPropGetter={(rbc) => {
+          const k = (rbc as RbcEvent).resource.kind;
+          return {
+            className:
+              k === 'enrollment'
+                ? 'rbc-event-enrollment'
+                : k === 'match'
+                  ? 'rbc-event-match'
+                  : 'rbc-event-unavailability',
+          };
+        }}
       />
     </div>
   );

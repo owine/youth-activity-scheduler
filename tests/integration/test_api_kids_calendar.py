@@ -12,6 +12,7 @@ from yas.db.base import Base
 from yas.db.models import (
     Enrollment,
     Kid,
+    Match,
     Offering,
     Page,
     Site,
@@ -256,3 +257,208 @@ async def test_sort_handles_all_day_and_timed_events_on_same_date(client):
     assert len(same_date) == 2
     assert any(e["all_day"] is True for e in same_date)
     assert any(e["all_day"] is False for e in same_date)
+
+
+async def _seed_match(engine, *, kid_id: int, offering_id: int, score: float) -> None:
+    async with session_scope(engine) as s:
+        s.add(
+            Match(
+                kid_id=kid_id,
+                offering_id=offering_id,
+                score=score,
+                reasons={},
+                computed_at=datetime.now(UTC),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_flag_off_returns_no_match_events(client):
+    """Default include_matches=false: behavior unchanged from 5c-1."""
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.85)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
+    assert r.status_code == 200
+    body = r.json()
+    assert all(e["kind"] != "match" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_returns_high_score_matches(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+                registration_url="https://example.com/register/soccer",
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.85)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    matches = [e for e in body["events"] if e["kind"] == "match"]
+    assert len(matches) == 1
+    m = matches[0]
+    assert m["offering_id"] == 2
+    assert m["score"] == 0.85
+    assert m["registration_url"] == "https://example.com/register/soccer"
+    assert m["title"] == "Soccer"
+    assert m["date"] == "2026-04-29"
+    assert m["id"] == "match:2:2026-04-29"
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_score_threshold_boundary(client):
+    """Threshold is >=0.6: 0.59 excluded, 0.60 included, 0.61 included."""
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    cases = [(2, 0.59), (3, 0.60), (4, 0.61)]
+    async with session_scope(engine) as s:
+        for off_id, _ in cases:
+            s.add(
+                Offering(
+                    id=off_id,
+                    site_id=1,
+                    page_id=1,
+                    name=f"Off-{off_id}",
+                    normalized_name=f"off-{off_id}",
+                    days_of_week=["wed"],
+                    time_start=time(17, 0),
+                    time_end=time(18, 0),
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 6, 30),
+                    status=OfferingStatus.active.value,
+                )
+            )
+    for off_id, score in cases:
+        await _seed_match(engine, kid_id=1, offering_id=off_id, score=score)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    match_offering_ids = {e["offering_id"] for e in body["events"] if e["kind"] == "match"}
+    assert match_offering_ids == {3, 4}
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_excludes_already_enrolled(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    await _seed_match(engine, kid_id=1, offering_id=1, score=0.95)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    assert all(e["kind"] != "match" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_excludes_interested_and_waitlisted(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        for off_id in (2, 3):
+            s.add(
+                Offering(
+                    id=off_id,
+                    site_id=1,
+                    page_id=1,
+                    name=f"Off-{off_id}",
+                    normalized_name=f"off-{off_id}",
+                    days_of_week=["wed"],
+                    time_start=time(17, 0),
+                    time_end=time(18, 0),
+                    start_date=date(2026, 4, 1),
+                    end_date=date(2026, 6, 30),
+                    status=OfferingStatus.active.value,
+                )
+            )
+        await s.flush()
+        s.add(
+            Enrollment(
+                id=20,
+                kid_id=1,
+                offering_id=2,
+                status=EnrollmentStatus.interested.value,
+            )
+        )
+        s.add(
+            Enrollment(
+                id=21,
+                kid_id=1,
+                offering_id=3,
+                status=EnrollmentStatus.waitlisted.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
+    await _seed_match(engine, kid_id=1, offering_id=3, score=0.9)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    assert all(e["kind"] != "match" for e in body["events"])
+
+
+@pytest.mark.asyncio
+async def test_match_overlay_includes_offerings_with_only_cancelled_enrollment(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+        await s.flush()
+        s.add(
+            Enrollment(
+                id=22,
+                kid_id=1,
+                offering_id=2,
+                status=EnrollmentStatus.cancelled.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.85)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    matches = [e for e in body["events"] if e["kind"] == "match"]
+    assert len(matches) == 1
+    assert matches[0]["offering_id"] == 2

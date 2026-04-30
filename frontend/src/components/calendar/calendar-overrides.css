@@ -12,6 +12,12 @@
   border: none;
 }
 
+.rbc-event-match {
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  border: 1px dashed hsl(var(--primary));
+}
+
 .rbc-today {
   background-color: hsl(var(--accent));
 }

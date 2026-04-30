@@ -64,4 +64,31 @@ describe('CalendarView', () => {
     );
     expect(screen.getByText(/T-Ball/i)).toBeInTheDocument();
   });
+
+  it('renders match events with the rbc-event-match class', () => {
+    const matchEvents: CalendarEvent[] = [
+      {
+        id: 'match:7:2026-04-29',
+        kind: 'match',
+        date: '2026-04-29',
+        time_start: '17:00:00',
+        time_end: '18:00:00',
+        all_day: false,
+        title: 'Soccer',
+        offering_id: 7,
+        score: 0.85,
+      },
+    ];
+    const { container } = render(
+      <CalendarView
+        events={matchEvents}
+        view="week"
+        onView={vi.fn()}
+        date={new Date('2026-04-29T12:00:00Z')}
+        onNavigate={vi.fn()}
+        onSelectEvent={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('.rbc-event-match')).toBeInTheDocument();
+  });
 });

@@ -38,9 +38,10 @@ function KidCalendarPage() {
 
   const [view, setView] = useState<View>('week');
   const [cursor, setCursor] = useState<Date>(new Date());
+  const [includeMatches, setIncludeMatches] = useState(false);
   const { from, to } = useMemo(() => rangeFor(view, cursor), [view, cursor]);
 
-  const calendar = useKidCalendar({ kidId, from, to });
+  const calendar = useKidCalendar({ kidId, from, to, includeMatches });
   const [selected, setSelected] = useState<CalendarEvent | null>(null);
 
   if (kid.isLoading) return <Skeleton className="h-32 w-full" />;
@@ -53,6 +54,16 @@ function KidCalendarPage() {
     <div>
       <h1 className="text-xl font-semibold mb-2">{kid.data.name}'s calendar</h1>
       <KidTabs kidId={kidId} />
+      <div className="my-2 flex justify-end">
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={includeMatches}
+            onChange={(e) => setIncludeMatches(e.target.checked)}
+          />
+          Show matches
+        </label>
+      </div>
       {calendar.isError && (
         <ErrorBanner
           message={(calendar.error as Error).message}

@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import type { CalendarEvent } from '@/lib/types';
-import { useCancelEnrollment, useDeleteUnavailability } from '@/lib/mutations';
+import { useCancelEnrollment, useDeleteUnavailability, useEnrollOffering } from '@/lib/mutations';
 
 export function CalendarEventPopover({
   kidId,
@@ -24,8 +24,9 @@ export function CalendarEventPopover({
 }) {
   const cancel = useCancelEnrollment();
   const del = useDeleteUnavailability();
+  const enroll = useEnrollOffering();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const inFlight = cancel.isPending || del.isPending;
+  const inFlight = cancel.isPending || del.isPending || enroll.isPending;
 
   // Reset mutation + error state whenever the selected event changes.
   // event.id is the only stable signal; mutation refs are recreated each render.
@@ -35,6 +36,7 @@ export function CalendarEventPopover({
     });
     cancel.reset();
     del.reset();
+    enroll.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.id]);
 
@@ -46,6 +48,18 @@ export function CalendarEventPopover({
       {
         onSuccess: onClose,
         onError: (err) => setErrorMsg(err.message || 'Failed to cancel enrollment'),
+      },
+    );
+  };
+
+  const handleEnroll = () => {
+    if (!event?.offering_id) return;
+    setErrorMsg(null);
+    enroll.mutate(
+      { kidId, offeringId: event.offering_id },
+      {
+        onSuccess: onClose,
+        onError: (err) => setErrorMsg(err.message || 'Failed to enroll'),
       },
     );
   };
@@ -62,6 +76,7 @@ export function CalendarEventPopover({
     );
   };
 
+  const isMatch = event?.kind === 'match';
   const isEnrollment = event?.kind === 'enrollment';
   const isLinkedBlock =
     event?.kind === 'unavailability' && event.from_enrollment_id != null;
@@ -84,6 +99,9 @@ export function CalendarEventPopover({
                 {event.all_day
                   ? 'All day'
                   : `${event.time_start?.slice(0, 5)}–${event.time_end?.slice(0, 5)}`}
+                {isMatch && event.score != null && (
+                  <span className="ml-2 text-xs">Score: {event.score.toFixed(2)}</span>
+                )}
               </SheetDescription>
             </SheetHeader>
 
@@ -93,13 +111,30 @@ export function CalendarEventPopover({
               </div>
             )}
 
-            <div className="mt-6 flex gap-2">
+            <div className="mt-6 flex gap-2 items-center">
+              {isMatch && (
+                <>
+                  <Button onClick={handleEnroll} disabled={inFlight}>
+                    Enroll
+                  </Button>
+                  {event.registration_url && (
+                    <a
+                      href={event.registration_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground underline self-center"
+                    >
+                      View details ↗
+                    </a>
+                  )}
+                </>
+              )}
               {isEnrollment && (
                 <Button onClick={handleCancel} disabled={inFlight} variant="destructive">
                   Cancel enrollment
                 </Button>
               )}
-              {!isEnrollment && !isLinkedBlock && (
+              {!isMatch && !isEnrollment && !isLinkedBlock && (
                 <Button onClick={handleDelete} disabled={inFlight} variant="destructive">
                   Delete block
                 </Button>
