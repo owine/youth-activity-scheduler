@@ -104,6 +104,7 @@ export interface WatchlistEntry {
   notes: string | null;
   active: boolean;
   ignore_hard_gates: boolean;
+  created_at: string;
 }
 
 export interface KidDetail extends KidBrief {
@@ -166,10 +167,10 @@ export interface Household {
 export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match';
 
 export interface CalendarEvent {
-  id: string;            // composite "kind:source-id:date"
+  id: string; // composite "kind:source-id:date"
   kind: CalendarEventKind;
-  date: string;          // YYYY-MM-DD
-  time_start: string | null;   // "HH:MM:SS" or null for all-day
+  date: string; // YYYY-MM-DD
+  time_start: string | null; // "HH:MM:SS" or null for all-day
   time_end: string | null;
   all_day: boolean;
   title: string;
@@ -189,7 +190,7 @@ export interface CalendarEvent {
 
 export interface KidCalendarResponse {
   kid_id: number;
-  from: string;  // YYYY-MM-DD
+  from: string; // YYYY-MM-DD
   to: string;
   events: CalendarEvent[];
 }

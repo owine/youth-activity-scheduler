@@ -102,15 +102,18 @@ export const handlers = [
   http.delete('/api/unavailability/:id', () => new HttpResponse(null, { status: 204 })),
   http.post('/api/enrollments', async ({ request }) => {
     const body = (await request.json()) as { kid_id: number; offering_id: number; status: string };
-    return HttpResponse.json({
-      id: 999,
-      kid_id: body.kid_id,
-      offering_id: body.offering_id,
-      status: body.status,
-      enrolled_at: '2026-04-29T12:00:00Z',
-      notes: null,
-      created_at: '2026-04-29T12:00:00Z',
-    }, { status: 201 });
+    return HttpResponse.json(
+      {
+        id: 999,
+        kid_id: body.kid_id,
+        offering_id: body.offering_id,
+        status: body.status,
+        enrolled_at: '2026-04-29T12:00:00Z',
+        notes: null,
+        created_at: '2026-04-29T12:00:00Z',
+      },
+      { status: 201 },
+    );
   }),
   http.patch('/api/sites/:id', async ({ params, request }) => {
     const body = (await request.json()) as { muted_until?: string | null };
@@ -135,4 +138,82 @@ export const handlers = [
       muted_until: body.muted_until ?? null,
     });
   }),
+  http.post('/api/kids', async ({ request }) => {
+    const body = (await request.json()) as { name: string; dob: string };
+    return HttpResponse.json(
+      {
+        id: 999,
+        name: body.name,
+        dob: body.dob,
+        interests: [],
+        school_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        school_time_start: null,
+        school_time_end: null,
+        school_year_ranges: [],
+        school_holidays: [],
+        max_distance_mi: null,
+        alert_score_threshold: 0.6,
+        alert_on: {},
+        notes: null,
+        active: true,
+        created_at: '2026-04-30T12:00:00Z',
+      },
+      { status: 201 },
+    );
+  }),
+  http.patch('/api/kids/:id', async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: Number(params.id),
+      name: 'Sam',
+      dob: '2019-05-01',
+      interests: [],
+      school_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+      school_time_start: null,
+      school_time_end: null,
+      school_year_ranges: [],
+      school_holidays: [],
+      max_distance_mi: null,
+      alert_score_threshold: 0.6,
+      alert_on: {},
+      notes: null,
+      active: true,
+      created_at: '2026-04-30T12:00:00Z',
+      ...body,
+    });
+  }),
+  http.post('/api/kids/:kid_id/watchlist', async ({ params, request }) => {
+    const body = (await request.json()) as { pattern: string; priority?: string };
+    return HttpResponse.json(
+      {
+        id: 888,
+        kid_id: Number(params.kid_id),
+        pattern: body.pattern,
+        priority: body.priority ?? 'normal',
+        site_id: null,
+        ignore_hard_gates: false,
+        notes: null,
+        active: true,
+        created_at: '2026-04-30T12:00:00Z',
+      },
+      { status: 201 },
+    );
+  }),
+  http.patch('/api/watchlist/:id', async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: Number(params.id),
+      kid_id: 1,
+      pattern: 't-ball',
+      priority: 'normal',
+      site_id: null,
+      ignore_hard_gates: false,
+      notes: null,
+      active: true,
+      created_at: '2026-04-30T12:00:00Z',
+      ...body,
+    });
+  }),
+  http.delete('/api/watchlist/:id', () => new HttpResponse(null, { status: 204 })),
+  http.post('/api/sites/:id/crawl-now', () => new HttpResponse(null, { status: 202 })),
 ];

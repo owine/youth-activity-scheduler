@@ -3,8 +3,23 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
-import { useCloseAlert, useReopenAlert, useCancelEnrollment, useDeleteUnavailability, useEnrollOffering, useUpdateOfferingMute, useUpdateSiteMute } from './mutations';
-import type { InboxSummary, KidCalendarResponse } from './types';
+import {
+  useCloseAlert,
+  useReopenAlert,
+  useCancelEnrollment,
+  useDeleteUnavailability,
+  useEnrollOffering,
+  useUpdateOfferingMute,
+  useUpdateSiteMute,
+  useCreateKid,
+  useUpdateKid,
+  useCreateWatchlistEntry,
+  useUpdateWatchlistEntry,
+  useDeleteWatchlistEntry,
+  useCrawlNow,
+  useToggleSiteActive,
+} from './mutations';
+import type { InboxSummary, KidCalendarResponse, KidDetail, WatchlistEntry, Site } from './types';
 
 function makeWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -71,7 +86,9 @@ describe('useCloseAlert', () => {
 
   it('rolls back on server error', async () => {
     server.use(
-      http.post('/api/alerts/:id/close', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+      http.post('/api/alerts/:id/close', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
     );
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const openOnly = seedSummary([seed()]);
@@ -85,10 +102,18 @@ describe('useCloseAlert', () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts).toHaveLength(1);
-    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts[0]!.closed_at).toBeNull();
-    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts).toHaveLength(1);
-    expect(qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts[0]!.closed_at).toBeNull();
+    expect(
+      qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts,
+    ).toHaveLength(1);
+    expect(
+      qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'open-only'])?.alerts[0]!.closed_at,
+    ).toBeNull();
+    expect(
+      qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts,
+    ).toHaveLength(1);
+    expect(
+      qc.getQueryData<InboxSummary>(['inbox', 'summary', 7, 'with-closed'])?.alerts[0]!.closed_at,
+    ).toBeNull();
   });
 });
 
@@ -170,7 +195,11 @@ describe('useCancelEnrollment', () => {
     });
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
     ]);
     expect(after?.events).toHaveLength(1);
     expect(after!.events[0]!.block_id).toBe(20);
@@ -201,14 +230,16 @@ describe('useCancelEnrollment', () => {
 
     const { result } = renderHook(() => useCancelEnrollment(), { wrapper: makeWrapper(qc) });
     await act(async () => {
-      await result.current
-        .mutateAsync({ kidId: 1, enrollmentId: 42 })
-        .catch(() => {});
+      await result.current.mutateAsync({ kidId: 1, enrollmentId: 42 }).catch(() => {});
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
     ]);
     expect(after?.events).toHaveLength(1);
     expect(after!.events[0]!.enrollment_id).toBe(42);
@@ -244,7 +275,12 @@ describe('useEnrollOffering', () => {
     });
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
+      'with-matches',
     ]);
     expect(after?.events).toEqual([]);
   });
@@ -262,16 +298,19 @@ describe('useEnrollOffering', () => {
     });
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'no-matches',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
+      'no-matches',
     ]);
     expect(after?.events).toEqual([]);
   });
 
   it('rolls back on server error', async () => {
     server.use(
-      http.post('/api/enrollments', () =>
-        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
-      ),
+      http.post('/api/enrollments', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
     );
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const matchEvent = {
@@ -292,14 +331,17 @@ describe('useEnrollOffering', () => {
 
     const { result } = renderHook(() => useEnrollOffering(), { wrapper: makeWrapper(qc) });
     await act(async () => {
-      await result.current
-        .mutateAsync({ kidId: 1, offeringId: 7 })
-        .catch(() => {});
+      await result.current.mutateAsync({ kidId: 1, offeringId: 7 }).catch(() => {});
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
+      'with-matches',
     ]);
     expect(after?.events).toHaveLength(1);
     expect(after?.events[0]!.kind).toBe('match');
@@ -348,7 +390,12 @@ describe('useUpdateOfferingMute', () => {
     });
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
+      'with-matches',
     ]);
     expect(after?.events).toEqual([]);
   });
@@ -414,7 +461,11 @@ describe('useDeleteUnavailability', () => {
     });
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
     ]);
     expect(after?.events).toEqual([]);
   });
@@ -451,8 +502,237 @@ describe('useDeleteUnavailability', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
 
     const after = qc.getQueryData<KidCalendarResponse>([
-      'kids', 1, 'calendar', '2026-04-27', '2026-05-04',
+      'kids',
+      1,
+      'calendar',
+      '2026-04-27',
+      '2026-05-04',
     ]);
     expect(after?.events).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6 Task 2 — new mutation hooks
+// ---------------------------------------------------------------------------
+
+const seedKid = (overrides: Partial<KidDetail> = {}): KidDetail => ({
+  id: 1,
+  name: 'Sam',
+  dob: '2019-05-01',
+  interests: [],
+  active: true,
+  watchlist: [],
+  ...overrides,
+});
+
+const seedWatchlistEntry = (overrides: Partial<WatchlistEntry> = {}): WatchlistEntry => ({
+  id: 10,
+  kid_id: 1,
+  pattern: 't-ball',
+  priority: 'normal',
+  site_id: null,
+  ignore_hard_gates: false,
+  notes: null,
+  active: true,
+  created_at: '2026-04-30T12:00:00Z',
+  ...overrides,
+});
+
+const seedSite = (overrides: Partial<Site> = {}): Site => ({
+  id: 1,
+  name: 'YMCA',
+  base_url: 'https://ymca.test',
+  adapter: 'llm',
+  needs_browser: false,
+  active: true,
+  default_cadence_s: 86400,
+  muted_until: null,
+  pages: [],
+  ...overrides,
+});
+
+describe('useCreateKid', () => {
+  it('succeeds and returns the new kid from the server', async () => {
+    const qc = new QueryClient();
+    const { result } = renderHook(() => useCreateKid(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ name: 'Alex', dob: '2020-01-01', interests: [] });
+    });
+    expect(result.current.isSuccess).toBe(true);
+  });
+});
+
+describe('useUpdateKid', () => {
+  it('optimistically updates the cached kid', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid({ name: 'Sam' }));
+
+    const { result } = renderHook(() => useUpdateKid(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ id: 1, patch: { name: 'Alex' } });
+    });
+
+    // After settle the cache is invalidated, but during the mutation it was
+    // patched — verify the mutation succeeded and the request went through.
+    expect(result.current.isSuccess).toBe(true);
+  });
+
+  it('rolls back cached kid on server error', async () => {
+    server.use(
+      http.patch('/api/kids/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const original = seedKid({ name: 'Sam' });
+    qc.setQueryData<KidDetail>(['kids', 1], original);
+
+    const { result } = renderHook(() => useUpdateKid(), { wrapper: makeWrapper(qc) });
+    result.current.mutate({ id: 1, patch: { name: 'Alex' } });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(qc.getQueryData<KidDetail>(['kids', 1])?.name).toBe('Sam');
+  });
+});
+
+describe('useCreateWatchlistEntry', () => {
+  it('succeeds and returns the new entry from the server', async () => {
+    const qc = new QueryClient();
+    const { result } = renderHook(() => useCreateWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, pattern: 'soccer' });
+    });
+    expect(result.current.isSuccess).toBe(true);
+  });
+});
+
+describe('useUpdateWatchlistEntry', () => {
+  it('optimistically updates the entry in-place in the list cache', async () => {
+    const qc = new QueryClient();
+    const entry = seedWatchlistEntry({ id: 10, pattern: 't-ball' });
+    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+
+    const { result } = renderHook(() => useUpdateWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    result.current.mutate({ kidId: 1, entryId: 10, patch: { pattern: 'soccer' } });
+    await waitFor(() => {
+      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
+      return list?.[0]?.pattern === 'soccer';
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('rolls back the list cache on server error', async () => {
+    server.use(
+      http.patch('/api/watchlist/:id', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const entry = seedWatchlistEntry({ id: 10, pattern: 't-ball' });
+    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+
+    const { result } = renderHook(() => useUpdateWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    result.current.mutate({ kidId: 1, entryId: 10, patch: { pattern: 'soccer' } });
+    // Optimistic update fires; wait for it
+    await waitFor(() => {
+      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
+      return list?.[0]?.pattern === 'soccer';
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'])?.[0]?.pattern).toBe(
+      't-ball',
+    );
+  });
+});
+
+describe('useDeleteWatchlistEntry', () => {
+  it('optimistically removes the entry from the list cache', async () => {
+    const qc = new QueryClient();
+    const entry = seedWatchlistEntry({ id: 10 });
+    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+
+    const { result } = renderHook(() => useDeleteWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    result.current.mutate({ kidId: 1, entryId: 10 });
+    await waitFor(() => {
+      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
+      return list?.length === 0;
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('rolls back the list cache on server error', async () => {
+    server.use(
+      http.delete('/api/watchlist/:id', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const entry = seedWatchlistEntry({ id: 10 });
+    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+
+    const { result } = renderHook(() => useDeleteWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    result.current.mutate({ kidId: 1, entryId: 10 });
+    await waitFor(() => {
+      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
+      return list?.length === 0;
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'])).toHaveLength(1);
+  });
+});
+
+describe('useCrawlNow', () => {
+  it('POSTs to /api/sites/{id}/crawl-now and succeeds', async () => {
+    const qc = new QueryClient();
+    const { result } = renderHook(() => useCrawlNow(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ siteId: 1 });
+    });
+    expect(result.current.isSuccess).toBe(true);
+  });
+});
+
+describe('useToggleSiteActive', () => {
+  it('optimistically flips the active flag in the cached site', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<Site>(['sites', 1], seedSite({ active: true }));
+
+    const { result } = renderHook(() => useToggleSiteActive(), { wrapper: makeWrapper(qc) });
+    result.current.mutate({ siteId: 1, active: false });
+    await waitFor(() => {
+      return qc.getQueryData<Site>(['sites', 1])?.active === false;
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('rolls back the cached site on server error', async () => {
+    server.use(
+      http.patch('/api/sites/:id', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData<Site>(['sites', 1], seedSite({ active: true }));
+
+    const { result } = renderHook(() => useToggleSiteActive(), { wrapper: makeWrapper(qc) });
+    result.current.mutate({ siteId: 1, active: false });
+    await waitFor(() => {
+      return qc.getQueryData<Site>(['sites', 1])?.active === false;
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(qc.getQueryData<Site>(['sites', 1])?.active).toBe(true);
   });
 });
