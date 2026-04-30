@@ -17,7 +17,7 @@ repos:
           - fastapi
           - structlog
   - repo: https://github.com/gitguardian/ggshield
-    rev: v1.50.2
+    rev: v1.50.3
     hooks:
       - id: ggshield
         # Scans staged changes for secrets before commit. Free for individuals
