@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
-import { useCloseAlert, useReopenAlert, useCancelEnrollment, useDeleteUnavailability } from './mutations';
+import { useCloseAlert, useReopenAlert, useCancelEnrollment, useDeleteUnavailability, useEnrollOffering } from './mutations';
 import type { InboxSummary, KidCalendarResponse } from './types';
 
 function makeWrapper(qc: QueryClient) {
@@ -212,6 +212,97 @@ describe('useCancelEnrollment', () => {
     ]);
     expect(after?.events).toHaveLength(1);
     expect(after!.events[0]!.enrollment_id).toBe(42);
+  });
+});
+
+describe('useEnrollOffering', () => {
+  it('removes match events for the offering across all calendar variants', async () => {
+    const qc = new QueryClient();
+    const matchEvent = {
+      id: 'match:7:2026-04-29',
+      kind: 'match' as const,
+      date: '2026-04-29',
+      time_start: '16:00:00',
+      time_end: '17:00:00',
+      all_day: false,
+      title: 'T-Ball',
+      offering_id: 7,
+      score: 0.85,
+    };
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches'],
+      seedCal([matchEvent]),
+    );
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'no-matches'],
+      seedCal([]),
+    );
+
+    const { result } = renderHook(() => useEnrollOffering(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, offeringId: 7 });
+    });
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches',
+    ]);
+    expect(after?.events).toEqual([]);
+  });
+
+  it('does not crash on a no-matches variant that has no match events', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'no-matches'],
+      seedCal([]),
+    );
+
+    const { result } = renderHook(() => useEnrollOffering(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, offeringId: 7 });
+    });
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'no-matches',
+    ]);
+    expect(after?.events).toEqual([]);
+  });
+
+  it('rolls back on server error', async () => {
+    server.use(
+      http.post('/api/enrollments', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const matchEvent = {
+      id: 'match:7:2026-04-29',
+      kind: 'match' as const,
+      date: '2026-04-29',
+      time_start: '16:00:00',
+      time_end: '17:00:00',
+      all_day: false,
+      title: 'T-Ball',
+      offering_id: 7,
+      score: 0.85,
+    };
+    qc.setQueryData<KidCalendarResponse>(
+      ['kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches'],
+      seedCal([matchEvent]),
+    );
+
+    const { result } = renderHook(() => useEnrollOffering(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ kidId: 1, offeringId: 7 })
+        .catch(() => {});
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    const after = qc.getQueryData<KidCalendarResponse>([
+      'kids', 1, 'calendar', '2026-04-27', '2026-05-04', 'with-matches',
+    ]);
+    expect(after?.events).toHaveLength(1);
+    expect(after?.events[0]!.kind).toBe('match');
   });
 });
 

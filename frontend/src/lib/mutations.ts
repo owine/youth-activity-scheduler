@@ -117,6 +117,50 @@ export function useCancelEnrollment() {
   });
 }
 
+interface EnrollOfferingInput {
+  kidId: number;
+  offeringId: number;
+}
+
+export function useEnrollOffering() {
+  const qc = useQueryClient();
+  type Ctx = {
+    snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
+  };
+  return useMutation<unknown, Error, EnrollOfferingInput, Ctx>({
+    mutationFn: ({ kidId, offeringId }) =>
+      api.post('/api/enrollments', {
+        kid_id: kidId,
+        offering_id: offeringId,
+        status: 'enrolled',
+      }),
+
+    onMutate: async ({ kidId, offeringId }) => {
+      await qc.cancelQueries({ queryKey: ['kids', kidId, 'calendar'] });
+      const snapshots = qc.getQueriesData<KidCalendarResponse>({
+        queryKey: ['kids', kidId, 'calendar'],
+      });
+
+      for (const [key, data] of snapshots) {
+        if (!data) continue;
+        const filtered = data.events.filter(
+          (e) => !(e.kind === 'match' && e.offering_id === offeringId),
+        );
+        qc.setQueryData<KidCalendarResponse>(key, { ...data, events: filtered });
+      }
+      return { snapshots };
+    },
+
+    onError: (_err, _vars, ctx) => {
+      ctx?.snapshots.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+
+    onSettled: async (_data, _err, { kidId }) => {
+      await qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] });
+    },
+  });
+}
+
 interface DeleteUnavailabilityInput {
   kidId: number;
   blockId: number;
