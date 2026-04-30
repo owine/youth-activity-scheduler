@@ -83,7 +83,7 @@ describe('SiteDetailPage', () => {
       http.get('/api/sites/1/crawls', () => HttpResponse.json([])),
       http.patch('/api/sites/1', async ({ request }) => {
         patchCalled = true;
-        patchBody = await request.json();
+        patchBody = (await request.json()) as { active?: boolean };
         return HttpResponse.json({
           ...siteFixture,
           active: patchBody.active !== undefined ? patchBody.active : siteFixture.active,
@@ -107,7 +107,7 @@ describe('SiteDetailPage', () => {
     await waitFor(() => {
       expect(patchCalled).toBe(true);
     });
-    expect(patchBody.active).toBe(false);
+    expect(patchBody?.active).toBe(false);
   });
 
   it('"Resume" button shows when site is paused', async () => {
