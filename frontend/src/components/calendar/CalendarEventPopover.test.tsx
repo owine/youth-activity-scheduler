@@ -53,6 +53,48 @@ function renderPopover(event: CalendarEvent | null, onClose = vi.fn()) {
   );
 }
 
+const matchEvent: CalendarEvent = {
+  id: 'match:7:2026-04-29',
+  kind: 'match',
+  date: '2026-04-29',
+  time_start: '17:00:00',
+  time_end: '18:00:00',
+  all_day: false,
+  title: 'Soccer',
+  offering_id: 7,
+  score: 0.85,
+  registration_url: 'https://example.com/register',
+};
+
+const matchEventNoUrl: CalendarEvent = {
+  ...matchEvent,
+  registration_url: null,
+};
+
+describe('CalendarEventPopover (match events)', () => {
+  it('renders match details + Enroll button + View details link', () => {
+    renderPopover(matchEvent);
+    expect(screen.getByText(/Soccer/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /enroll/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /view details/i })).toHaveAttribute(
+      'href',
+      'https://example.com/register',
+    );
+  });
+
+  it('omits the View details link when registration_url is null', () => {
+    renderPopover(matchEventNoUrl);
+    expect(screen.queryByRole('link', { name: /view details/i })).not.toBeInTheDocument();
+  });
+
+  it('calls onClose after a successful Enroll', async () => {
+    const onClose = vi.fn();
+    renderPopover(matchEvent, onClose);
+    await userEvent.click(screen.getByRole('button', { name: /enroll/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+});
+
 describe('CalendarEventPopover', () => {
   it('renders enrollment details + Cancel enrollment button', () => {
     renderPopover(enrollment);
