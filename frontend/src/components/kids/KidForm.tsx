@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { kidSchema, type KidFormValues } from './kidSchema';
 import { useCreateKid, useUpdateKid } from '@/lib/mutations';
 import { useKid } from '@/lib/queries';
+import { ApiError } from '@/lib/api';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { InterestsField } from './InterestsField';
@@ -82,7 +83,12 @@ export function KidForm({ mode, id }: KidFormProps) {
           navigate({ to: '/kids/$id/matches', params: { id: String(id) } });
         }
       } catch (err) {
-        setErrorMsg((err as Error).message ?? 'Failed to save');
+        if (err instanceof ApiError && typeof err.body === 'object' && err.body !== null) {
+          const detail = (err.body as Record<string, unknown>).detail;
+          setErrorMsg(String(detail ?? 'Failed to save'));
+        } else {
+          setErrorMsg((err as Error).message ?? 'Failed to save');
+        }
       }
     },
   });

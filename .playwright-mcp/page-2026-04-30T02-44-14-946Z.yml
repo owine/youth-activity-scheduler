@@ -1,0 +1,168 @@
+- generic:
+  - generic:
+    - generic:
+      - banner:
+        - link:
+          - /url: /
+          - text: YAS
+        - generic:
+          - navigation:
+            - link:
+              - /url: /kids/1/matches
+              - text: Sam
+        - link:
+          - /url: /
+          - img
+          - text: Inbox
+        - link:
+          - /url: /sites
+          - img
+          - text: Sites
+        - link:
+          - /url: /settings
+          - img
+          - text: Settings
+        - button:
+          - img
+      - main:
+        - generic:
+          - heading [level=1]: Sam's calendar
+          - navigation:
+            - link:
+              - /url: /kids/1/matches
+              - text: Matches
+            - link:
+              - /url: /kids/1/watchlist
+              - text: Watchlist
+            - link:
+              - /url: /kids/1/calendar
+              - text: Calendar
+          - generic:
+            - generic:
+              - checkbox [checked]
+              - text: Show matches
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - button: Today
+                  - button: Back
+                  - button: Next
+                - generic: April 26 – May 02
+                - generic:
+                  - button: Week
+                  - button: Month
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button:
+                          - columnheader: 26 Sun
+                      - generic:
+                        - button:
+                          - columnheader: 27 Mon
+                      - generic:
+                        - button:
+                          - columnheader: 28 Tue
+                      - generic:
+                        - button:
+                          - columnheader: 29 Wed
+                      - generic:
+                        - button:
+                          - columnheader: 30 Thu
+                      - generic:
+                        - button:
+                          - columnheader: 01 Fri
+                      - generic:
+                        - button:
+                          - columnheader: 02 Sat
+                    - rowgroup:
+                      - row
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: 6:00 AM
+                    - generic:
+                      - generic: 7:00 AM
+                    - generic:
+                      - generic: 8:00 AM
+                    - generic:
+                      - generic: 9:00 AM
+                    - generic:
+                      - generic: 10:00 AM
+                    - generic:
+                      - generic: 11:00 AM
+                    - generic:
+                      - generic: 12:00 PM
+                    - generic:
+                      - generic: 1:00 PM
+                    - generic:
+                      - generic: 2:00 PM
+                    - generic:
+                      - generic: 3:00 PM
+                    - generic:
+                      - generic: 4:00 PM
+                    - generic:
+                      - generic: 5:00 PM
+                    - generic:
+                      - generic: 6:00 PM
+                    - generic:
+                      - generic: 7:00 PM
+                    - generic:
+                      - generic: 8:00 PM
+                    - generic:
+                      - generic: 9:00 PM
+                  - generic:
+                    - generic:
+                      - button:
+                        - generic: 8:30 AM – 3:00 PM
+                        - generic: School
+                  - generic:
+                    - generic:
+                      - button:
+                        - generic: 8:30 AM – 3:00 PM
+                        - generic: School
+                      - button:
+                        - generic: 4:00 PM – 5:00 PM
+                        - generic: T-Ball
+                  - generic:
+                    - generic:
+                      - button:
+                        - generic: 8:30 AM – 3:00 PM
+                        - generic: School
+                      - button:
+                        - generic: 5:00 PM – 6:00 PM
+                        - generic: Soccer
+                  - generic:
+                    - generic:
+                      - button:
+                        - generic: 8:30 AM – 3:00 PM
+                        - generic: School
+                      - button:
+                        - generic: 4:00 PM – 5:00 PM
+                        - generic: T-Ball
+                  - generic:
+                    - generic:
+                      - button:
+                        - generic: 8:30 AM – 3:00 PM
+                        - generic: School
+  - dialog "Soccer" [ref=e527]:
+    - generic [ref=e528]:
+      - heading "Soccer" [level=2] [ref=e529]
+      - paragraph [ref=e530]:
+        - text: 17:00–18:00
+        - generic [ref=e531]: "Score: 0.85"
+    - generic [ref=e532]:
+      - button "Enroll" [ref=e533]
+      - button "Mute" [expanded] [ref=e534]
+      - dialog [ref=e542]:
+        - menuitem "7 days" [active] [ref=e543]
+        - menuitem "30 days" [ref=e544]
+        - menuitem "90 days" [ref=e545]
+        - menuitem "Forever" [ref=e546]
+      - link "View details ↗" [ref=e535] [cursor=pointer]:
+        - /url: https://example.com/soccer
+    - button "Close" [ref=e536]:
+      - img [ref=e537]
+      - generic [ref=e540]: Close

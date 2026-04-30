@@ -1,0 +1,104 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "YAS" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - navigation "Switch kid" [ref=e7]:
+      - link "Sam" [ref=e8] [cursor=pointer]:
+        - /url: /kids/1/matches
+    - link "Inbox" [ref=e9] [cursor=pointer]:
+      - /url: /
+      - img [ref=e10]
+      - text: Inbox
+    - link "Sites" [ref=e13] [cursor=pointer]:
+      - /url: /sites
+      - img [ref=e14]
+      - text: Sites
+    - link "Settings" [ref=e17] [cursor=pointer]:
+      - /url: /settings
+      - img [ref=e18]
+      - text: Settings
+    - 'button "Theme: System" [ref=e21]':
+      - img
+  - main [ref=e22]:
+    - generic [ref=e23]:
+      - heading "Sam's calendar" [level=1] [ref=e24]
+      - navigation [ref=e25]:
+        - link "Matches" [ref=e26] [cursor=pointer]:
+          - /url: /kids/1/matches
+        - link "Watchlist" [ref=e27] [cursor=pointer]:
+          - /url: /kids/1/watchlist
+        - link "Calendar" [ref=e28] [cursor=pointer]:
+          - /url: /kids/1/calendar
+      - generic [ref=e30]:
+        - checkbox "Show matches" [ref=e31]
+        - text: Show matches
+      - generic [ref=e33]:
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - button "Today" [ref=e36]
+            - button "Back" [ref=e37]
+            - button "Next" [ref=e38]
+          - generic [ref=e39]: April 26 – May 02
+          - generic [ref=e40]:
+            - button "Week" [ref=e41]
+            - button "Month" [ref=e42]
+        - generic [ref=e43]:
+          - generic [ref=e46]:
+            - generic [ref=e47]:
+              - button "26 Sun" [ref=e49] [cursor=pointer]:
+                - columnheader "26 Sun" [ref=e50]
+              - button "27 Mon" [ref=e52] [cursor=pointer]:
+                - columnheader "27 Mon" [ref=e53]
+              - button "28 Tue" [ref=e55] [cursor=pointer]:
+                - columnheader "28 Tue" [ref=e56]
+              - button "29 Wed" [ref=e58] [cursor=pointer]:
+                - columnheader "29 Wed" [ref=e59]
+              - button "30 Thu" [ref=e61] [cursor=pointer]:
+                - columnheader "30 Thu" [ref=e62]
+              - button "01 Fri" [ref=e64] [cursor=pointer]:
+                - columnheader "01 Fri" [ref=e65]
+              - button "02 Sat" [ref=e67] [cursor=pointer]:
+                - columnheader "02 Sat" [ref=e68]
+            - rowgroup [ref=e69]:
+              - row [ref=e78]
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - generic [ref=e84]: 6:00 AM
+              - generic [ref=e87]: 7:00 AM
+              - generic [ref=e90]: 8:00 AM
+              - generic [ref=e93]: 9:00 AM
+              - generic [ref=e96]: 10:00 AM
+              - generic [ref=e99]: 11:00 AM
+              - generic [ref=e102]: 12:00 PM
+              - generic [ref=e105]: 1:00 PM
+              - generic [ref=e108]: 2:00 PM
+              - generic [ref=e111]: 3:00 PM
+              - generic [ref=e114]: 4:00 PM
+              - generic [ref=e117]: 5:00 PM
+              - generic [ref=e120]: 6:00 PM
+              - generic [ref=e123]: 7:00 PM
+              - generic [ref=e126]: 8:00 PM
+              - generic [ref=e129]: 9:00 PM
+            - button "8:30 AM – 3:00 PM School" [ref=e231] [cursor=pointer]:
+              - generic [ref=e232]: 8:30 AM – 3:00 PM
+              - generic [ref=e233]: School
+            - generic [ref=e283]:
+              - button "8:30 AM – 3:00 PM School" [ref=e284] [cursor=pointer]:
+                - generic [ref=e285]: 8:30 AM – 3:00 PM
+                - generic [ref=e286]: School
+              - button "4:00 PM – 5:00 PM T-Ball" [ref=e287] [cursor=pointer]:
+                - generic [ref=e288]: 4:00 PM – 5:00 PM
+                - generic [ref=e289]: T-Ball
+            - button "8:30 AM – 3:00 PM School" [ref=e340] [cursor=pointer]:
+              - generic [ref=e341]: 8:30 AM – 3:00 PM
+              - generic [ref=e342]: School
+            - generic [ref=e392]:
+              - button "8:30 AM – 3:00 PM School" [ref=e393] [cursor=pointer]:
+                - generic [ref=e394]: 8:30 AM – 3:00 PM
+                - generic [ref=e395]: School
+              - button "4:00 PM – 5:00 PM T-Ball" [ref=e396] [cursor=pointer]:
+                - generic [ref=e397]: 4:00 PM – 5:00 PM
+                - generic [ref=e398]: T-Ball
+            - button "8:30 AM – 3:00 PM School" [ref=e449] [cursor=pointer]:
+              - generic [ref=e450]: 8:30 AM – 3:00 PM
+              - generic [ref=e451]: School

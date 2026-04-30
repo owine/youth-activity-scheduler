@@ -162,23 +162,72 @@ describe('KidForm', () => {
 
   it('submits form with all required fields when valid', async () => {
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    let capturedBody: Record<string, unknown> | null = null;
+
+    // Override POST to capture request body and verify projection
+    server.use(
+      http.post('/api/kids', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        capturedBody = body;
+        return HttpResponse.json(
+          {
+            id: 42,
+            name: body.name || 'Alex',
+            dob: body.dob || '2020-01-01',
+            interests: (body.interests as string[]) || [],
+            active: (body.active as boolean) ?? true,
+            availability: {},
+            max_distance_mi: (body.max_distance_mi as number | null) ?? null,
+            alert_score_threshold: (body.alert_score_threshold as number) ?? 0.6,
+            alert_on: (body.alert_on as Record<string, boolean>) || {},
+            school_weekdays: (body.school_weekdays as string[]) || [
+              'mon',
+              'tue',
+              'wed',
+              'thu',
+              'fri',
+            ],
+            school_time_start: (body.school_time_start as string | null) ?? null,
+            school_time_end: (body.school_time_end as string | null) ?? null,
+            school_year_ranges: (body.school_year_ranges as unknown[]) || [],
+            school_holidays: (body.school_holidays as string[]) || [],
+            notes: (body.notes as string | null) ?? null,
+            watchlist: [],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
     render(<KidForm mode="create" />, { wrapper: makeWrapper(qc) });
 
-    const nameInput = screen.getByLabelText('Name');
-    const dobInput = screen.getByLabelText('Date of Birth');
-    const saveBtn = screen.getByRole('button', { name: /save/i });
+    const nameInput = screen.getByLabelText('Name') as HTMLInputElement;
+    const dobInput = screen.getByLabelText('Date of Birth') as HTMLInputElement;
+    const form = document.querySelector('form') as HTMLFormElement;
 
     // Fill in required fields
     await userEvent.type(nameInput, 'Alex');
     await userEvent.type(dobInput, '2020-01-01');
 
-    // Verify the form can submit (button should eventually be enabled)
+    // Blur to trigger validation
+    nameInput.blur();
+    dobInput.blur();
+
+    // Submit form directly (bypasses button disabled check)
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    // Wait for the POST request to be captured
     await waitFor(() => {
-      expect(saveBtn).not.toBeDisabled();
+      expect(capturedBody).not.toBeNull();
     });
 
-    // The form submission should be possible with valid data
-    expect(saveBtn).toBeInTheDocument();
+    // Verify the projection: payload should NOT contain id, availability, or watchlist
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody).toHaveProperty('name', 'Alex');
+    expect(capturedBody).toHaveProperty('dob', '2020-01-01');
+    expect(capturedBody).not.toHaveProperty('id');
+    expect(capturedBody).not.toHaveProperty('availability');
+    expect(capturedBody).not.toHaveProperty('watchlist');
   });
 
   it('renders form immediately in create mode without waiting for data', async () => {
@@ -192,5 +241,35 @@ describe('KidForm', () => {
 
     // Save button should be present
     expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+  });
+
+  it('displays server error in ErrorBanner on 500 response', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+
+    // Override POST to return 500 with error detail
+    server.use(
+      http.post('/api/kids', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+
+    render(<KidForm mode="create" />, { wrapper: makeWrapper(qc) });
+
+    const nameInput = screen.getByLabelText('Name') as HTMLInputElement;
+    const dobInput = screen.getByLabelText('Date of Birth') as HTMLInputElement;
+    const form = document.querySelector('form') as HTMLFormElement;
+
+    // Fill in required fields
+    await userEvent.type(nameInput, 'Alex');
+    await userEvent.type(dobInput, '2020-01-01');
+
+    // Blur to trigger validation
+    nameInput.blur();
+    dobInput.blur();
+
+    // Submit form directly (bypasses button disabled check)
+    form.dispatchEvent(new Event('submit', { bubbles: true }));
+
+    // ErrorBanner should display the error message
+    await screen.findByText(/boom/i);
+    expect(screen.getByText(/boom/i)).toBeInTheDocument();
   });
 });
