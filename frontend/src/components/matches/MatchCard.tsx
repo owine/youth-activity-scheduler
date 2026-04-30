@@ -37,14 +37,18 @@ export function MatchCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{match.score.toFixed(2)}</span>
-          <MuteButton
-            size="sm"
-            mutedUntil={o.muted_until ?? null}
-            onChange={(mutedUntil) =>
-              muteOffering.mutate({ offeringId: o.id, mutedUntil })
-            }
-            isPending={muteOffering.isPending}
-          />
+          {/* Stop propagation so the Mute popover doesn't also fire the
+              row's onClick (which opens the MatchDetailDrawer). */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <MuteButton
+              size="sm"
+              mutedUntil={o.muted_until ?? null}
+              onChange={(mutedUntil) =>
+                muteOffering.mutate({ offeringId: o.id, mutedUntil })
+              }
+              isPending={muteOffering.isPending}
+            />
+          </div>
         </div>
       </div>
     </Card>
