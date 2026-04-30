@@ -162,7 +162,7 @@ export interface Household {
   daily_llm_cost_cap_usd: number;
 }
 
-export type CalendarEventKind = 'enrollment' | 'unavailability';
+export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match';
 
 export interface CalendarEvent {
   id: string;            // composite "kind:source-id:date"
@@ -181,6 +181,9 @@ export interface CalendarEvent {
   block_id?: number | null;
   source?: string | null;
   from_enrollment_id?: number | null;
+  // match-only:
+  score?: number | null;
+  registration_url?: string | null;
 }
 
 export interface KidCalendarResponse {

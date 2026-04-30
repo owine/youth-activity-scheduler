@@ -63,11 +63,28 @@ export const handlers = [
   }),
   http.get('/api/kids/:id/calendar', ({ params, request }) => {
     const url = new URL(request.url);
+    const includeMatches = url.searchParams.get('include_matches') === 'true';
+    const events = includeMatches
+      ? [
+          {
+            id: 'match:99:2026-04-29',
+            kind: 'match',
+            date: '2026-04-29',
+            time_start: '17:00:00',
+            time_end: '18:00:00',
+            all_day: false,
+            title: 'Soccer',
+            offering_id: 99,
+            score: 0.85,
+            registration_url: 'https://example.com/soccer',
+          },
+        ]
+      : [];
     return HttpResponse.json({
       kid_id: Number(params.id),
       from: url.searchParams.get('from'),
       to: url.searchParams.get('to'),
-      events: [],
+      events,
     });
   }),
   http.patch('/api/enrollments/:id', async ({ params, request }) => {
@@ -83,4 +100,16 @@ export const handlers = [
     });
   }),
   http.delete('/api/unavailability/:id', () => new HttpResponse(null, { status: 204 })),
+  http.post('/api/enrollments', async ({ request }) => {
+    const body = (await request.json()) as { kid_id: number; offering_id: number; status: string };
+    return HttpResponse.json({
+      id: 999,
+      kid_id: body.kid_id,
+      offering_id: body.offering_id,
+      status: body.status,
+      enrolled_at: '2026-04-29T12:00:00Z',
+      notes: null,
+      created_at: '2026-04-29T12:00:00Z',
+    }, { status: 201 });
+  }),
 ];

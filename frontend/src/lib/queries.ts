@@ -99,16 +99,18 @@ export function useKidCalendar({
   kidId,
   from,
   to,
+  includeMatches = false,
 }: {
   kidId: number;
   from: string;
   to: string;
+  includeMatches?: boolean;
 }) {
   return useQuery({
-    queryKey: ['kids', kidId, 'calendar', from, to],
+    queryKey: ['kids', kidId, 'calendar', from, to, includeMatches ? 'with-matches' : 'no-matches'],
     queryFn: () =>
       api.get<KidCalendarResponse>(
-        `/api/kids/${kidId}/calendar?from=${from}&to=${to}`,
+        `/api/kids/${kidId}/calendar?from=${from}&to=${to}${includeMatches ? '&include_matches=true' : ''}`,
       ),
     enabled: Number.isFinite(kidId) && !!from && !!to,
   });
