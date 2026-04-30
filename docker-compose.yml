@@ -1,6 +1,9 @@
+x-image: &yas-image
+  image: ghcr.io/owine/youth-activity-scheduler:latest
+
 services:
   yas-migrate:
-    build: .
+    <<: *yas-image
     command: ["uv", "run", "alembic", "upgrade", "head"]
     env_file: .env
     volumes:
@@ -8,7 +11,7 @@ services:
     restart: "no"
 
   yas-worker:
-    build: .
+    <<: *yas-image
     command: ["python", "-m", "yas", "worker"]
     env_file: .env
     volumes:
@@ -19,7 +22,7 @@ services:
     restart: unless-stopped
 
   yas-api:
-    build: .
+    <<: *yas-image
     command: ["python", "-m", "yas", "api"]
     env_file: .env
     ports:
