@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.calendar.occurrences import expand_recurring
-from yas.db.models import Enrollment, Kid, Offering, UnavailabilityBlock
+from yas.db.models import Enrollment, Kid, Match, Offering, UnavailabilityBlock
 from yas.db.models._types import EnrollmentStatus
 from yas.db.session import session_scope
 from yas.web.routes.kid_calendar_schemas import CalendarEventOut, KidCalendarOut
@@ -18,6 +18,7 @@ from yas.web.routes.kid_calendar_schemas import CalendarEventOut, KidCalendarOut
 router = APIRouter(prefix="/api/kids", tags=["kids"])
 
 _MAX_RANGE_DAYS = 90
+_MATCH_THRESHOLD: float = 0.6
 
 
 def _engine(req: Request) -> AsyncEngine:
@@ -31,6 +32,7 @@ async def get_kid_calendar(
     kid_id: int,
     from_: Annotated[date, Query(alias="from")],
     to: Annotated[date, Query()],
+    include_matches: Annotated[bool, Query()] = False,
 ) -> KidCalendarOut:
     if from_ >= to:
         raise HTTPException(status_code=422, detail="from must be before to")
@@ -116,6 +118,48 @@ async def get_kid_calendar(
                         from_enrollment_id=block.source_enrollment_id,
                     )
                 )
+
+        # 3. Match overlay (opt-in).
+        if include_matches:
+            committed_offering_ids = (
+                select(Enrollment.offering_id)
+                .where(Enrollment.kid_id == kid_id)
+                .where(Enrollment.status != EnrollmentStatus.cancelled.value)
+            )
+            match_rows = (
+                await s.execute(
+                    select(Match, Offering)
+                    .join(Offering, Offering.id == Match.offering_id)
+                    .where(Match.kid_id == kid_id)
+                    .where(Match.score >= _MATCH_THRESHOLD)
+                    .where(~Match.offering_id.in_(committed_offering_ids))
+                )
+            ).all()
+            for match, offering in match_rows:
+                for occ in expand_recurring(
+                    days_of_week=list(offering.days_of_week or []),
+                    time_start=offering.time_start,
+                    time_end=offering.time_end,
+                    date_start=offering.start_date,
+                    date_end=offering.end_date,
+                    range_from=from_,
+                    range_to=to,
+                ):
+                    events.append(
+                        CalendarEventOut(
+                            id=f"match:{offering.id}:{occ.date.isoformat()}",
+                            kind="match",
+                            date=occ.date,
+                            time_start=occ.time_start,
+                            time_end=occ.time_end,
+                            all_day=occ.all_day,
+                            title=offering.name,
+                            offering_id=offering.id,
+                            location_id=offering.location_id,
+                            score=match.score,
+                            registration_url=offering.registration_url,
+                        )
+                    )
 
         # Sort by (date, time_start). time_start is `time | None`; coerce
         # all-day events to `time.min` so we always compare time-to-time.
