@@ -34,24 +34,128 @@ jobs:
   docker-build:
     # Verify the Dockerfile builds on both supported runtime architectures.
     # Native runners (no QEMU emulation) per arch via matrix.
+    #
+    # On push-to-main, also pushes each arch by-digest to GHCR. The
+    # docker-publish job then assembles a multi-arch manifest. PRs only
+    # build (no push), preserving the security boundary.
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
+            arch: amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            arch: arm64
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
-      - name: Build (no push)
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image name (lowercase)
+        id: image
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build (push by digest on main)
+        id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: false
-          load: false
+          # On main: push by-digest so the publish job can stitch a multi-arch
+          # manifest. On PRs: just build to verify the Dockerfile.
+          outputs: |
+            type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Export digest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882  # v4.4.3
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-publish:
+    # Stitch the per-arch digests pushed by docker-build into a single
+    # multi-arch manifest, tagged `latest`, `main`, and `sha-<short>`.
+    #
+    # Future (semver releases): when cutting `git tag v1.0.0 && git push --tags`,
+    # add a parallel job triggered on `push: tags: ['v*']` that uses
+    # docker/metadata-action to compute v1.0.0 / v1.0 / v1 / latest tags from
+    # the git ref. At that point, the `latest` tag below should drop in favor
+    # of the tag-driven version so `latest` always tracks releases, not main
+    # HEAD. See PR #16 description (or the docs/) for the full sketch.
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image name (lowercase)
+        id: image
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Create multi-arch manifest + push
+        working-directory: /tmp/digests
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          SHA: ${{ github.sha }}
+        run: |
+          short_sha="${SHA:0:7}"
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:main" \
+            --tag "${IMAGE}:sha-${short_sha}" \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect manifest
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:latest"

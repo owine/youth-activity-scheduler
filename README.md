@@ -3,13 +3,34 @@
 Self-hosted crawler + alerter for youth activity / sports / enrichment websites.
 See `docs/superpowers/specs/` for the design spec.
 
-## Quickstart (Docker)
+## Quickstart (Docker, prod)
+
+The base compose pulls a pre-built multi-arch image from GHCR
+(`ghcr.io/owine/youth-activity-scheduler:latest`, published from `main`).
+No local build — just pull and run:
 
 ```bash
 cp .env.example .env
 echo "YAS_ANTHROPIC_API_KEY=sk-ant-…" >> .env
+docker compose pull
 docker compose up -d
 curl http://localhost:8080/healthz
+```
+
+To upgrade later: `docker compose pull && docker compose up -d`.
+
+Available image tags:
+- `:latest` — main HEAD (default; bleeding edge)
+- `:main` — alias of latest
+- `:sha-<short>` — pin to a specific commit (recommended for production)
+
+### Local dev (build from source)
+
+For iterating on uncommitted source, layer in `docker-compose.dev.yml` to
+swap the `image:` for a local `build: .`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 ### Local dev on macOS
@@ -20,7 +41,15 @@ access. Real Linux deployments are unaffected. For local dev on macOS, use the
 overlay that switches `./data` to a Docker-managed named volume:
 
 ```bash
+# pulls from GHCR
 docker compose -f docker-compose.yml -f docker-compose.macos.yml up -d
+
+# or build locally + macOS volume override
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.macos.yml \
+  -f docker-compose.dev.yml \
+  up --build
 
 # inspect the db (it's inside the named volume, not on the host)
 docker compose -f docker-compose.yml -f docker-compose.macos.yml \

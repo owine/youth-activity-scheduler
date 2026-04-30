@@ -1,0 +1,25 @@
+# Override that swaps the GHCR `image:` for a local `build: .` so devs can
+# iterate on uncommitted source. The base compose targets prod (pulls from
+# GHCR); this override is opt-in.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Stack with macOS volume override:
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.macos.yml \
+#     -f docker-compose.dev.yml \
+#     up --build
+
+x-build: &yas-build
+  build: .
+  image: yas-local:dev   # local-only tag; not pushed
+
+services:
+  yas-migrate:
+    <<: *yas-build
+  yas-worker:
+    <<: *yas-build
+  yas-api:
+    <<: *yas-build
