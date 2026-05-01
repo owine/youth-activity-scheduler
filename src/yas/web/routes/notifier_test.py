@@ -1,4 +1,5 @@
 """POST /api/notifiers/{channel}/test — send a fixed test message."""
+
 from __future__ import annotations
 
 from typing import Any
