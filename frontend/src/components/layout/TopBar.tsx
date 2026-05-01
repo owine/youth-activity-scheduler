@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Bell, Globe, Settings } from 'lucide-react';
+import { Bell, Globe, LayoutGrid, Settings } from 'lucide-react';
 import { KidSwitcher } from './KidSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { useInboxSummary } from '@/lib/queries';
@@ -11,20 +11,39 @@ export function TopBar() {
 
   return (
     <header className="border-b border-border bg-background/95 backdrop-blur-sm px-4 py-2.5 flex items-center gap-4">
-      <Link to="/" className="text-lg font-semibold">YAS</Link>
+      <Link to="/" className="text-lg font-semibold">
+        YAS
+      </Link>
       <div className="flex-1">
         <KidSwitcher />
       </div>
-      <Link to="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
         <Bell className="h-4 w-4" /> Inbox
         {alertCount > 0 && (
-          <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">{alertCount}</Badge>
+          <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
+            {alertCount}
+          </Badge>
         )}
       </Link>
-      <Link to="/sites" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/offerings"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <LayoutGrid className="h-4 w-4" /> Offerings
+      </Link>
+      <Link
+        to="/sites"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
         <Globe className="h-4 w-4" /> Sites
       </Link>
-      <Link to="/settings" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/settings"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
         <Settings className="h-4 w-4" /> Settings
       </Link>
       <ThemeToggle />

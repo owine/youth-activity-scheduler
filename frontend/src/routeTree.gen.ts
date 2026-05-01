@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as OfferingsRouteImport } from './routes/offerings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as KidsIndexRouteImport } from './routes/kids.index'
@@ -24,6 +25,11 @@ import { Route as KidsIdCalendarRouteImport } from './routes/kids.$id.calendar'
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OfferingsRoute = OfferingsRouteImport.update({
+  id: '/offerings',
+  path: '/offerings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -79,6 +85,7 @@ const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
   '/sites/$id': typeof SitesIdRoute
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/offerings'
     | '/settings'
     | '/kids/new'
     | '/sites/$id'
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/offerings'
     | '/settings'
     | '/kids/new'
     | '/sites/$id'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/offerings'
     | '/settings'
     | '/kids/new'
     | '/sites/$id'
@@ -161,6 +173,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OfferingsRoute: typeof OfferingsRoute
   SettingsRoute: typeof SettingsRoute
   KidsNewRoute: typeof KidsNewRoute
   SitesIdRoute: typeof SitesIdRoute
@@ -180,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/offerings': {
+      id: '/offerings'
+      path: '/offerings'
+      fullPath: '/offerings'
+      preLoaderRoute: typeof OfferingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -257,6 +277,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OfferingsRoute: OfferingsRoute,
   SettingsRoute: SettingsRoute,
   KidsNewRoute: KidsNewRoute,
   SitesIdRoute: SitesIdRoute,

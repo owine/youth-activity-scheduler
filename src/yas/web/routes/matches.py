@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.db.models import Match, Offering, Site
+from yas.db.models import Location, Match, Offering, Site
 from yas.db.session import session_scope
 from yas.web.routes.matches_schemas import MatchOut, OfferingSummary
 
@@ -29,9 +29,10 @@ async def list_matches(
 ) -> list[MatchOut]:
     async with session_scope(_engine(request)) as s:
         q = (
-            select(Match, Offering, Site.name)
+            select(Match, Offering, Site.name, Location.lat, Location.lon)
             .join(Offering, Match.offering_id == Offering.id)
             .join(Site, Site.id == Offering.site_id)
+            .outerjoin(Location, Location.id == Offering.location_id)
         )
         if kid_id is not None:
             q = q.where(Match.kid_id == kid_id)
@@ -42,14 +43,16 @@ async def list_matches(
         q = q.order_by(Match.score.desc()).limit(limit).offset(offset)
         rows = (await s.execute(q)).all()
         result: list[MatchOut] = []
-        for match, offering, site_name in rows:
+        for match, offering, site_name, loc_lat, loc_lon in rows:
             offering_data = {
                 k: getattr(offering, k)
                 for k in OfferingSummary.model_fields
-                if k not in ("site_name", "registration_opens_at")
+                if k not in ("site_name", "registration_opens_at", "location_lat", "location_lon")
             }
             offering_data["site_name"] = site_name
             offering_data["registration_opens_at"] = offering.registration_opens_at
+            offering_data["location_lat"] = loc_lat
+            offering_data["location_lon"] = loc_lon
             result.append(
                 MatchOut(
                     kid_id=match.kid_id,

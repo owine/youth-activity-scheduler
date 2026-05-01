@@ -58,6 +58,13 @@ export function useKidMatches(kidId: number) {
   });
 }
 
+export function useAllMatches({ minScore, limit = 500 }: { minScore: number; limit?: number }) {
+  return useQuery({
+    queryKey: ['matches', 'all', { minScore, limit }],
+    queryFn: () => api.get<Match[]>(`/api/matches?min_score=${minScore}&limit=${limit}`),
+  });
+}
+
 export function useSites() {
   return useQuery({
     queryKey: ['sites'],

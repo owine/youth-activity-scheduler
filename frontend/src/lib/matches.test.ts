@@ -28,6 +28,8 @@ function makeMatch(overrides: Partial<Match['offering']> = {}): Match {
       registration_url: null,
       registration_opens_at: null,
       muted_until: null,
+      location_lat: null,
+      location_lon: null,
       ...overrides,
     },
   };

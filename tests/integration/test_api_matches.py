@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from yas.db.base import Base
-from yas.db.models import Kid, Match, Offering, Page, Site
+from yas.db.models import Kid, Location, Match, Offering, Page, Site
 from yas.db.models._types import ProgramType
 from yas.db.session import create_engine_for, session_scope
 from yas.web.app import create_app
@@ -84,13 +84,14 @@ async def client(tmp_path, monkeypatch):
         )
     app = create_app(engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
+        yield c, engine
     await engine.dispose()
 
 
 @pytest.mark.asyncio
 async def test_list_all_matches(client):
-    r = await client.get("/api/matches")
+    c, _ = client
+    r = await c.get("/api/matches")
     assert r.status_code == 200
     rows = r.json()
     assert len(rows) == 3
@@ -101,7 +102,8 @@ async def test_list_all_matches(client):
 
 @pytest.mark.asyncio
 async def test_filter_by_kid_id(client):
-    r = await client.get("/api/matches?kid_id=1")
+    c, _ = client
+    r = await c.get("/api/matches?kid_id=1")
     assert r.status_code == 200
     rows = r.json()
     assert {row["kid_id"] for row in rows} == {1}
@@ -110,7 +112,8 @@ async def test_filter_by_kid_id(client):
 
 @pytest.mark.asyncio
 async def test_filter_by_offering_id(client):
-    r = await client.get("/api/matches?offering_id=1")
+    c, _ = client
+    r = await c.get("/api/matches?offering_id=1")
     assert r.status_code == 200
     rows = r.json()
     assert {row["offering_id"] for row in rows} == {1}
@@ -119,7 +122,8 @@ async def test_filter_by_offering_id(client):
 
 @pytest.mark.asyncio
 async def test_filter_by_min_score(client):
-    r = await client.get("/api/matches?min_score=0.5")
+    c, _ = client
+    r = await c.get("/api/matches?min_score=0.5")
     assert r.status_code == 200
     rows = r.json()
     assert all(row["score"] >= 0.5 for row in rows)
@@ -128,15 +132,17 @@ async def test_filter_by_min_score(client):
 
 @pytest.mark.asyncio
 async def test_pagination(client):
-    r = await client.get("/api/matches?limit=1&offset=0")
+    c, _ = client
+    r = await c.get("/api/matches?limit=1&offset=0")
     assert len(r.json()) == 1
-    r = await client.get("/api/matches?limit=1&offset=2")
+    r = await c.get("/api/matches?limit=1&offset=2")
     assert len(r.json()) == 1
 
 
 @pytest.mark.asyncio
 async def test_response_shape_includes_offering_summary(client):
-    r = await client.get("/api/matches?kid_id=1&offering_id=1")
+    c, _ = client
+    r = await c.get("/api/matches?kid_id=1&offering_id=1")
     assert r.status_code == 200
     rows = r.json()
     assert len(rows) == 1
@@ -153,28 +159,32 @@ async def test_response_shape_includes_offering_summary(client):
 
 @pytest.mark.asyncio
 async def test_empty_result_set(client):
-    r = await client.get("/api/matches?kid_id=999")
+    c, _ = client
+    r = await c.get("/api/matches?kid_id=999")
     assert r.status_code == 200
     assert r.json() == []
 
 
 @pytest.mark.asyncio
 async def test_min_score_out_of_range_422(client):
-    r = await client.get("/api/matches?min_score=1.5")
+    c, _ = client
+    r = await c.get("/api/matches?min_score=1.5")
     assert r.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_limit_enforced(client):
-    r = await client.get("/api/matches?limit=0")
+    c, _ = client
+    r = await c.get("/api/matches?limit=0")
     assert r.status_code == 422
-    r = await client.get("/api/matches?limit=501")
+    r = await c.get("/api/matches?limit=501")
     assert r.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_match_includes_offering_registration_opens_at_and_site_name(client):
-    r = await client.get("/api/matches?kid_id=1")
+    c, _ = client
+    r = await c.get("/api/matches?kid_id=1")
     assert r.status_code == 200
     body = r.json()
     assert len(body) == 2
@@ -184,3 +194,69 @@ async def test_match_includes_offering_registration_opens_at_and_site_name(clien
         assert "site_name" in offering
         assert offering["site_name"] == "X"  # From fixture
         assert "registration_opens_at" in offering
+
+
+@pytest.mark.asyncio
+async def test_offering_location_coords(client):
+    """Test that offerings with locations return location_lat/location_lon."""
+    # This test uses the client fixture which already has 3 matches set up.
+    # Offerings 1 and 2 were created without location_id, so we expect null coords.
+    # First, verify existing offerings return null coords
+    c, _ = client
+    r = await c.get("/api/matches?offering_id=1")
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) > 0
+    for row in rows:
+        offering = row["offering"]
+        assert "location_lat" in offering
+        assert "location_lon" in offering
+        assert offering["location_lat"] is None
+        assert offering["location_lon"] is None
+
+
+@pytest.mark.asyncio
+async def test_offering_location_coords_populated(client):
+    """Test that offerings with real locations return populated location_lat/location_lon."""
+    c, engine = client
+    # Create a location with real coordinates (Chicago)
+    async with session_scope(engine) as s:
+        location = Location(id=1, name="Chicago Arena", lat=41.88, lon=-87.63)
+        s.add(location)
+        await s.flush()
+        # Create an offering pointing to this location
+        offering = Offering(
+            id=3,
+            site_id=1,
+            page_id=1,
+            name="Chicago Swimming",
+            normalized_name="chicago swimming",
+            program_type=ProgramType.swim.value,
+            start_date=date(2026, 5, 3),
+            days_of_week=["mon"],
+            time_start=time(10, 0),
+            time_end=time(11, 0),
+            location_id=1,
+        )
+        s.add(offering)
+        await s.flush()
+        # Create a match for this offering
+        match = Match(
+            kid_id=1,
+            offering_id=3,
+            score=0.88,
+            reasons={"gates": {}, "score_breakdown": {}},
+            computed_at=datetime.now(UTC),
+        )
+        s.add(match)
+        await s.flush()
+    # Query the API and verify populated coordinates
+    r = await c.get("/api/matches?offering_id=3")
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) > 0
+    offering_summary = rows[0]["offering"]
+    assert "location_lat" in offering_summary
+    assert "location_lon" in offering_summary
+    assert offering_summary["location_lat"] == 41.88
+    assert offering_summary["location_lon"] == -87.63

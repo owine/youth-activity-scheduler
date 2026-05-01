@@ -10,6 +10,7 @@ export const inboxSummaryFixture = {
 
 export const handlers = [
   http.get('/api/kids', () => HttpResponse.json([])),
+  http.get('/api/matches', () => HttpResponse.json([])),
   http.get('/api/inbox/summary', () => HttpResponse.json(inboxSummaryFixture)),
   http.get('/api/sites', () => HttpResponse.json([])),
   http.get('/api/household', () =>
