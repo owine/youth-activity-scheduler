@@ -117,6 +117,37 @@ The backend permits any `EnrollmentStatus` → any `EnrollmentStatus`. The mater
 
 This matches casual household usage: occasional updates, rare mistakes that can be undone with one more dropdown change.
 
+### D10: Tighten `EnrollmentCreate/Patch/Out.status` to `EnrollmentStatus` enum (backend)
+
+`enrollments_schemas.py` currently types `status: str` (string). The dropdown PATCH sends a literal from `EnrollmentStatus`; loose `str` would allow typos to silently land in the DB. Tighten all three schemas to `status: EnrollmentStatus | None` (Patch) / `status: EnrollmentStatus = EnrollmentStatus.interested` (Create) / `status: EnrollmentStatus` (Out). Also tighten the `enrollment_status: str` query param on `list_enrollments` to `EnrollmentStatus | None`.
+
+Frontend types follow: `EnrollmentStatus` is exported as a string-literal union from `frontend/src/lib/types.ts`. Pydantic serializes the enum as its `.value` (string) on the wire, so the frontend gets the same string it sent.
+
+### D11: Notes-only PATCH still triggers materializer + rematch
+
+The current `patch_enrollment` always calls `apply_enrollment_block` + `rematch_kid` on every PATCH, including notes-only edits. The materializer is idempotent (running it after a notes change re-applies the same block — no DB churn beyond the read). `rematch_kid` is the heavier call but fast for a single household.
+
+We accept this v1 cost. If notes editing becomes frequent and rematch is sluggish, a future optimization can short-circuit when only `notes` changed. Out of scope for this PR.
+
+### D12: Extract `<OfferingScheduleLine>` shared component
+
+The "site_name · starts in N days · Wed 5–6pm" line is duplicated across `<MatchCard>` (Phase 5a), `<OfferingRow>` (Phase 7-2), and now `<EnrollmentRow>`. Extract to `frontend/src/components/common/OfferingScheduleLine.tsx`:
+
+```tsx
+interface Props {
+  offering: OfferingSummary;
+  showRegOpens?: boolean;  // MatchCard wants reg-opens; OfferingRow + EnrollmentRow don't
+}
+```
+
+Then update all three call sites to use it. The new component encapsulates the formatter and unifies the visual; future tweaks land once.
+
+### D13: `useUpdateEnrollment` pending state is per-row via component state
+
+`useMutation` exposes one `isPending` per hook instance. With many rows sharing one hook, the spec's "select disabled while pending for that row" needs a per-row signal.
+
+**Decision:** the `EnrollmentsList` page tracks a single `pendingEnrollmentId: number | null` in React state. Each row receives `isPending={pendingEnrollmentId === row.id}` as a prop. The list-level mutation onMutate sets it; onSettled clears it. This avoids the alternative of "one hook instance per row" (which would multiply React Query subscriptions for no benefit) and keeps the typing simple.
+
 ## Architecture
 
 ### Routes
@@ -204,9 +235,9 @@ export function useUpdateEnrollment() {
 ### Files
 
 **Modify — backend:**
-- `src/yas/web/routes/enrollments_schemas.py` — add `offering: OfferingSummary` to `EnrollmentOut`. Reuse `OfferingSummary` from `matches_schemas.py`.
-- `src/yas/web/routes/enrollments.py` — `list_enrollments` and the singleton `get_enrollment` / `create_enrollment` / `patch_enrollment` join Offering + Site (and Location for lat/lon). Build the offering dict the same way `matches.py` does.
-- `tests/integration/test_api_enrollments.py` — extend with one assertion that `EnrollmentOut.offering` is populated.
+- `src/yas/web/routes/enrollments_schemas.py` — add `offering: OfferingSummary` to `EnrollmentOut` (import from `matches_schemas.py` — one-directional, no cycle). Tighten `status: str` → `status: EnrollmentStatus` on `EnrollmentOut`, `status: EnrollmentStatus = EnrollmentStatus.interested` on `EnrollmentCreate`, `status: EnrollmentStatus | None = None` on `EnrollmentPatch` (per D10).
+- `src/yas/web/routes/enrollments.py` — `list_enrollments` and the singleton `get_enrollment` / `create_enrollment` / `patch_enrollment` join Offering + Site (and Location for lat/lon). Build the offering dict the same way `matches.py` does. Tighten the `enrollment_status: str` query param on `list_enrollments` to `EnrollmentStatus | None` per D10.
+- `tests/integration/test_api_enrollments.py` — extend with one assertion that `EnrollmentOut.offering` is populated. Existing tests should keep passing under the tightened enum types (they pass valid string values).
 
 **Create — frontend:**
 - `frontend/src/routes/kids.$id.enrollments.tsx` — thin route shell.
@@ -218,7 +249,7 @@ export function useUpdateEnrollment() {
 - `frontend/src/components/layout/KidTabs.tsx` — add Enrollments tab.
 - `frontend/src/lib/queries.ts` — add `useKidEnrollments`.
 - `frontend/src/lib/mutations.ts` — add `useUpdateEnrollment`.
-- `frontend/src/lib/types.ts` — extend `Enrollment` with `offering: OfferingSummary`; add `EnrollmentStatus` union.
+- `frontend/src/lib/types.ts` — **add** `Enrollment` interface (does not currently exist) with `offering: OfferingSummary`; add `EnrollmentStatus` string-literal union (`'interested' | 'enrolled' | 'waitlisted' | 'completed' | 'cancelled'`).
 - `frontend/src/test/handlers.ts` — verify default `/api/enrollments` GET handler returns the new `offering` field.
 - `frontend/src/routeTree.gen.ts` — regenerated.
 
