@@ -328,3 +328,45 @@ export interface Enrollment {
   created_at: string;
   offering: OfferingSummary;
 }
+
+// Phase 7-4 alerts page
+export type AlertStatus = 'pending' | 'sent' | 'skipped';
+
+export interface Alert {
+  id: number;
+  type: AlertType | string;
+  kid_id: number | null;
+  offering_id: number | null;
+  site_id: number | null;
+  channels: string[];
+  scheduled_for: string;
+  sent_at: string | null;
+  skipped: boolean;
+  dedup_key: string;
+  payload_json: Record<string, unknown>;
+  closed_at: string | null;
+  close_reason: CloseReason | null;
+  summary_text: string;
+}
+
+export interface AlertListResponse {
+  items: Alert[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface OutboxFilterState {
+  kidId: number | null;
+  type: string | null;
+  status: AlertStatus | null;
+  since: string | null;
+  until: string | null;
+  page: number;
+}
+
+export interface DigestPreviewResponse {
+  subject: string;
+  body_plain: string;
+  body_html: string;
+}

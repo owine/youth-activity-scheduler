@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { api } from './api';
 import type {
+  Alert,
   CloseReason,
   Enrollment,
   EnrollmentStatus,
@@ -670,6 +671,24 @@ export function useUpdateEnrollment() {
         qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] }),
         qc.invalidateQueries({ queryKey: ['matches'] }),
       ]);
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7-4 Task 3 — Alert resend hook
+// ---------------------------------------------------------------------------
+
+interface ResendAlertInput {
+  alertId: number;
+}
+
+export function useResendAlert() {
+  const qc = useQueryClient();
+  return useMutation<Alert, Error, ResendAlertInput>({
+    mutationFn: ({ alertId }) => api.post<Alert>(`/api/alerts/${alertId}/resend`, {}),
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['alerts'] });
     },
   });
 }

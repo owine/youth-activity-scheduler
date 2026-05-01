@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type {
+  AlertListResponse,
   AlertRouting,
   CrawlRun,
+  DigestPreviewResponse,
   Enrollment,
   Household,
   InboxSummary,
@@ -10,6 +12,7 @@ import type {
   KidCalendarResponse,
   KidDetail,
   Match,
+  OutboxFilterState,
   Site,
 } from './types';
 
@@ -129,5 +132,33 @@ export function useKidEnrollments(kidId: number) {
     queryKey: ['kids', kidId, 'enrollments'],
     queryFn: () => api.get<Enrollment[]>(`/api/enrollments?kid_id=${kidId}`),
     enabled: Number.isFinite(kidId) && kidId > 0,
+  });
+}
+
+function _serializeOutboxFilters(f: OutboxFilterState, pageSize: number): string {
+  const params = new URLSearchParams();
+  if (f.kidId != null) params.set('kid_id', String(f.kidId));
+  if (f.type) params.set('type', f.type);
+  if (f.status) params.set('status', f.status);
+  if (f.since) params.set('since', f.since);
+  if (f.until) params.set('until', f.until);
+  params.set('limit', String(pageSize));
+  params.set('offset', String(f.page * pageSize));
+  return params.toString();
+}
+
+export function useAlerts(filters: OutboxFilterState, pageSize = 25) {
+  return useQuery({
+    queryKey: ['alerts', 'list', filters, pageSize],
+    queryFn: () =>
+      api.get<AlertListResponse>(`/api/alerts?${_serializeOutboxFilters(filters, pageSize)}`),
+  });
+}
+
+export function useDigestPreview(kidId: number | null) {
+  return useQuery({
+    queryKey: ['digest', 'preview', kidId],
+    queryFn: () => api.get<DigestPreviewResponse>(`/api/digest/preview?kid_id=${kidId}`),
+    enabled: kidId != null && Number.isFinite(kidId) && kidId > 0,
   });
 }

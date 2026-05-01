@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -25,6 +25,7 @@ import {
   useUpdateAlertRouting,
   useTestNotifier,
   useUpdateEnrollment,
+  useResendAlert,
 } from './mutations';
 import type {
   Enrollment,
@@ -1080,5 +1081,59 @@ describe('useUpdateEnrollment', () => {
     ).rejects.toThrow();
     const after = qc.getQueryData<Enrollment[]>(['kids', 1, 'enrollments']);
     expect(after?.[0]?.status).toBe('interested'); // rolled back
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7-4 Task 3 — useResendAlert
+// ---------------------------------------------------------------------------
+
+describe('useResendAlert', () => {
+  it('POSTs to /api/alerts/:id/resend and invalidates alerts cache', async () => {
+    let called = false;
+    server.use(
+      http.post('/api/alerts/:id/resend', () => {
+        called = true;
+        return HttpResponse.json(
+          {
+            id: 999,
+            type: 'new_match',
+            kid_id: 1,
+            offering_id: null,
+            site_id: null,
+            channels: ['email'],
+            scheduled_for: '2026-05-01T00:00:00Z',
+            sent_at: null,
+            skipped: false,
+            dedup_key: 'clone:7',
+            payload_json: {},
+            closed_at: null,
+            close_reason: null,
+            summary_text: 'Resent',
+          },
+          { status: 202 },
+        );
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useResendAlert(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ alertId: 7 });
+    });
+    expect(called).toBe(true);
+    // After settled, alerts cache should be invalidated
+    expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['alerts'] }));
+  });
+
+  it('rejects on 500', async () => {
+    server.use(
+      http.post('/api/alerts/:id/resend', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useResendAlert(), { wrapper: makeWrapper(qc) });
+    await expect(result.current.mutateAsync({ alertId: 7 })).rejects.toThrow();
   });
 });
