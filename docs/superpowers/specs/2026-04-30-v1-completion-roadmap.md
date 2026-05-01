@@ -46,7 +46,7 @@ Each deviation was individually defensible (close-the-loop UX wins). The cumulat
 
 | # | Criterion | Status | Blocking phase |
 |---|---|---|---|
-| 1 | User can add a site via the UI in <2 min | ❌ no UI | **Phase 6-2** |
+| 1 | User can add a site via the UI in <2 min | ✅ Phase 6-2 (2026-04-30) | — |
 | 2 | New matching offering → alert within 10 min | ✓ | — |
 | 3 | Reg-opens countdown (T−24h / T−1h / T) | ✓ | — |
 | 4 | 30-day run, <$5 LLM, zero silent failures | ⏳ in observation | **Phase 9** |
@@ -63,7 +63,7 @@ Each deviation was individually defensible (close-the-loop UX wins). The cumulat
 | 2 | Offerings browser (cross-kid) | ❌ → Phase 7-2 |
 | 3 | Calendar (per-kid + combined) | ⚠️ per-kid ✓; combined → Phase 8-1 |
 | 4 | Kids: list + detail editing | ⚠️ list ✓; editing → Phase 6-1, Phase 6-3 |
-| 5 | Sites: list + detail + Add Site flow | ⚠️ list/detail ✓; Add → Phase 6-2; Crawl-now/Pause → Phase 6-4 |
+| 5 | Sites: list + detail + Add Site flow | ✅ list/detail + Crawl-now/Pause (Phase 6-4) + Add Site wizard (Phase 6-2) |
 | 6 | Watchlist: cross-kid + mutations | ⚠️ per-kid read-only ✓; mutations → Phase 6-3 |
 | 7 | Enrollments: list, status transitions | ❌ → Phase 7-3 |
 | 8 | Alerts: outbox, resend, digest preview | ⚠️ inbox ✓; outbox/preview → Phase 7-4 |
