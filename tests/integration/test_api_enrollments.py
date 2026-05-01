@@ -7,6 +7,7 @@ from sqlalchemy import select
 from yas.db.base import Base
 from yas.db.models import (
     Kid,
+    Location,
     Offering,
     Page,
     Site,
@@ -175,26 +176,73 @@ async def test_rejects_unknown_fields(client):
 
 @pytest.mark.asyncio
 async def test_enrollment_includes_offering_summary(client):
-    """EnrollmentOut.offering populated from join (D2)."""
-    c, _ = client
-    # Create an enrollment for the seeded kid+offering.
+    """EnrollmentOut.offering populated from join (D2).
+
+    Covers both null and populated location_lat/location_lon branches.
+    """
+    c, engine = client
+    # Create an enrollment for the seeded kid+offering (no location).
     r = await c.post(
         "/api/enrollments",
         json={"kid_id": 1, "offering_id": 1, "status": "interested"},
     )
     assert r.status_code == 201
 
-    # Fetch enrollments — verify offering field is populated.
+    # Create a location and a second offering pointing to it.
+    async with session_scope(engine) as s:
+        location = Location(id=1, name="Downtown Arena", lat=40.71, lon=-74.01)
+        s.add(location)
+        await s.flush()
+        offering = Offering(
+            id=2,
+            site_id=1,
+            page_id=1,
+            name="Swimming Lessons",
+            normalized_name="swimming lessons",
+            program_type=ProgramType.swim.value,
+            start_date=date(2026, 5, 2),
+            end_date=date(2026, 6, 30),
+            days_of_week=["sun"],
+            time_start=time(14, 0),
+            time_end=time(15, 0),
+            location_id=1,
+        )
+        s.add(offering)
+        await s.flush()
+
+    # Create an enrollment for the second offering (with location).
+    r_enroll2 = await c.post(
+        "/api/enrollments",
+        json={"kid_id": 1, "offering_id": 2, "status": "enrolled"},
+    )
+    assert r_enroll2.status_code == 201
+
+    # Fetch all enrollments for this kid and verify both have correct location info.
     r2 = await c.get("/api/enrollments?kid_id=1")
     assert r2.status_code == 200
     rows = r2.json()
-    assert len(rows) == 1
-    assert "offering" in rows[0]
-    offering = rows[0]["offering"]
-    assert offering["name"] == "Sat Soccer"
-    assert offering["site_name"] == "X"
-    assert offering["program_type"] == "soccer"
-    assert offering["days_of_week"] == ["sat"]
-    # Location is null on this offering (no location_id).
-    assert offering["location_lat"] is None
-    assert offering["location_lon"] is None
+    assert len(rows) == 2
+
+    # Find the enrollment for each offering by name.
+    null_location_enrollment = next(e for e in rows if e["offering"]["name"] == "Sat Soccer")
+    populated_location_enrollment = next(
+        e for e in rows if e["offering"]["name"] == "Swimming Lessons"
+    )
+
+    # Verify null-location branch.
+    null_offering = null_location_enrollment["offering"]
+    assert null_offering["name"] == "Sat Soccer"
+    assert null_offering["site_name"] == "X"
+    assert null_offering["program_type"] == "soccer"
+    assert null_offering["days_of_week"] == ["sat"]
+    assert null_offering["location_lat"] is None
+    assert null_offering["location_lon"] is None
+
+    # Verify populated-location branch.
+    pop_offering = populated_location_enrollment["offering"]
+    assert pop_offering["name"] == "Swimming Lessons"
+    assert pop_offering["site_name"] == "X"
+    assert pop_offering["program_type"] == "swim"
+    assert pop_offering["days_of_week"] == ["sun"]
+    assert pop_offering["location_lat"] == 40.71
+    assert pop_offering["location_lon"] == -74.01
