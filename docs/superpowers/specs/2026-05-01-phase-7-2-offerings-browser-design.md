@@ -129,7 +129,7 @@ If `household.home_lat`/`home_lon` is null OR the offering's location has null c
 
 Frontend `OfferingSummary` type gains the same fields. `lib/offeringsFilters.ts` `applyFilters` uses haversine when both household and offering coords are non-null; pass-through otherwise.
 
-### D14: `minScore` default is hardcoded 0.6
+### D13: `minScore` default is hardcoded 0.6
 
 `Household` does NOT have `alert_score_threshold`; that field is on `Kid` (per-kid). The earlier draft of D-section text saying "default to `household.alert_score_threshold ?? 0.6`" was wrong. There's no obvious "household-wide threshold" because thresholds are per-kid.
 
@@ -140,19 +140,19 @@ Frontend `OfferingSummary` type gains the same fields. `lib/offeringsFilters.ts`
 
 If this proves wrong, Phase 8 can introduce a household-level "browse threshold" setting; not worth it for v1.
 
-### D15: `days_of_week` normalization
+### D14: `days_of_week` normalization
 
 Offering schedules in the matcher (`gates.py:139`, `scoring.py:69`) lowercase day strings before comparing — implying upstream values may be mixed-case or full-name. The frontend filter chip values are exactly `'mon'|'tue'|'wed'|'thu'|'fri'|'sat'|'sun'`.
 
 **Normalize at the filter boundary.** `applyFilters` builds a normalized set of an offering's days by mapping `d => d.toLowerCase().slice(0, 3)` before comparing against the filter's selected days. This handles `'Monday'`, `'MON'`, `'mon'` uniformly. Pure function; one line of normalization in `applyFilters`.
 
-### D16: Time-of-day comparison format
+### D15: Time-of-day comparison format
 
 Pydantic serializes Python `time` as `"HH:MM:SS"` over the wire; an `<input type="time">` produces `"HH:MM"`. Comparing the two requires alignment.
 
 **Decision:** filter values stored as `"HH:MM"` (from the time input). When comparing against an offering's `time_start: "HH:MM:SS"`, take the first 5 chars: `offering.time_start.slice(0, 5) >= filter.timeOfDayMin`. Simple lexicographic compare on `"HH:MM"` works correctly for valid time strings. Document this in `applyFilters`.
 
-### D17: Reset/Clear scope
+### D16: Reset/Clear scope
 
 Two distinct controls:
 - **`Reset` button inside `<MoreFiltersPanel>`** — resets ONLY the 8 secondary filters back to their defaults. Doesn't touch the 3 primary filters (Kids / Min score / Sort) or the panel-open state. Local affordance.
@@ -160,11 +160,11 @@ Two distinct controls:
 
 Both call into the same `lib/offeringsFilters.ts` `defaultFilterState(allKidIds: number[])` factory but with different scopes.
 
-### D18: Empty `selectedKidIds` recovery affordance
+### D17: Empty `selectedKidIds` recovery affordance
 
 `selectedKidIds: []` (user manually unchecked all kid chips) → page shows the all-filtered-out empty state with the `Clear filters` button. Additionally, the kid chip group ALWAYS shows a small "Select all" text link to its right when at least one kid is unselected. This handles both the "manually cleared all" case and the "new kid added; not in persisted selection" case with one affordance.
 
-### D19: Sort tiebreaker
+### D18: Sort tiebreaker
 
 When two rows have the same primary sort key (e.g. same best-score, or both null start_date), break ties by `offering.id` desc (newer offerings first). Stable across renders.
 
@@ -271,7 +271,7 @@ interface FilterState {
 
 Defaults on first mount:
 - `selectedKidIds`: all kids from `useKids()`. (If a kid is added later, current filter selection doesn't include them — surfaces a small "(N kids hidden)" notice next to the chip group with a "Select all" link.)
-- `minScore`: `0.6` hardcoded (per D14).
+- `minScore`: `0.6` hardcoded (per D13).
 - `sort`: `best_score`.
 - All others: defaults shown above.
 
@@ -367,7 +367,8 @@ When `useAllMatches` returns exactly 500 matches:
 
 ## Risks
 
-- **Backend `OfferingSummary` may lack location coords.** D11 includes a fallback (small backend extension); verify during implementation. If the backend change is needed, it expands the PR scope by a small backend commit + tests.
+- **Backend extension is in scope (D11).** This PR includes a small backend change to `OfferingSummary` (+`location_lat`/`location_lon`) plus a backend test. Not a risk per se; just calling out that the PR touches both halves of the stack.
+- **Distance comparison units.** The haversine helper in `lib/offeringsFilters.ts` returns miles (matching `maxDistanceMi: number` on `FilterState` and `default_max_distance_mi` already in miles on Household). Implementer should not introduce kilometers anywhere in the chain.
 - **Filter reactivity performance.** With ~500 matches and 11 filters, each filter change re-runs the whole pipeline. Pure functions + small dataset means this should be sub-frame; if it bites, memoize via `useMemo` keyed on filterState + household.
 - **Empty default state for `selectedKidIds`.** Deciding default = all-kids vs default = none can confuse first-time users. Defaulting to all-kids is the right "everything's interesting until I narrow it" UX. Document the "+ Select all when new kid added" subtle behavior; if it's surprising, easy to flip.
 - **MatchOut size.** With 500 matches × current shape, response could be ~50-100KB. Acceptable for v1; if it bites later, a more compact "summary" endpoint is straightforward.
