@@ -216,6 +216,7 @@ export interface SmtpConfig {
 export interface ForwardEmailConfig {
   transport: 'forwardemail';
   api_token_env: string;
+  from_addr: string;
   to_addrs: string[];
 }
 
