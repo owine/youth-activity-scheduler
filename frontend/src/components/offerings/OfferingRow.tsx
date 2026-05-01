@@ -1,7 +1,7 @@
 import type { KidBrief, Match, OfferingRow as OfferingRowType } from '@/lib/types';
 import { Card } from '@/components/ui/card';
-import { price, relDate } from '@/lib/format';
 import { MuteButton } from '@/components/common/MuteButton';
+import { OfferingScheduleLine } from '@/components/common/OfferingScheduleLine';
 import { useUpdateOfferingMute } from '@/lib/mutations';
 import { MatchReasonChips } from './MatchReasonChips';
 
@@ -38,11 +38,8 @@ export function OfferingRow({ row, kidsById, now, onSelect }: Props) {
       </div>
 
       {/* Second line: site_name, dates, price */}
-      <div className="text-sm text-muted-foreground mb-1">
-        {o.site_name}
-        {o.start_date && ` · starts in ${relDate(o.start_date, now)}`}
-        {o.registration_opens_at && ` · reg in ${relDate(o.registration_opens_at, now)}`}
-        {o.price_cents != null && ` · ${price(o.price_cents / 100)}`}
+      <div className="mb-1">
+        <OfferingScheduleLine offering={o} now={now} />
       </div>
 
       {/* Third line: matched kids with scores */}
