@@ -92,7 +92,7 @@ async def client(tmp_path, monkeypatch):
         await s.flush()
     app = create_app(engine=engine)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
+        yield c, engine
     await engine.dispose()
 
 
@@ -125,7 +125,8 @@ async def test_get_alerts_empty(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_get_alerts_all(client):
     """GET /api/alerts returns all alerts with pagination info."""
-    r = await client.get("/api/alerts")
+    c, _ = client
+    r = await c.get("/api/alerts")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 4
@@ -137,7 +138,8 @@ async def test_get_alerts_all(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_kid_id(client):
     """GET /api/alerts?kid_id=1 filters by kid."""
-    r = await client.get("/api/alerts?kid_id=1")
+    c, _ = client
+    r = await c.get("/api/alerts?kid_id=1")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 2
@@ -148,7 +150,8 @@ async def test_get_alerts_filter_by_kid_id(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_status_pending(client):
     """GET /api/alerts?status=pending returns only pending alerts."""
-    r = await client.get("/api/alerts?status=pending")
+    c, _ = client
+    r = await c.get("/api/alerts?status=pending")
     assert r.status_code == 200
     body = r.json()
     # pending: sent_at IS NULL AND skipped=False
@@ -163,7 +166,8 @@ async def test_get_alerts_filter_by_status_pending(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_status_sent(client):
     """GET /api/alerts?status=sent returns only sent alerts."""
-    r = await client.get("/api/alerts?status=sent")
+    c, _ = client
+    r = await c.get("/api/alerts?status=sent")
     assert r.status_code == 200
     body = r.json()
     # sent: sent_at IS NOT NULL
@@ -177,7 +181,8 @@ async def test_get_alerts_filter_by_status_sent(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_status_skipped(client):
     """GET /api/alerts?status=skipped returns only skipped alerts."""
-    r = await client.get("/api/alerts?status=skipped")
+    c, _ = client
+    r = await c.get("/api/alerts?status=skipped")
     assert r.status_code == 200
     body = r.json()
     # skipped: skipped=True
@@ -191,7 +196,8 @@ async def test_get_alerts_filter_by_status_skipped(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_type(client):
     """GET /api/alerts?type=new_match filters by alert type."""
-    r = await client.get("/api/alerts?type=new_match")
+    c, _ = client
+    r = await c.get("/api/alerts?type=new_match")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 1
@@ -202,6 +208,7 @@ async def test_get_alerts_filter_by_type(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_since(client):
     """GET /api/alerts?since=<datetime> filters by scheduled_for >= since (excludes earlier alerts)."""
+    c, _ = client
     now = datetime.now(UTC)
     # Use a cutoff point that falls between alert 1 (1 day ago) and earlier
     # The cutoff is 1.5 days ago, so only alerts from the last 1.5 days are included
@@ -213,7 +220,7 @@ async def test_get_alerts_filter_by_since(client):
     # This excludes: alert 1 (1 day ago < 0.5 days ago)
     half_day_ago = (now - timedelta(hours=12)).isoformat()
     encoded_since = half_day_ago.replace("+", "%2B")
-    r = await client.get(f"/api/alerts?since={encoded_since}")
+    r = await c.get(f"/api/alerts?since={encoded_since}")
     assert r.status_code == 200
     body = r.json()
     # Should include alerts 2, 3, 4 but exclude alert 1 (which is 1 day ago)
@@ -227,11 +234,12 @@ async def test_get_alerts_filter_by_since(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_until(client):
     """GET /api/alerts?until=<datetime> filters by scheduled_for <= until (excludes later alerts)."""
+    c, _ = client
     now = datetime.now(UTC)
     one_hour_ago = (now - timedelta(hours=1)).isoformat()
     # URL-encode the + sign in the ISO format datetime
     encoded_until = one_hour_ago.replace("+", "%2B")
-    r = await client.get(f"/api/alerts?until={encoded_until}")
+    r = await c.get(f"/api/alerts?until={encoded_until}")
     assert r.status_code == 200
     body = r.json()
     # Alerts 1 (1 day ago), 2 (1 hour ago) are at or before 1 hour ago
@@ -244,6 +252,7 @@ async def test_get_alerts_filter_by_until(client):
 @pytest.mark.asyncio
 async def test_get_alerts_filter_by_since_and_until(client):
     """GET /api/alerts?since=&until= with both params filters date range intersection."""
+    c, _ = client
     now = datetime.now(UTC)
     # Define a range: 2 days ago to 2 hours ago
     # Alert 1 (1 day ago) is in range
@@ -268,7 +277,7 @@ async def test_get_alerts_filter_by_since_and_until(client):
     until_dt = (now - timedelta(minutes=30)).isoformat()
     encoded_since = since_dt.replace("+", "%2B")
     encoded_until = until_dt.replace("+", "%2B")
-    r = await client.get(f"/api/alerts?since={encoded_since}&until={encoded_until}")
+    r = await c.get(f"/api/alerts?since={encoded_since}&until={encoded_until}")
     assert r.status_code == 200
     body = r.json()
     # Alert 1 (1 day ago): 2 days ago <= 1 day ago <= 30 min ago? YES
@@ -283,7 +292,8 @@ async def test_get_alerts_filter_by_since_and_until(client):
 @pytest.mark.asyncio
 async def test_get_alerts_pagination_limit(client):
     """GET /api/alerts?limit=2 respects limit."""
-    r = await client.get("/api/alerts?limit=2")
+    c, _ = client
+    r = await c.get("/api/alerts?limit=2")
     assert r.status_code == 200
     body = r.json()
     assert body["total"] == 4
@@ -294,7 +304,8 @@ async def test_get_alerts_pagination_limit(client):
 @pytest.mark.asyncio
 async def test_get_alerts_pagination_offset(client):
     """GET /api/alerts?offset=2 skips first N items."""
-    r = await client.get("/api/alerts?offset=2&limit=2")
+    c, _ = client
+    r = await c.get("/api/alerts?offset=2&limit=2")
     assert r.status_code == 200
     body = r.json()
     assert body["offset"] == 2
@@ -304,7 +315,8 @@ async def test_get_alerts_pagination_offset(client):
 @pytest.mark.asyncio
 async def test_get_alert_detail(client):
     """GET /api/alerts/{id} returns alert detail."""
-    r = await client.get("/api/alerts/1")
+    c, _ = client
+    r = await c.get("/api/alerts/1")
     assert r.status_code == 200
     item = r.json()
     assert item["id"] == 1
@@ -321,15 +333,17 @@ async def test_get_alert_detail(client):
 @pytest.mark.asyncio
 async def test_get_alert_detail_not_found(client):
     """GET /api/alerts/{id} returns 404 for missing alert."""
-    r = await client.get("/api/alerts/999")
+    c, _ = client
+    r = await c.get("/api/alerts/999")
     assert r.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_resend_alert_clones_row(client):
     """POST /api/alerts/{id}/resend clones the alert with new dedup_key."""
+    c, _ = client
     # Resend alert 1 (already sent)
-    r = await client.post("/api/alerts/1/resend")
+    r = await c.post("/api/alerts/1/resend")
     assert r.status_code == 202
     new_alert = r.json()
 
@@ -353,17 +367,18 @@ async def test_resend_alert_clones_row(client):
 @pytest.mark.asyncio
 async def test_alerts_resend_clones_original_payload(client):
     """Named must-have: resend clones payload, channels, distinct dedup_key, original unchanged."""
+    c, _ = client
     # Get original alert
-    r_orig = await client.get("/api/alerts/1")
+    r_orig = await c.get("/api/alerts/1")
     original = r_orig.json()
 
     # Resend it
-    r_resend = await client.post("/api/alerts/1/resend")
+    r_resend = await c.post("/api/alerts/1/resend")
     assert r_resend.status_code == 202
     cloned = r_resend.json()
 
     # Verify original is unchanged
-    r_orig2 = await client.get("/api/alerts/1")
+    r_orig2 = await c.get("/api/alerts/1")
     original_after = r_orig2.json()
     assert original_after["dedup_key"] == original["dedup_key"]
     assert original_after["payload_json"] == original["payload_json"]
@@ -381,16 +396,63 @@ async def test_alerts_resend_clones_original_payload(client):
 @pytest.mark.asyncio
 async def test_resend_alert_not_found(client):
     """POST /api/alerts/{id}/resend returns 404 for missing alert."""
-    r = await client.post("/api/alerts/999/resend")
+    c, _ = client
+    r = await c.post("/api/alerts/999/resend")
     assert r.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_resend_pending_alert(client):
     """POST /api/alerts/{id}/resend works on pending alerts too."""
+    c, _ = client
     # Resend alert 2 (pending)
-    r = await client.post("/api/alerts/2/resend")
+    r = await c.post("/api/alerts/2/resend")
     assert r.status_code == 202
     cloned = r.json()
     assert cloned["payload_json"] == {"msg": "test2"}
     assert cloned["dedup_key"].startswith("key2:resend:")
+
+
+@pytest.mark.asyncio
+async def test_alert_list_includes_summary_text(client):
+    """AlertOut.summary_text populated via summarize_alert (D2)."""
+    c, engine = client
+    # Seed: a watchlist_hit alert for an existing kid, plus a system alert.
+    async with session_scope(engine) as s:
+        s.add(
+            Alert(
+                type=AlertType.watchlist_hit.value,
+                kid_id=1,  # existing seeded kid (Sam)
+                channels=["email"],
+                scheduled_for=datetime.now(UTC),
+                dedup_key="test-watchlist-hit",
+                payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
+            )
+        )
+        s.add(
+            Alert(
+                type=AlertType.crawl_failed.value,
+                channels=["email"],
+                scheduled_for=datetime.now(UTC),
+                dedup_key="test-crawl-failed",
+                payload_json={"site_name": "Lil Sluggers"},
+            )
+        )
+        await s.flush()
+
+    r = await c.get("/api/alerts")
+    assert r.status_code == 200
+    body = r.json()
+    items = body["items"]
+    assert len(items) >= 2
+
+    # Find the watchlist_hit
+    wh = next(i for i in items if i["type"] == "watchlist_hit")
+    assert "summary_text" in wh
+    assert "Watchlist hit" in wh["summary_text"]
+    assert "T-Ball" in wh["summary_text"]
+
+    # System alert (no kid_id) still has a sensible summary
+    cf = next(i for i in items if i["type"] == "crawl_failed")
+    assert cf["summary_text"]
+    assert "Lil Sluggers" in cf["summary_text"]
