@@ -27,21 +27,20 @@ const makeQc = () =>
 beforeEach(() => navigateMock.mockReset());
 
 describe('SiteWizard', () => {
-  it('renders name + base_url inputs and a Discover button initially', () => {
+  it('renders name + base_url inputs and a disabled Discover button initially', () => {
     render(<SiteWizard />, { wrapper: makeWrapper(makeQc()) });
     expect(screen.getByLabelText(/name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /discover pages/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /discover pages/i })).toBeDisabled();
   });
 
-  it('Discover button is present and clickable', async () => {
+  it('enables Discover when name + base_url are valid', async () => {
     render(<SiteWizard />, { wrapper: makeWrapper(makeQc()) });
-    const nameInput = screen.getByLabelText(/name/i);
-    const urlInput = screen.getByLabelText(/base url/i);
-    await userEvent.type(nameInput, 'TestSite');
-    await userEvent.type(urlInput, 'https://example.com');
-    const button = screen.getByRole('button', { name: /discover pages/i });
-    expect(button).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/name/i), 'TestSite');
+    await userEvent.type(screen.getByLabelText(/base url/i), 'https://example.com');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /discover pages/i })).not.toBeDisabled(),
+    );
   });
 
   it('Discover click POSTs /api/sites then /api/sites/:id/discover in sequence', async () => {

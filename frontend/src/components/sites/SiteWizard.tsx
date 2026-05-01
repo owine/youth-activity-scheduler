@@ -34,7 +34,7 @@ export function SiteWizard() {
 
   const form = useForm({
     defaultValues: { name: '', base_url: '' } as { name: string; base_url: string },
-    validators: { onChange: formSchema },
+    validators: { onChange: formSchema, onMount: formSchema },
     onSubmit: async () => {}, // submit happens via explicit button below
   });
 
@@ -176,11 +176,16 @@ export function SiteWizard() {
       />
 
       {!discovered ? (
-        <Button type="button" onClick={handleDiscover} disabled={inDiscover}>
-          {inDiscover
-            ? 'Asking Claude to find schedule pages — this can take up to 30 seconds…'
-            : 'Discover pages'}
-        </Button>
+        <form.Subscribe
+          selector={(state) => state.canSubmit}
+          children={(canSubmit) => (
+            <Button type="button" onClick={handleDiscover} disabled={inDiscover || !canSubmit}>
+              {inDiscover
+                ? 'Asking Claude to find schedule pages — this can take up to 30 seconds…'
+                : 'Discover pages'}
+            </Button>
+          )}
+        />
       ) : (
         <Button type="button" variant="outline" onClick={handleEditUrl}>
           Edit URL & re-discover
