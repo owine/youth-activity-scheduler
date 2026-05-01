@@ -4,7 +4,7 @@
 
 **Goal:** Build a new top-level `/alerts` route with two tabs (Outbox listing all alerts with filters/pagination/resend; Digest preview rendering the next-scheduled per-kid digest in a sandboxed iframe) — closing master §7 page #8 and finishing Phase 7.
 
-**Architecture:** Backend extends `AlertOut` with `summary_text` (composed via the existing `summarize_alert` helper, which reads names from `Alert.payload_json` — no extra joins beyond Kid). Backend adds one new endpoint `GET /api/digest/preview` that wires together `gather_digest_payload` + `generate_top_line(llm=None)` + `render_digest`. Frontend route `/alerts` with internal tab routing via untyped URL search params. Reuses existing `<Card>`, `<Badge>`, `<Skeleton>`, `<EmptyState>`, `<ErrorBanner>`. No new dependencies.
+**Architecture:** Backend extends `AlertOut` with `summary_text` (composed via the existing `summarize_alert` helper, which reads names from `Alert.payload_json` — no extra joins beyond Kid). **The `GET /api/digest/preview` endpoint already exists** (commit `44f3b73`) with shape `{subject, body_plain, body_html}` — Phase 7-4 reuses it as-is, no backend creation needed for digest. Frontend route `/alerts` with internal tab routing via untyped URL search params. Reuses existing `<Card>`, `<Badge>`, `<Skeleton>`, `<EmptyState>`, `<ErrorBanner>`. No new dependencies.
 
 **Tech Stack:** React 19, TanStack Query 5, TanStack Router 1.168, MSW, Vitest + RTL. FastAPI + pytest.
 
@@ -28,13 +28,10 @@
 **Modify — backend:**
 - `src/yas/web/routes/alerts_schemas.py` — add `summary_text: str` to `AlertOut`.
 - `src/yas/web/routes/alerts.py` — `list_alerts` and `get_alert` left-join `Kid` (for `kid_name`), call `summarize_alert(...)` per row, populate `summary_text`. Reuses the existing helper from `inbox_alert_summary.py` (no Offering/Site join needed — names come from `payload_json`).
-- `src/yas/web/app.py` — register the new `digest_preview` router.
+- `src/yas/web/app.py` — already registers the digest preview router; no change in this phase.
 - `tests/integration/test_api_alerts.py` — extend with one test asserting `summary_text` populates correctly.
 
-**Create — backend:**
-- `src/yas/web/routes/digest_preview_schemas.py` — `DigestPreviewOut {html, plain, top_line}`.
-- `src/yas/web/routes/digest_preview.py` — `GET /api/digest/preview?kid_id=N`.
-- `tests/integration/test_api_digest_preview.py` — ~3 tests (happy path, no recent activity, unknown kid).
+**Backend digest preview endpoint already exists** (commit `44f3b73`) with shape `{subject, body_plain, body_html}` and tests in `tests/integration/test_api_digest_preview.py`. Phase 7-4 does NOT create this — it consumes it from the frontend.
 
 **Create — frontend:**
 - `frontend/src/routes/alerts.tsx` — thin route shell; reads `?tab=`.
@@ -120,7 +117,12 @@ async def test_alert_list_includes_summary_text(client):
 
 (Adjust imports at top: `from datetime import datetime, UTC`, `from yas.db.models import Alert`, `from yas.db.models._types import AlertType`, `from yas.db.session import session_scope`.)
 
-**Note**: verify the existing `client` fixture yields `(c, engine)` tuple; if it yields just `c`, update the test setup pattern to match what's there.
+**Important**: the existing `client` fixture in `test_api_alerts.py` yields just `c` (not a tuple — see line 95: `yield c`). Two ways to make the new test work:
+
+1. **Refactor the fixture to yield `(c, engine)`** and update all existing tests in this file to unpack — this is the canonical pattern from `test_api_household.py` / `test_api_matches.py`. Recommended; consistency win.
+2. **Use a separate engine reference**: store `engine` in the fixture's outer scope and reference it directly. Less clean.
+
+Pick option 1. After updating the fixture, every existing test in this file that takes `client` as a param will need `c, _ = client` or `c, engine = client` instead of just `client`. Find them and update.
 
 ### Step 3: Run test — verify fail
 
@@ -302,226 +304,34 @@ git cat-file commit HEAD | grep -q '^gpgsig ' && echo signed
 
 ---
 
-## Task 2 — Backend: `GET /api/digest/preview` endpoint (TDD)
+## Task 2 — Verify backend digest preview endpoint (no-op)
 
-**Files:**
-- Create: `src/yas/web/routes/digest_preview_schemas.py`
-- Create: `src/yas/web/routes/digest_preview.py`
-- Create: `tests/integration/test_api_digest_preview.py`
-- Modify: `src/yas/web/app.py` (register router)
+**No code changes** — the endpoint already exists. This task documents the verification step so the subagent skipping it knows it was intentional.
 
-End state: New endpoint returns `{html, plain, top_line}` from the existing digest pipeline. ~+3 backend tests. Total backend: ~597.
-
-### Step 1: Write failing tests
-
-Create `tests/integration/test_api_digest_preview.py`:
-
-```python
-"""Tests for GET /api/digest/preview."""
-from __future__ import annotations
-
-from datetime import date
-
-import pytest
-from httpx import ASGITransport, AsyncClient
-
-from tests.fakes.geocoder import FakeGeocoder
-from yas.db.base import Base
-from yas.db.models import Kid
-from yas.db.session import create_engine_for, session_scope
-from yas.web.app import create_app
-
-
-@pytest.fixture
-async def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
-    url = f"sqlite+aiosqlite:///{tmp_path}/dp.db"
-    monkeypatch.setenv("YAS_DATABASE_URL", url)
-    engine = create_engine_for(url)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with session_scope(engine) as s:
-        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1), interests=["soccer"]))
-    app = create_app(engine=engine, fetcher=None, llm=None, geocoder=FakeGeocoder())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c, engine
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_digest_preview_happy_path(client):
-    c, _ = client
-    r = await c.get("/api/digest/preview?kid_id=1")
-    assert r.status_code == 200
-    body = r.json()
-    assert "html" in body and isinstance(body["html"], str) and body["html"]
-    assert "plain" in body and isinstance(body["plain"], str) and body["plain"]
-    assert "top_line" in body and isinstance(body["top_line"], str) and body["top_line"]
-    # Kid name should appear somewhere (top-line or rendered body)
-    assert "Sam" in body["html"] or "Sam" in body["plain"] or "Sam" in body["top_line"]
-
-
-@pytest.mark.asyncio
-async def test_digest_preview_unknown_kid_returns_404(client):
-    c, _ = client
-    r = await c.get("/api/digest/preview?kid_id=999")
-    assert r.status_code == 404
-    assert "kid 999" in r.json()["detail"].lower()
-
-
-@pytest.mark.asyncio
-async def test_digest_preview_no_recent_activity(client):
-    """A kid with no matches still returns a valid render (empty-state copy)."""
-    c, _ = client
-    # Sam has no matches in the fixture; the digest payload will be empty
-    r = await c.get("/api/digest/preview?kid_id=1")
-    assert r.status_code == 200
-    body = r.json()
-    # Should still render valid HTML (templates handle empty case)
-    assert body["html"] != ""
-    assert body["plain"] != ""
-```
-
-### Step 2: Run tests — verify fail
+- [ ] **Step 1: Verify endpoint exists**
 
 ```bash
-uv run pytest tests/integration/test_api_digest_preview.py -q 2>&1 | tail -10
+ls src/yas/web/routes/digest_preview.py src/yas/web/routes/digest_preview_schemas.py
+grep -n "include_router(digest_preview" src/yas/web/app.py
 ```
 
-Expected: 3 failures with `404 Not Found` (route doesn't exist yet).
+Expected: both files exist; `digest_preview.router` registered in `app.py`.
 
-### Step 3: Implement schema
-
-Create `src/yas/web/routes/digest_preview_schemas.py`:
-
-```python
-"""Schemas for GET /api/digest/preview."""
-from __future__ import annotations
-
-from pydantic import BaseModel
-
-
-class DigestPreviewOut(BaseModel):
-    """Rendered digest preview for one kid."""
-
-    html: str
-    plain: str
-    top_line: str
-```
-
-### Step 4: Implement endpoint
-
-Create `src/yas/web/routes/digest_preview.py`:
-
-```python
-"""GET /api/digest/preview — render the next-scheduled digest for a kid."""
-from __future__ import annotations
-
-from datetime import UTC, datetime, timedelta
-from typing import Any
-
-from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from yas.alerts.digest.builder import gather_digest_payload, render_digest
-from yas.alerts.digest.llm_summary import generate_top_line
-from yas.db.models import Kid
-from yas.db.session import session_scope
-from yas.web.routes.digest_preview_schemas import DigestPreviewOut
-
-router = APIRouter(prefix="/api/digest", tags=["digest"])
-
-
-def _engine(req: Request) -> AsyncEngine:
-    engine: AsyncEngine = req.app.state.yas.engine
-    return engine
-
-
-@router.get("/preview", response_model=DigestPreviewOut)
-async def get_digest_preview(
-    request: Request,
-    kid_id: int = Query(..., ge=1),
-) -> DigestPreviewOut:
-    """Render the next-scheduled digest for *kid_id*.
-
-    The preview always uses the deterministic template fallback for the
-    top-line (passes ``llm=None``) so it never bills against the daily
-    LLM cost cap. The window is hardcoded to the last 24 hours.
-    """
-    settings = request.app.state.yas.settings
-    now = datetime.now(UTC)
-    window_start = now - timedelta(days=1)
-    window_end = now
-
-    async with session_scope(_engine(request)) as s:
-        kid = (
-            await s.execute(select(Kid).where(Kid.id == kid_id))
-        ).scalar_one_or_none()
-        if kid is None:
-            raise HTTPException(status_code=404, detail=f"kid {kid_id} not found")
-        payload = await gather_digest_payload(
-            s,
-            kid,
-            window_start=window_start,
-            window_end=window_end,
-            alert_no_matches_kid_days=settings.alert_no_matches_kid_days,
-            now=now,
-        )
-
-    top_line = await generate_top_line(payload, llm=None, cost_cap_remaining_usd=0.0)
-    plain, html = render_digest(payload, top_line)  # NOTE: order is (plain, html)
-    return DigestPreviewOut(html=html, plain=plain, top_line=top_line)
-```
-
-### Step 5: Register router in `app.py`
-
-Read `src/yas/web/app.py`, find the existing `app.include_router(...)` block, and add:
-
-```python
-from yas.web.routes import digest_preview
-# ...
-app.include_router(digest_preview.router)
-```
-
-Match the existing pattern exactly.
-
-### Step 6: Run tests — verify pass
+- [ ] **Step 2: Verify response shape**
 
 ```bash
-uv run pytest tests/integration/test_api_digest_preview.py -q 2>&1 | tail -10
-uv run pytest -q --no-cov 2>&1 | tail -5
+grep -n "subject\|body_plain\|body_html" src/yas/web/routes/digest_preview_schemas.py
 ```
 
-Expected: 3 new tests pass; ~597 backend total.
+Expected: `DigestPreviewOut` has fields `subject: str`, `body_plain: str`, `body_html: str`. The frontend type in Task 3 must match exactly.
 
-### Step 7: Backend gates
+- [ ] **Step 3: Verify existing tests pass**
 
 ```bash
-uv run ruff check src tests
-uv run ruff format --check src tests
-uv run mypy src
+uv run pytest tests/integration/test_api_digest_preview.py -q 2>&1 | tail -5
 ```
 
-### Step 8: Commit
-
-```bash
-git add src/yas/web/routes/digest_preview.py src/yas/web/routes/digest_preview_schemas.py src/yas/web/app.py tests/integration/test_api_digest_preview.py
-git commit -m "feat(backend): GET /api/digest/preview endpoint
-
-Wires the existing digest pipeline (gather_digest_payload +
-generate_top_line + render_digest) into a read-only HTTP endpoint
-returning {html, plain, top_line}. Phase 7-4 frontend uses this
-to render an iframe-sandboxed preview of the next scheduled digest.
-
-Three v1 simplifications:
-- Window hardcoded to last 24 hours (matches typical digest cadence).
-- llm=None always — preview uses the template fallback so it never
-  bills against the household's daily LLM cost cap.
-- 404 on unknown kid_id (gather_digest_payload requires a Kid ORM
-  instance, so the lookup is forced anyway)."
-git cat-file commit HEAD | grep -q '^gpgsig ' && echo signed
-```
+Expected: all existing digest preview tests pass. No new tests needed in this phase.
 
 ---
 
@@ -578,9 +388,9 @@ export interface OutboxFilterState {
 }
 
 export interface DigestPreviewResponse {
-  html: string;
-  plain: string;
-  top_line: string;
+  subject: string;
+  body_plain: string;
+  body_html: string;
 }
 ```
 
@@ -1277,10 +1087,10 @@ export function DigestPreviewPanel() {
       {preview.data && (
         <>
           <div className="rounded bg-muted p-3 text-sm">
-            <span className="font-medium">Top line:</span> {preview.data.top_line}
+            <span className="font-medium">Subject:</span> {preview.data.subject}
           </div>
           <iframe
-            srcDoc={preview.data.html}
+            srcDoc={preview.data.body_html}
             sandbox="allow-same-origin"
             className="w-full h-[600px] rounded border border-border"
             title="Digest preview"
@@ -1441,7 +1251,7 @@ uv run mypy src
 cd frontend && npm run typecheck && npm run lint && npm run test 2>&1 | tail -10
 ```
 
-Expected: backend ~597, frontend ~273.
+Expected: backend ~594, frontend ~273.
 
 ### Step 2: Manual smoke
 
@@ -1502,11 +1312,11 @@ Closes master §7 page #8 (Alerts: outbox, resend, digest preview). New top-leve
 - **Backend**: \`AlertOut\` extends with \`summary_text\` (composed via existing \`summarize_alert\` helper); new \`GET /api/digest/preview?kid_id=N\` endpoint wires \`gather_digest_payload\` + \`generate_top_line(llm=None)\` + \`render_digest\`.
 - **No new dependencies.** Reuses existing \`<Card>\`, \`<Badge>\`, \`<Button>\`, \`<Skeleton>\`, \`<EmptyState>\`, \`<ErrorBanner>\`. New \`Mail\` icon from lucide-react (already pinned).
 
-Frontend tests: 251 → ~273 (+22 across 5 new test files). Backend tests: 593 → ~597 (+4: 1 for AlertOut.summary_text, 3 for digest preview endpoint).
+Frontend tests: 251 → ~273 (+22 across 5 new test files). Backend tests: 593 → ~594 (+1 for AlertOut.summary_text). The digest preview endpoint already exists from a previous phase; its tests already pass.
 
 ## Test plan
 
-- [x] uv run pytest -q (~597 passing)
+- [x] uv run pytest -q (~594 passing)
 - [x] uv run ruff check / ruff format --check / mypy clean
 - [x] cd frontend && npm run typecheck && npm run lint clean
 - [x] cd frontend && npm run test (~273 passing)
@@ -1548,13 +1358,13 @@ Return the PR URL.
 | Task | New tests | Cumulative frontend | Cumulative backend |
 |---|---|---|---|
 | 1 (AlertOut.summary_text) | 0 frontend, +1 backend | 251 | 594 |
-| 2 (digest preview endpoint) | 0 frontend, +3 backend | 251 | 597 |
-| 3 (types + 3 hooks) | +2 | 253 | 597 |
-| 4 (OutboxFilterBar) | +4 | 257 | 597 |
-| 5 (OutboxRow) | +4 | 261 | 597 |
-| 6 (OutboxPanel) | +4 | 265 | 597 |
-| 7 (DigestPreviewPanel) | +5 | 270 | 597 |
-| 8 (route + nav) | +2 | 272 | 597 |
-| 9 (smoke + PR) | 0 | 272 | 597 |
+| 2 (verify digest endpoint) | 0 | 251 | 594 |
+| 3 (types + 3 hooks) | +2 | 253 | 594 |
+| 4 (OutboxFilterBar) | +4 | 257 | 594 |
+| 5 (OutboxRow) | +4 | 261 | 594 |
+| 6 (OutboxPanel) | +4 | 265 | 594 |
+| 7 (DigestPreviewPanel) | +5 | 270 | 594 |
+| 8 (route + nav) | +2 | 272 | 594 |
+| 9 (smoke + PR) | 0 | 272 | 594 |
 
 (Spec target was ~273 frontend; 272 is close enough.)

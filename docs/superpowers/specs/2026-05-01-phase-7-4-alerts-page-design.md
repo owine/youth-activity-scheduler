@@ -103,49 +103,28 @@ Backend supports `limit≤500, offset`. v1 uses `limit=25` per page; URL `?page=
 
 Cursor-based pagination is over-engineered for ≤500 alerts.
 
-### D6: Digest preview = next-scheduled, rendered as iframe
+### D6: Digest preview = next-scheduled, rendered as iframe — endpoint already exists
 
-`GET /api/digest/preview?kid_id=N` returns `{html: string, plain: string, top_line: string}`.
+**`GET /api/digest/preview?kid_id=N` already exists** in `src/yas/web/routes/digest_preview.py` (shipped in commit `44f3b73`). Phase 7-4 reuses it as-is; no backend creation needed for the endpoint.
 
-**Endpoint flow** (concrete, since the actual function names are different from earlier draft):
+The existing endpoint:
+- Takes `kid_id: int` (Query). Returns 404 on unknown kid.
+- Hardcodes a 24-hour window (`now - timedelta(hours=24)`).
+- Loads the `Kid` ORM, then calls `gather_digest_payload(...)`.
+- Reads the daily LLM cost cap from `HouseholdSettings.daily_llm_cost_cap_usd` (defaults to 1.0 if no household row); passes the real `request.app.state.yas.llm` to `generate_top_line`.
+- Calls `render_digest()` which returns `(body_plain, body_html)` (plain first per the function contract).
+- Returns `DigestPreviewOut {subject, body_plain, body_html}` where `subject = f"Daily digest — {kid.name} — {now.date().isoformat()}"`.
 
-```python
-# src/yas/web/routes/digest_preview.py (sketch)
-@router.get("", response_model=DigestPreviewOut)
-async def get_digest_preview(kid_id: int, request: Request) -> DigestPreviewOut:
-    settings = request.app.state.yas.settings
-    async with session_scope(_engine(request)) as s:
-        kid = (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one_or_none()
-        if kid is None:
-            raise HTTPException(404, f"kid {kid_id} not found")
-        now = datetime.now(UTC)
-        window_start = now - timedelta(days=1)  # 24h window for preview
-        window_end = now
-        payload = await gather_digest_payload(
-            s, kid,
-            window_start=window_start,
-            window_end=window_end,
-            alert_no_matches_kid_days=settings.alert_no_matches_kid_days,
-            now=now,
-        )
-    # Force template fallback for the preview top-line so the preview never
-    # bills against the household's daily LLM cap. If we want LLM previews
-    # later, source request.app.state.yas.llm + a dedicated preview budget.
-    top_line = await generate_top_line(payload, llm=None, cost_cap_remaining_usd=0.0)
-    plain, html = render_digest(payload, top_line)  # NOTE: order is (plain, html)
-    return DigestPreviewOut(html=html, plain=plain, top_line=top_line)
-```
+**Note: this differs from the earlier-draft spec in two ways**:
+1. **Shape is `{subject, body_plain, body_html}`** — earlier draft proposed `{html, plain, top_line}`. The actual shape is more useful: `subject` matches what an email client would show as the preview header, and the top-line is already composed into `body_html` by the renderer (no need to surface it separately).
+2. **The endpoint uses the real LLM client with the household's cost cap** — not a forced `llm=None` template fallback. The household's `daily_llm_cost_cap_usd` already governs LLM spend; preview calls deduct from the same budget the actual digests use. This is fine for a single-user app and avoids inventing a preview-only budget.
 
-Key correctness points (each was a draft-spec mistake the reviewer caught):
-
-- `gather_digest_payload` takes the **`Kid` ORM instance** (not the int id) and an active `AsyncSession`; the route must look up the kid first (404 on miss) and pass the loaded ORM.
-- `generate_top_line` requires an `llm: LLMClient | None` argument. v1 passes **`llm=None`** to force the deterministic template fallback — preview should never bill against the household's daily LLM cost cap. (Future polish: thread `request.app.state.yas.llm` through with a dedicated preview budget.)
-- `render_digest` returns the tuple as **`(plain, html)`** — plain first, HTML second. The endpoint must unpack in that order.
-- 24-hour preview window is hardcoded for v1; the existing inbox is configurable (default 7d) but preview is always "what would land if we sent it right now."
+Phase 7-4 frontend uses this endpoint exactly as-is. No backend work in this phase for the digest preview.
 
 Frontend renders:
-- Top line as plain text above the iframe.
-- HTML body in `<iframe srcDoc={html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
+- `subject` as plain text above the iframe (e.g. "Daily digest — Sam — 2026-05-01").
+- `body_html` in `<iframe srcDoc={body_html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
+- `body_plain` is unused by the UI but kept on the type for completeness / future polish.
 
 `sandbox="allow-same-origin"` lets `<style>` blocks work without enabling scripts. Fixed 600px height for v1; future polish can add postMessage-based auto-resize.
 
@@ -240,13 +219,10 @@ export function useResendAlert() {
 **Modify — backend:**
 - `src/yas/web/routes/alerts_schemas.py` — add `summary_text: str` to `AlertOut`.
 - `src/yas/web/routes/alerts.py` — `list_alerts` and `get_alert` import `summarize_alert` from `yas.web.routes.inbox_alert_summary` and call it per row after joining Kid + Offering + Site. Use the same join pattern as `inbox.py`.
-- `src/yas/web/app.py` — register the new digest preview router.
+- `src/yas/web/app.py` — already registers the digest preview router; no change in this phase.
 - `tests/integration/test_api_alerts.py` — extend with one assertion for `summary_text`.
 
-**Create — backend:**
-- `src/yas/web/routes/digest_preview.py` — `GET /api/digest/preview?kid_id=N` calls `gather_digest_payload()` + `generate_top_line()` (with `llm=None` for the v1 template fallback) + `render_digest()` (returns `(plain, html)`).
-- `src/yas/web/routes/digest_preview_schemas.py` — `DigestPreviewOut {html: str, plain: str, top_line: str}`.
-- `tests/integration/test_api_digest_preview.py` — ~3 tests.
+**Backend `/api/digest/preview` already exists** (commit `44f3b73`) — no creation needed. Existing tests in `tests/integration/test_api_digest_preview.py` cover its behavior.
 
 **Modify — frontend:**
 - `frontend/src/lib/types.ts` — add `Alert` (full) interface; `OutboxFilterState`, `AlertStatus` union (`'pending'|'sent'|'skipped'`), `DigestPreviewResponse`.
@@ -319,8 +295,8 @@ export function useResendAlert() {
 ```
 
 - Kid picker: `<select>` populated from `useKids()`. Default = first kid. Selection writes to URL `?kid_digest=N`.
-- Top-line text: `{response.top_line}` rendered above the iframe.
-- Iframe: `<iframe srcDoc={response.html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
+- Subject text: `{response.subject}` rendered above the iframe.
+- Iframe: `<iframe srcDoc={response.body_html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
 - Disclaimer below iframe: "This is a preview of the next scheduled digest based on the last 24 hours of activity." (matches the hardcoded preview window in D6.)
 
 ## Data flow
@@ -354,9 +330,9 @@ URL ?kid_digest=N (or default = first kid from useKids)
   ↓
 useDigestPreview(kidId)
   → GET /api/digest/preview?kid_id=N
-  → DigestPreviewResponse {html, plain, top_line}
+  → DigestPreviewResponse {subject, body_plain, body_html}
   ↓
-Render top_line + <iframe srcDoc={html}>
+Render subject + <iframe srcDoc={body_html}>
   ↓
 User changes kid via picker
   → navigate({ search: { ..., kid_digest: newKidId } })
@@ -383,9 +359,9 @@ export interface OutboxFilterState {
 }
 
 export interface DigestPreviewResponse {
-  html: string;
-  plain: string;
-  top_line: string;
+  subject: string;
+  body_plain: string;
+  body_html: string;
 }
 
 export interface Alert {
@@ -424,7 +400,7 @@ export interface AlertListResponse {
 1. `test_alert_list_includes_summary_text` — create alert with kid + offering; GET `/api/alerts`; assert `items[0].summary_text` is non-empty and contains the offering's name. Assert that for an alert without kid/offering (e.g. system alert), `summary_text` is still a non-empty string.
 
 `tests/integration/test_api_digest_preview.py` (new, ~3 tests):
-1. Happy path: seed kid + matches; GET `/api/digest/preview?kid_id=1`; assert response shape `{html, plain, top_line}` non-empty. HTML contains kid name.
+1. Happy path: seed kid + matches; GET `/api/digest/preview?kid_id=1`; assert response shape `{subject, body_plain, body_html}` non-empty. HTML contains kid name.
 2. No matches: kid with no recent matches; assert response still returns valid shape (HTML may say "No matches" or similar empty-state).
 3. Unknown kid_id: GET `/api/digest/preview?kid_id=999` → 404.
 
@@ -486,7 +462,7 @@ export interface AlertListResponse {
 - ✅ Kid picker switches preview content.
 - ✅ Empty/error/no-kid states render the right copy.
 - ✅ Backend `AlertOut.summary_text` populated; frontend types match.
-- ✅ Backend `GET /api/digest/preview?kid_id=N` returns `{html, plain, top_line}`.
+- ✅ Backend `GET /api/digest/preview?kid_id=N` returns `{subject, body_plain, body_html}`.
 - ✅ Backend gates clean; ~597 tests passing.
 - ✅ Frontend gates clean; ~273 tests passing.
 
