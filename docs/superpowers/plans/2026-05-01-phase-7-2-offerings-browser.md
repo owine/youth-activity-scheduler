@@ -297,6 +297,12 @@ npm run test 2>&1 | tail -5
 
 Expected: 200 passing (no change). If any fail because of fixture shape, update those fixtures to include `location_lat: null, location_lon: null`.
 
+**Quick locator for fixtures that construct `OfferingSummary` shapes**:
+```bash
+grep -rln 'site_name:' frontend/src/test frontend/src/components/matches frontend/src/test/handlers.ts
+```
+Each match likely constructs an offering object literal that needs the two new fields appended.
+
 ### Step 5: Prettier on touched files
 
 ```bash
@@ -1283,7 +1289,13 @@ export function OfferingsBrowserPage() {
           ))}
         </ul>
       )}
-      <MatchDetailDrawer match={selected} onClose={() => setSelected(null)} />
+      <MatchDetailDrawer
+        match={selected}
+        open={selected !== null}
+        onOpenChange={(o) => {
+          if (!o) setSelected(null);
+        }}
+      />
     </div>
   );
 }
@@ -1392,13 +1404,13 @@ Stop servers: `pkill -f "yas api"; pkill -f "vite"`.
 
 ### Step 3: Update roadmap doc
 
-Edit `docs/superpowers/specs/2026-04-30-v1-completion-roadmap.md` master §7 audit table:
+Edit `docs/superpowers/specs/2026-04-30-v1-completion-roadmap.md` master §7 audit table. Find the row containing `| 2 | Offerings browser` and replace its status cell with:
 
 ```
 | 2 | Offerings browser (cross-kid) | ✅ Phase 7-2 (2026-05-DD) |
 ```
 
-Also update line 67 (Watchlist row): drop the "cross-kid → Phase 7-2" reference since cross-kid watchlist was deferred per Q2 of the spec.
+Also find the row containing `| 6 | Watchlist:` and update its status to drop the "cross-kid → Phase 7-2" reference (since cross-kid watchlist was deferred per Q2 of the spec). Use text-search anchors to find both rows; line numbers may have drifted.
 
 ```bash
 git add docs/superpowers/specs/2026-04-30-v1-completion-roadmap.md
