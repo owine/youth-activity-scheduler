@@ -253,7 +253,7 @@ Fields rendered:
 - "Send test email" button (`<TestSendButton channel="email">`).
 - "Disable channel" button (with ConfirmDialog).
 
-zod schema is a discriminated union on `transport`; both branches require `from_addr` (URL-shaped via simple regex) and `to_addrs.length >= 1`.
+zod schema is a discriminated union on `transport`; both branches require `from_addr` (email-shaped via `z.string().email()`) and `to_addrs.length >= 1` (each entry email-shaped).
 
 ### ntfy — `NtfyChannelSection`
 
@@ -331,7 +331,7 @@ async def test_notifier(channel: str, request: Request) -> TestSendOut:
     return TestSendOut(ok=result.ok, detail=result.detail or "")
 ```
 
-`NotifierMessage` is the dataclass `Channel.send()` accepts (defined in `yas.alerts.channels.base`). The fixed test message stays the same regardless of channel; the endpoint passes the channel name into `body_plain` for clarity.
+`NotifierMessage` is the dataclass `Channel.send()` accepts (defined in `yas.alerts.channels.base`). `Channel.send()` returns a `SendResult` with `ok: bool` and `detail: str | None` — the test endpoint maps these onto `TestSendOut`. The fixed test message stays the same regardless of channel; the endpoint passes the channel name into `body_plain` for clarity.
 
 ## Validation
 
