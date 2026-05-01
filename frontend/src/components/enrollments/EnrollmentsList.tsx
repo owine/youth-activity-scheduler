@@ -15,7 +15,6 @@ export function EnrollmentsList({ kidId }: { kidId: number }) {
   const kid = useKid(kidId);
   const enrollments = useKidEnrollments(kidId);
   const [editing, setEditing] = useState<Enrollment | null>(null);
-  const [pendingEnrollmentId] = useState<number | null>(null);
 
   if (kid.isLoading || enrollments.isLoading) return <Skeleton className="h-32 w-full" />;
   if (kid.isError || enrollments.isError) {
@@ -63,7 +62,7 @@ export function EnrollmentsList({ kidId }: { kidId: number }) {
                     <EnrollmentRow
                       enrollment={e}
                       kidId={kidId}
-                      isPending={pendingEnrollmentId === e.id}
+                      isPending={false}
                       onEdit={setEditing}
                     />
                   </li>
@@ -82,7 +81,7 @@ export function EnrollmentsList({ kidId }: { kidId: number }) {
                     <EnrollmentRow
                       enrollment={e}
                       kidId={kidId}
-                      isPending={pendingEnrollmentId === e.id}
+                      isPending={false}
                       onEdit={setEditing}
                     />
                   </li>
