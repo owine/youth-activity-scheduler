@@ -21,6 +21,9 @@ import {
   useCreateSite,
   useDiscoverPages,
   useAddPage,
+  useUpdateHousehold,
+  useUpdateAlertRouting,
+  useTestNotifier,
 } from './mutations';
 import type { InboxSummary, KidCalendarResponse, KidDetail, WatchlistEntry, Site } from './types';
 
@@ -864,5 +867,111 @@ describe('useAddPage', () => {
         kind: 'schedule',
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe('useUpdateHousehold', () => {
+  it('PATCHes the patch and returns Household', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/household', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          id: 1,
+          home_location_id: null,
+          home_address: 'a',
+          home_location_name: 'Home',
+          home_lat: 12.34,
+          home_lon: 56.78,
+          default_max_distance_mi: null,
+          digest_time: '08:00',
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+          daily_llm_cost_cap_usd: 2.0,
+        });
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useUpdateHousehold(), { wrapper: makeWrapper(qc) });
+    const out = await result.current.mutateAsync({ digest_time: '08:00' });
+    expect(captured).toEqual({ digest_time: '08:00' });
+    expect(out.digest_time).toBe('08:00');
+    expect(out.home_lat).toBe(12.34);
+  });
+
+  it('surfaces server errors as Error', async () => {
+    server.use(
+      http.patch('/api/household', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useUpdateHousehold(), { wrapper: makeWrapper(qc) });
+    await expect(result.current.mutateAsync({ digest_time: 'X' })).rejects.toThrow();
+  });
+});
+
+describe('useUpdateAlertRouting', () => {
+  it('PATCHes /api/alert_routing/:type with channels[] and applies optimistic update', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/alert_routing/:type', async ({ params, request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          type: params.type,
+          channels: captured.channels ?? [],
+          enabled: captured.enabled ?? true,
+        });
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData(['alert_routing'], [{ type: 'new_match', channels: ['email'], enabled: true }]);
+    const { result } = renderHook(() => useUpdateAlertRouting(), { wrapper: makeWrapper(qc) });
+    await result.current.mutateAsync({
+      type: 'new_match',
+      patch: { channels: ['email', 'ntfy'] },
+    });
+    expect(captured).toEqual({ channels: ['email', 'ntfy'] });
+    const updated = qc.getQueryData<unknown[]>(['alert_routing']);
+    expect(updated?.[0]).toMatchObject({ type: 'new_match', channels: ['email', 'ntfy'] });
+  });
+
+  it('rolls back on error', async () => {
+    server.use(
+      http.patch('/api/alert_routing/:type', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData(['alert_routing'], [{ type: 'new_match', channels: ['email'], enabled: true }]);
+    const { result } = renderHook(() => useUpdateAlertRouting(), { wrapper: makeWrapper(qc) });
+    await expect(
+      result.current.mutateAsync({ type: 'new_match', patch: { channels: ['ntfy'] } }),
+    ).rejects.toThrow();
+    const after = qc.getQueryData<unknown[]>(['alert_routing']);
+    expect(after?.[0]).toMatchObject({ type: 'new_match', channels: ['email'] });
+  });
+});
+
+describe('useTestNotifier', () => {
+  it('POSTs to /api/notifiers/:channel/test and returns TestSendResult', async () => {
+    server.use(
+      http.post('/api/notifiers/ntfy/test', () => HttpResponse.json({ ok: true, detail: 'sent' })),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useTestNotifier(), { wrapper: makeWrapper(qc) });
+    const r = await result.current.mutateAsync({ channel: 'ntfy' });
+    expect(r).toEqual({ ok: true, detail: 'sent' });
+  });
+
+  it('returns ok=false on channel-init failure (still 200)', async () => {
+    server.use(
+      http.post('/api/notifiers/pushover/test', () =>
+        HttpResponse.json({ ok: false, detail: 'channel init failed: missing env var' }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useTestNotifier(), { wrapper: makeWrapper(qc) });
+    const r = await result.current.mutateAsync({ channel: 'pushover' });
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/channel init failed/);
   });
 });

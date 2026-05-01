@@ -192,11 +192,56 @@ export interface Household {
   home_location_id: number | null;
   home_address: string | null;
   home_location_name: string | null;
+  home_lat: number | null;
+  home_lon: number | null;
   default_max_distance_mi: number | null;
   digest_time: string;
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
   daily_llm_cost_cap_usd: number;
+  email_configured: boolean;
+  ntfy_configured: boolean;
+  pushover_configured: boolean;
+}
+
+// Channel configuration types for Phase 7-1 Settings
+export interface SmtpConfig {
+  transport: 'smtp';
+  host: string;
+  port: number;
+  use_tls: boolean;
+  username?: string;
+  password_env?: string;
+  from_addr: string;
+  to_addrs: string[];
+}
+
+export interface ForwardEmailConfig {
+  transport: 'forwardemail';
+  api_token_env: string;
+  from_addr: string;
+  to_addrs: string[];
+}
+
+export type EmailConfig = SmtpConfig | ForwardEmailConfig;
+
+export interface NtfyConfig {
+  base_url: string;
+  topic: string;
+  auth_token_env?: string;
+}
+
+export interface PushoverConfig {
+  user_key_env: string;
+  app_token_env: string;
+  devices?: string[];
+  emergency_retry_s?: number;
+  emergency_expire_s?: number;
+}
+
+export interface TestSendResult {
+  ok: boolean;
+  detail: string;
 }
 
 export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match';

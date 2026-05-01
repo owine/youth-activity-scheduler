@@ -11,11 +11,16 @@ class HouseholdOut(BaseModel):
     home_location_id: int | None
     home_address: str | None
     home_location_name: str | None
+    home_lat: float | None
+    home_lon: float | None
     default_max_distance_mi: float | None
     digest_time: str
     quiet_hours_start: str | None
     quiet_hours_end: str | None
     daily_llm_cost_cap_usd: float
+    email_configured: bool
+    ntfy_configured: bool
+    pushover_configured: bool
 
 
 class HouseholdPatch(BaseModel):

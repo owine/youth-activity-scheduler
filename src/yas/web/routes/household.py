@@ -46,11 +46,16 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
         home_location_id=hh.home_location_id,
         home_address=loc.address if loc else None,
         home_location_name=loc.name if loc else None,
+        home_lat=loc.lat if loc else None,
+        home_lon=loc.lon if loc else None,
         default_max_distance_mi=hh.default_max_distance_mi,
         digest_time=hh.digest_time,
         quiet_hours_start=hh.quiet_hours_start,
         quiet_hours_end=hh.quiet_hours_end,
         daily_llm_cost_cap_usd=hh.daily_llm_cost_cap_usd,
+        email_configured=hh.smtp_config_json is not None,
+        ntfy_configured=hh.ntfy_config_json is not None,
+        pushover_configured=hh.pushover_config_json is not None,
     )
 
 
