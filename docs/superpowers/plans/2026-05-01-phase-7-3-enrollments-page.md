@@ -102,7 +102,7 @@ async def test_enrollment_includes_offering_summary(client):
     assert offering["location_lon"] is None
 ```
 
-**Note**: the existing `client` fixture in `test_api_enrollments.py` may yield just `c` (not `(c, engine)`). If so, change the fixture to yield `(c, engine)` like `test_api_matches.py` does — and update existing tests in this file to unpack accordingly. Verify before writing the test.
+**Note**: the existing `client` fixture in `test_api_enrollments.py` already yields `(c, engine)` as a tuple — verified. The new test's `c, engine = client` unpack works directly with no fixture change required.
 
 ### Step 3: Run test — verify fail
 
@@ -203,7 +203,27 @@ return [
 ]
 ```
 
-For `get_enrollment` / `create_enrollment` / `patch_enrollment` (singleton returns), do a follow-up query joining Offering+Site+Location after the mutation to build the response. Or restructure to use a single query that does the join after `s.flush()`. Either works; pick the cleaner one.
+For `get_enrollment` / `create_enrollment` / `patch_enrollment` (singleton returns), the prescribed pattern is:
+1. After the mutation completes (or for GET, after fetching the enrollment), call `await s.refresh(enrollment)` if needed.
+2. Run a follow-up query keyed by `enrollment.offering_id`:
+   ```python
+   row = (await s.execute(
+       select(Offering, Site.name, Location.lat, Location.lon)
+       .join(Site, Site.id == Offering.site_id)
+       .outerjoin(Location, Location.id == Offering.location_id)
+       .where(Offering.id == enrollment.offering_id)
+   )).first()
+   offering, site_name, loc_lat, loc_lon = row
+   return EnrollmentOut(
+       id=enrollment.id, kid_id=enrollment.kid_id, offering_id=enrollment.offering_id,
+       status=EnrollmentStatus(enrollment.status), enrolled_at=enrollment.enrolled_at,
+       notes=enrollment.notes, created_at=enrollment.created_at,
+       offering=_build_offering_summary(offering, site_name, loc_lat, loc_lon),
+   )
+   ```
+3. Same `_build_offering_summary` helper as in `list_enrollments`.
+
+Two queries (one for the enrollment mutation, one for the offering lookup) is fine; the helper avoids duplicating projection logic.
 
 The `enrollment_status` query param should be tightened to `EnrollmentStatus | None`:
 
@@ -499,11 +519,15 @@ sed -n '28,38p' frontend/src/components/matches/MatchCard.tsx
 sed -n '40,50p' frontend/src/components/offerings/OfferingRow.tsx
 ```
 
-Note the differences:
-- MatchCard: `relDate(date)` (no `now` param), `· reg ${relDate(...)}`
-- OfferingRow: `relDate(date, now)`, `· starts in ${relDate(...)}`, `· reg in ${relDate(...)}`
+Note the differences (verified by reading both files):
+- **MatchCard** (`MatchCard.tsx:32-36`): `· ${relDate(o.start_date)}` (bare relDate, no "starts in" prefix), `· ${price(...)}`, `· reg ${relDate(...)}` (no "in" connector). Calls `relDate` with one arg.
+- **OfferingRow**: `· starts in ${relDate(o.start_date, now)}` (prefix + `now` param), `· reg in ${relDate(o.registration_opens_at, now)}` (prefix + `now`), `· ${price(...)}`.
 
-The shared component should standardize on the OfferingRow format ("starts in", "reg in"; takes optional `now` for testability).
+`relDate` accepts an optional second `now` param (verified in `frontend/src/lib/format.ts`). The shared component standardizes on the OfferingRow format because:
+- Explicit "starts in" / "reg in" prefixes are more readable.
+- Optional `now` param makes the formatter deterministic in tests.
+
+MatchCard's tests don't currently assert against the specific copy strings (verified via `grep -rn 'starts in\|reg ' frontend/src/components/matches`), so no test updates are expected. If the assertion exists somewhere unexpected, fix it to match the new copy.
 
 ### Step 2: Implement `<OfferingScheduleLine>`
 
@@ -755,12 +779,20 @@ Reference the existing `<WatchlistEntrySheet>` from Phase 6-3 for the radix `She
 
 ### Step 3: Implement
 
+Use the **shadcn-style sheet wrapper** at `@/components/ui/sheet` — NOT raw radix. This is the same pattern as `<WatchlistEntrySheet>` (Phase 6-3) which is the canonical example to mirror.
+
 ```tsx
 // EnrollmentEditSheet.tsx
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
-import { Sheet } from 'radix-ui';
 import { Button } from '@/components/ui/button';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { useUpdateEnrollment } from '@/lib/mutations';
 import type { Enrollment } from '@/lib/types';
 
@@ -788,7 +820,6 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
     },
     validators: { onChange: schema },
     onSubmit: async ({ value }) => {
-      // Convert YYYY-MM-DD back to ISO datetime if non-null.
       const enrolled_at = value.enrolled_at
         ? `${value.enrolled_at}T00:00:00Z`
         : null;
@@ -802,59 +833,56 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
   });
 
   return (
-    <Sheet.Root open={enrollment !== null} onOpenChange={(o) => !o && onClose()}>
-      <Sheet.Portal>
-        <Sheet.Overlay className="fixed inset-0 z-50 bg-black/50" />
-        <Sheet.Content className="fixed inset-y-0 right-0 z-50 w-96 bg-background p-4 shadow-xl">
-          <Sheet.Title className="text-lg font-semibold">Edit enrollment</Sheet.Title>
-          <Sheet.Description className="sr-only">
-            Edit notes and enrolled-at date
-          </Sheet.Description>
-          <form
-            onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }}
-            className="mt-4 space-y-4"
-          >
-            <form.Field name="notes" children={(field) => (
-              <div>
-                <label htmlFor="notes" className="block text-sm font-medium">Notes</label>
-                <textarea
-                  id="notes"
-                  rows={4}
-                  value={field.state.value ?? ''}
-                  onChange={(e) => field.handleChange(e.target.value || null)}
-                  className="w-full rounded border border-border bg-background px-2 py-1"
-                />
-              </div>
-            )} />
-            <form.Field name="enrolled_at" children={(field) => (
-              <div>
-                <label htmlFor="enrolled_at" className="block text-sm font-medium">Enrolled at</label>
-                <input
-                  id="enrolled_at"
-                  type="date"
-                  value={field.state.value ?? ''}
-                  onChange={(e) => field.handleChange(e.target.value || null)}
-                  className="w-full rounded border border-border bg-background px-2 py-1"
-                />
-              </div>
-            )} />
-            <div className="flex gap-2">
-              <Button type="submit" disabled={update.isPending}>
-                {update.isPending ? 'Saving…' : 'Save'}
-              </Button>
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
+    <Sheet open={enrollment !== null} onOpenChange={(isOpen) => !isOpen && onClose()}>
+      <SheetContent className="w-full sm:max-w-md flex flex-col">
+        <SheetHeader>
+          <SheetTitle>Edit enrollment</SheetTitle>
+          <SheetDescription>
+            Edit notes and enrolled-at date for {enrollment.offering.name}.
+          </SheetDescription>
+        </SheetHeader>
+        <form
+          onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }}
+          className="mt-4 space-y-4 flex-1"
+        >
+          <form.Field name="notes" children={(field) => (
+            <div>
+              <label htmlFor="notes" className="block text-sm font-medium">Notes</label>
+              <textarea
+                id="notes"
+                rows={4}
+                value={field.state.value ?? ''}
+                onChange={(e) => field.handleChange(e.target.value || null)}
+                className="w-full rounded border border-border bg-background px-2 py-1"
+              />
             </div>
-          </form>
-        </Sheet.Content>
-      </Sheet.Portal>
-    </Sheet.Root>
+          )} />
+          <form.Field name="enrolled_at" children={(field) => (
+            <div>
+              <label htmlFor="enrolled_at" className="block text-sm font-medium">Enrolled at</label>
+              <input
+                id="enrolled_at"
+                type="date"
+                value={field.state.value ?? ''}
+                onChange={(e) => field.handleChange(e.target.value || null)}
+                className="w-full rounded border border-border bg-background px-2 py-1"
+              />
+            </div>
+          )} />
+          <div className="flex gap-2">
+            <Button type="submit" disabled={update.isPending}>
+              {update.isPending ? 'Saving…' : 'Save'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
 ```
-
-(Verify the `radix-ui` Sheet primitive name — could be `Sheet`, `Dialog`, or accessed as `Sheet.Root`. Look at how `<WatchlistEntrySheet>` does it for the canonical import.)
 
 ### Step 4: Run tests — verify pass + Prettier.
 
@@ -1173,7 +1201,8 @@ Return the PR URL.
 - **`useUpdateEnrollment` invalidates 3 caches** (`enrollments`, `calendar`, `matches`). With small datasets this is fine; if it bites, narrow later.
 - **`isPending` per row.** The plan's `EnrollmentsList` simplifies to passing the global `update.isPending` down (vs the spec's per-row `pendingEnrollmentId`). Both are valid. If you observe rows other than the in-flight one being disabled simultaneously, switch to per-row tracking.
 - **Existing `useCancelEnrollment`/`useEnrollOffering` stay untouched.** The calendar overlay uses them; don't refactor for this PR.
-- **`<OfferingScheduleLine>` standardizes on OfferingRow's "starts in N" / "reg in N" copy.** MatchCard tests asserting the old copy will need adjusting — update in Task 3.
+- **`<OfferingScheduleLine>` standardizes on OfferingRow's "starts in N" / "reg in N" copy.** Verified that no current MatchCard tests assert the old copy; refactor should be transparent to the test suite. Task 3 explains.
+- **EnrollmentRow tests should freeze time** before assertions on `relDate(enrolled_at)` to avoid date-flake. Use `vi.setSystemTime(new Date('2026-05-01T00:00:00Z'))` in `beforeEach` and `vi.useRealTimers()` in `afterEach` for any test asserting on the third line's `Enrolled <relDate>`.
 - **`enrolled_at` wire format**: backend uses `datetime`; the form takes `<input type="date">` which is `YYYY-MM-DD`. Slice the ISO datetime to get the date for the input; concat `T00:00:00Z` on save. Don't try to preserve time-of-day for v1.
 - **Status `<select>` always shows all 5 options.** D9 — backend allows any transition. No client-side validation.
 - **No GitHub auto-close keywords** in commit messages.
