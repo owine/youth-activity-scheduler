@@ -244,6 +244,7 @@ export function useUpdateEnrollment() {
 - `frontend/src/components/enrollments/EnrollmentsList.tsx` + `.test.tsx`
 - `frontend/src/components/enrollments/EnrollmentRow.tsx` + `.test.tsx`
 - `frontend/src/components/enrollments/EnrollmentEditSheet.tsx` + `.test.tsx`
+- `frontend/src/components/common/OfferingScheduleLine.tsx` (per D12) — small shared formatter; covered by existing call-site tests, no dedicated test file in this PR.
 
 **Modify — frontend:**
 - `frontend/src/components/layout/KidTabs.tsx` — add Enrollments tab.
@@ -251,6 +252,8 @@ export function useUpdateEnrollment() {
 - `frontend/src/lib/mutations.ts` — add `useUpdateEnrollment`.
 - `frontend/src/lib/types.ts` — **add** `Enrollment` interface (does not currently exist) with `offering: OfferingSummary`; add `EnrollmentStatus` string-literal union (`'interested' | 'enrolled' | 'waitlisted' | 'completed' | 'cancelled'`).
 - `frontend/src/test/handlers.ts` — verify default `/api/enrollments` GET handler returns the new `offering` field.
+- `frontend/src/components/matches/MatchCard.tsx` — replace inline schedule formatter with `<OfferingScheduleLine showRegOpens />` per D12.
+- `frontend/src/components/offerings/OfferingRow.tsx` — replace inline schedule formatter with `<OfferingScheduleLine />` per D12.
 - `frontend/src/routeTree.gen.ts` — regenerated.
 
 **No new dependencies.**
