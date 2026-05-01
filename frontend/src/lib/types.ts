@@ -142,6 +142,32 @@ export interface Site {
   pages: Page[];
 }
 
+export type PageKind = 'schedule' | 'registration' | 'list' | 'other';
+
+export interface Candidate {
+  url: string;
+  title: string;
+  kind: 'html' | 'pdf';
+  score: number;
+  reason: string;
+}
+
+export interface DiscoveryStats {
+  sitemap_urls: number;
+  link_urls: number;
+  filtered_junk: number;
+  fetched_heads: number;
+  classified: number;
+  returned: number;
+}
+
+export interface DiscoveryResult {
+  site_id: number;
+  seed_url: string;
+  stats: DiscoveryStats;
+  candidates: Candidate[];
+}
+
 export interface CrawlRun {
   id: number;
   site_id: number;

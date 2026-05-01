@@ -8,6 +8,9 @@ import type {
   KidDetail,
   Site,
   WatchlistEntry,
+  DiscoveryResult,
+  Page,
+  PageKind,
 } from './types';
 
 const keyIncludesClosed = (key: QueryKey): boolean => key.length >= 4 && key[3] === 'with-closed';
@@ -467,6 +470,50 @@ export function useToggleSiteActive() {
         qc.invalidateQueries({ queryKey: ['sites'] }),
         qc.invalidateQueries({ queryKey: ['sites', siteId] }),
       ]);
+    },
+  });
+}
+
+interface CreateSiteInput {
+  name: string;
+  base_url: string;
+}
+
+export function useCreateSite() {
+  const qc = useQueryClient();
+  return useMutation<Site, Error, CreateSiteInput>({
+    mutationFn: (input) => api.post<Site>('/api/sites', input),
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['sites'] });
+    },
+  });
+}
+
+interface DiscoverInput {
+  siteId: number;
+}
+
+export function useDiscoverPages() {
+  // Note: discover is read-only for the site row, so it does NOT invalidate any queries.
+  // It's a "mutation" only because POST has side effects (LLM call cost).
+  return useMutation<DiscoveryResult, Error, DiscoverInput>({
+    mutationFn: ({ siteId }) => api.post<DiscoveryResult>(`/api/sites/${siteId}/discover`, {}),
+  });
+}
+
+interface AddPageInput {
+  siteId: number;
+  url: string;
+  kind: PageKind;
+}
+
+export function useAddPage() {
+  const qc = useQueryClient();
+  return useMutation<Page, Error, AddPageInput>({
+    mutationFn: ({ siteId, url, kind }) =>
+      api.post<Page>(`/api/sites/${siteId}/pages`, { url, kind }),
+    onSettled: async (_d, _e, { siteId }) => {
+      await qc.invalidateQueries({ queryKey: ['sites', siteId] });
     },
   });
 }
