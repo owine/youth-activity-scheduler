@@ -32,7 +32,7 @@ Replace the existing read-only `/settings` page with a fully editable Settings p
 The backend has all the persistence machinery already:
 
 - `GET /api/household` / `PATCH /api/household` — single-row settings (`home_location_id`, `default_max_distance_mi`, `digest_time`, `quiet_hours_start/end`, `daily_llm_cost_cap_usd`, plus four `*_config_json` fields). PATCH does immediate-geocode on `home_address` write via Nominatim and creates/updates the joined `Location` row; the response surfaces the resolved `home_address` + `home_location_name`.
-- `GET /api/alert_routing` / `PATCH /api/alert_routing/{type}` — list of `[{type, channels: string[], enabled: bool}]`. The PATCH backend rejects channel names not in `_get_configured_channels(household)` (i.e. unconfigured channels can't be routed to).
+- `GET /api/alert_routing` / `PATCH /api/alert_routing/{type}` — list of `[{type, channels: string[], enabled: bool}]`. PATCH (`AlertRoutingPatch`) accepts `channels?: string[]` and/or `enabled?: bool` (at least one must be present). The backend rejects **unknown** channel names (anything outside `{email, ntfy, pushover}`) but only **logs a warning** for known-but-unconfigured channels — it does NOT 422 those. So the disabled/grayed-out cells in the matrix (D10) are a **frontend-only UX courtesy**, not a backend enforcement boundary. If the user somehow PATCHes an unconfigured channel name (e.g. via curl), the backend accepts it but the worker silently ignores it at dispatch time.
 - Worker reads channel configs from `household.smtp_config_json` (→ `EmailChannel`), `ntfy_config_json` (→ `NtfyChannel`), `pushover_config_json` (→ `PushoverChannel`). HA is not wired.
 
 The current `/settings` route is read-only (cards display values; "Channel configuration available in Phase 5b" placeholder). This phase replaces that page with editable forms.
@@ -59,7 +59,7 @@ Trade-off: more state to manage (each section tracks its own dirty/saving/error 
 
 The matrix is naturally a `(alert_type × channel)` grid. Render rows as alert types and columns as `[Enabled, email, ntfy, pushover]` (header + four columns). Each cell is its own checkbox; clicking it triggers an immediate optimistic PATCH to `/api/alert_routing/{type}` with the updated `channels` array (or `enabled` bool for the leftmost column). Optimistic update + rollback on error follows the canonical 5b-1b pattern.
 
-Columns whose channel is unconfigured (e.g. `pushover` column when `pushover_config_json === null`) render disabled with a tooltip "Configure Pushover first." This matches the backend's `_get_configured_channels` enforcement.
+Columns whose channel is unconfigured (e.g. `pushover` column when `pushover_config_json === null`) render disabled with a tooltip "Configure Pushover first." **This is a frontend-only UX guard**, not backend-enforced — the backend logs a warning for known-but-unconfigured channels but doesn't reject the PATCH (worker silently skips at dispatch time). The frontend disable keeps users from saving routing entries they can't actually use.
 
 A grid editor with per-cell save matches how users naturally interact with this kind of matrix (toggle one cell at a time, see immediate feedback). A Save button at the bottom would force users to track which cells changed and click Save when done — extra friction for no benefit.
 
@@ -104,7 +104,7 @@ Picking **(a)**: tiny backend change (4 lines in `_to_out` + 2 fields in `Househ
 
 The email channel supports two transports: `smtp` and `forwardemail` (per `email.py:220`). The form has a `<select>` for `transport`. Fields below the selector branch:
 
-- `smtp`: `host`, `port` (number), `username`, `password_env`, `use_tls` (default true), `from_addr`, `to_addrs` (comma-separated text → array on save)
+- `smtp`: `host`, `port` (number), `username` (optional — zod must omit the key entirely when blank, never send `""`; backend rejects empty username), `password_env` (optional), `use_tls` (default true), `from_addr`, `to_addrs` (comma-separated text → array on save)
 - `forwardemail`: `api_token_env`, `from_addr`, `to_addrs`
 
 The zod schema is a discriminated union on `transport`. Save sends the right shape; backend validates again.
@@ -122,6 +122,42 @@ This is the "uninstall" path. Without it, users have no way to remove a configur
 ### D10: Disabled cell tooltips in routing matrix
 
 Cells where the channel column is unconfigured render `<input type="checkbox" disabled aria-label="Configure <channel> first">` with a `title` attribute matching. Visually grayed out via Tailwind. No tooltip library — `title` is enough. Users learn "configure the channel first" inline; no extra docs needed.
+
+### D11: Test-send wraps channel construction in try/except
+
+Channel constructors (`PushoverChannel.__init__`, `NtfyChannel` with `auth_token_env`, `EmailChannel` with `forwardemail` transport) raise `ValueError` at construction time if a referenced `*_env` env var is missing or empty. The endpoint must wrap construction so this surfaces as `{ok: false, detail: <reason>}` rather than a 500:
+
+```python
+try:
+    ch = ChannelCls(config)
+except ValueError as exc:
+    return TestSendOut(ok=False, detail=f"channel init failed: {exc}")
+```
+
+This means the user gets a clear "config references env var X but X is unset" message in the test-send pill, instead of a generic 500.
+
+### D12: Test message uses `AlertType.new_match`
+
+`Channel.send()` takes a `NotifierMessage` (not "Alert"). The dataclass requires `kid_id: int | None`, `alert_type: AlertType`, `subject: str`, `body_plain: str` (plus optional `body_html`, `url`, `urgent`). The test endpoint constructs:
+
+```python
+NotifierMessage(
+    kid_id=None,
+    alert_type=AlertType.new_match,   # NOT reg_opens_now (would trigger Pushover emergency)
+    subject="YAS test notification",
+    body_plain="If you see this, the {channel} channel is working.",
+)
+```
+
+Picking `AlertType.new_match` matters: `reg_opens_now` would cause `PushoverChannel` to dispatch with `priority=2` (emergency mode) using `emergency_retry_s` / `emergency_expire_s`, which is the wrong default for a test send.
+
+### D13: HouseholdPatch null vs omit
+
+`HouseholdPatch` uses `extra="forbid"` and the handler does `model_dump(exclude_unset=True)`. This means:
+- **Omitted field** in JSON → not sent → handler doesn't touch the column.
+- **Field set to `null` explicitly** → sent → handler writes `None`.
+
+The "Disable channel" path relies on this: PATCH `{smtp_config_json: null}` zeroes the column; PATCH `{}` (no fields) is a no-op. The frontend mutation hook must construct the patch with explicit `null` (not omitted) when disabling.
 
 ## Architecture
 
@@ -252,8 +288,11 @@ zod: both `_env` fields required + non-empty.
 ```python
 # src/yas/web/routes/notifier_test.py (sketch)
 from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select
 from yas.alerts.channels import EmailChannel, NtfyChannel, PushoverChannel
+from yas.alerts.channels.base import NotifierMessage
 from yas.db.models import HouseholdSettings
+from yas.db.models._types import AlertType
 from yas.db.session import session_scope
 
 router = APIRouter(prefix="/api/notifiers", tags=["notifiers"])
@@ -263,6 +302,14 @@ CHANNELS = {
     "ntfy": (NtfyChannel, "ntfy_config_json"),
     "pushover": (PushoverChannel, "pushover_config_json"),
 }
+
+def _test_message(channel: str) -> NotifierMessage:
+    return NotifierMessage(
+        kid_id=None,
+        alert_type=AlertType.new_match,   # NOT reg_opens_now — would trigger Pushover emergency
+        subject="YAS test notification",
+        body_plain=f"If you see this, the {channel} channel is working.",
+    )
 
 @router.post("/{channel}/test", response_model=TestSendOut)
 async def test_notifier(channel: str, request: Request) -> TestSendOut:
@@ -274,12 +321,17 @@ async def test_notifier(channel: str, request: Request) -> TestSendOut:
         config = getattr(hh, field, None) if hh else None
     if config is None:
         raise HTTPException(503, f"{channel} not configured")
-    ch = ChannelCls(config)
-    result = await ch.send(_test_message())
+    # Channel constructors raise ValueError if a referenced *_env var is missing.
+    # Surface that as a soft failure rather than a 500 (D11).
+    try:
+        ch = ChannelCls(config)
+    except ValueError as exc:
+        return TestSendOut(ok=False, detail=f"channel init failed: {exc}")
+    result = await ch.send(_test_message(channel))
     return TestSendOut(ok=result.ok, detail=result.detail or "")
 ```
 
-`_test_message()` builds a synthetic `Alert`-like payload with subject "YAS test notification" and body "If you see this, the {channel} channel is working." (whatever shape the existing `Channel.send()` interface expects — verify when implementing).
+`NotifierMessage` is the dataclass `Channel.send()` accepts (defined in `yas.alerts.channels.base`). The fixed test message stays the same regardless of channel; the endpoint passes the channel name into `body_plain` for clarity.
 
 ## Validation
 
@@ -441,13 +493,13 @@ useUpdateHousehold.mutateAsync({ smtp_config_json: null })
 - ✅ Backend `POST /api/notifiers/{channel}/test` returns 404/503/200 per spec.
 - ✅ Backend `HouseholdOut` includes `home_lat`/`home_lon`.
 - ✅ Frontend gates clean; ~197 tests passing.
-- ✅ Backend gates clean; ~590 tests passing.
+- ✅ Backend gates clean; all existing tests pass plus ~5 new tests for the test-send endpoint.
 
 ## Risks
 
 - **Channel-class constructor signatures.** This spec assumes `EmailChannel(config)`, `NtfyChannel(config)`, `PushoverChannel(config)` are constructable from the JSON config alone. Verify when implementing — if any channel needs an HTTP client or session passed in, the backend test endpoint needs to construct it.
 - **`Channel.send()` signature.** The test endpoint dispatches a "test" message. The exact payload type (Alert, dict, etc.) needs verification when implementing the endpoint.
-- **Backend env-var resolution timing.** Channels resolve env vars at construction time. If the user saves a config referring to an env var that's NOT set, the test-send fires the channel and gets a runtime error from the channel code. The 200/`ok=false` path handles this gracefully.
+- **Backend env-var resolution timing.** Channels resolve env vars at construction time and raise `ValueError` if missing/empty. The test endpoint wraps construction in try/except (D11) so this surfaces as a 200/`{ok: false, detail: ...}` rather than a 500.
 - **Geocode response timing.** PATCH `/api/household` does Nominatim synchronously; on slow connections this can take a few seconds. Acceptable; existing UX is identical.
 - **Alert types listed in routing.** The routing matrix's row count depends on what `/api/alert_routing` returns. If new alert types are added later (Phase 8), the matrix renders them automatically — no UI change needed.
 
