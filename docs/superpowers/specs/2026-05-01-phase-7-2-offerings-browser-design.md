@@ -78,7 +78,7 @@ Chips show categorical signals not already in the visible row fields. Five types
 1. `⭐ Watchlist` — any kid match has `reasons.watchlist_hit` truthy.
 2. `🎯 Top match` — max kid score ≥ 0.85.
 3. `🔥 Opens this week` — `registration_opens_at` within next 7d.
-4. `📍 Near home` — any match has `reasons.score_breakdown.distance >= 0.7`.
+4. `📍 Near home` — any match has `reasons.score_breakdown.distance >= 0.7` (this is the **normalized distance signal** from the matcher, in `[0, 1]`, not raw miles — higher = closer).
 5. `🏷 In interests` — `offering.program_type` matches at least one kid's interests array.
 
 Numeric breakdowns (`availability 0.95`, `distance 0.80`) duplicate info already in the score number and are harder to scan. The detail drawer (already built) shows full breakdowns on demand.
@@ -118,13 +118,55 @@ When multiple kids match an offering with similar scores, the drawer only shows 
 
 Default ON. Filters out offerings where `muted_until > now`. v1 doesn't need a "show only muted" inverse view — the user mutes things to dismiss them, not to file them.
 
-### D11: Distance filter no-ops when data is missing
+### D11: Distance filter no-ops when data is missing; backend extension to surface coords
 
 If `household.home_lat`/`home_lon` is null OR the offering's location has null coords OR the offering has no location, the distance filter is a pass-through for that row. We don't drop rows just because we can't compute distance — that would create a confusing "where did they go?" effect.
 
-The household lat/lon was added in Phase 7-1 (`HouseholdOut.home_lat`/`home_lon`). The offering's location lat/lon comes from `Offering.location_id → Location.lat/lon`. If `MatchOut.offering.location` isn't already exposed by the backend, we either (a) extend the schema to include `location_lat`/`location_lon` (small backend change), or (b) skip the distance filter in v1.
+**Backend change is required.** `OfferingSummary` (verified in `src/yas/web/routes/matches_schemas.py`) currently exposes `site_id` and `site_name` but no location coords. This PR includes a small backend extension:
+- `OfferingSummary` gains `location_lat: float | None`, `location_lon: float | None`.
+- `matches.py` `list_matches` joins/loads `Offering.location_id → Location` and populates them. (The existing query already builds `offering_data` dict; add the two fields to the projection.)
+- One backend test extending `tests/integration/test_api_matches.py` (or similar): asserts the two new fields are present in the response when the offering has a location with coords, and `null` when it doesn't.
 
-**Decision:** check the existing `OfferingSummary` shape during implementation. If location coords are absent, do (a) — small backend change to surface `location_lat: float | None`, `location_lon: float | None` on `OfferingSummary`. If they're already there, no backend change needed.
+Frontend `OfferingSummary` type gains the same fields. `lib/offeringsFilters.ts` `applyFilters` uses haversine when both household and offering coords are non-null; pass-through otherwise.
+
+### D14: `minScore` default is hardcoded 0.6
+
+`Household` does NOT have `alert_score_threshold`; that field is on `Kid` (per-kid). The earlier draft of D-section text saying "default to `household.alert_score_threshold ?? 0.6`" was wrong. There's no obvious "household-wide threshold" because thresholds are per-kid.
+
+**Decision:** v1 hardcodes the default `minScore = 0.6` on first mount (matches the existing `Kid.alert_score_threshold` Pydantic default). Reasoning:
+- Deriving from selected kids (e.g. `min(kid.alert_score_threshold)`) is principled but makes the slider's default value jump around as the user toggles kid chips. Confusing.
+- A single hardcoded default keeps the page predictable; users adjust the slider to taste, and the value persists in `localStorage`.
+- No backend change needed.
+
+If this proves wrong, Phase 8 can introduce a household-level "browse threshold" setting; not worth it for v1.
+
+### D15: `days_of_week` normalization
+
+Offering schedules in the matcher (`gates.py:139`, `scoring.py:69`) lowercase day strings before comparing — implying upstream values may be mixed-case or full-name. The frontend filter chip values are exactly `'mon'|'tue'|'wed'|'thu'|'fri'|'sat'|'sun'`.
+
+**Normalize at the filter boundary.** `applyFilters` builds a normalized set of an offering's days by mapping `d => d.toLowerCase().slice(0, 3)` before comparing against the filter's selected days. This handles `'Monday'`, `'MON'`, `'mon'` uniformly. Pure function; one line of normalization in `applyFilters`.
+
+### D16: Time-of-day comparison format
+
+Pydantic serializes Python `time` as `"HH:MM:SS"` over the wire; an `<input type="time">` produces `"HH:MM"`. Comparing the two requires alignment.
+
+**Decision:** filter values stored as `"HH:MM"` (from the time input). When comparing against an offering's `time_start: "HH:MM:SS"`, take the first 5 chars: `offering.time_start.slice(0, 5) >= filter.timeOfDayMin`. Simple lexicographic compare on `"HH:MM"` works correctly for valid time strings. Document this in `applyFilters`.
+
+### D17: Reset/Clear scope
+
+Two distinct controls:
+- **`Reset` button inside `<MoreFiltersPanel>`** — resets ONLY the 8 secondary filters back to their defaults. Doesn't touch the 3 primary filters (Kids / Min score / Sort) or the panel-open state. Local affordance.
+- **`Clear filters` button in the all-filtered-out `<EmptyState>`** — resets ALL 11 filters back to defaults (and re-selects all kid IDs). Recovers the user from "I've narrowed too far."
+
+Both call into the same `lib/offeringsFilters.ts` `defaultFilterState(allKidIds: number[])` factory but with different scopes.
+
+### D18: Empty `selectedKidIds` recovery affordance
+
+`selectedKidIds: []` (user manually unchecked all kid chips) → page shows the all-filtered-out empty state with the `Clear filters` button. Additionally, the kid chip group ALWAYS shows a small "Select all" text link to its right when at least one kid is unselected. This handles both the "manually cleared all" case and the "new kid added; not in persisted selection" case with one affordance.
+
+### D19: Sort tiebreaker
+
+When two rows have the same primary sort key (e.g. same best-score, or both null start_date), break ties by `offering.id` desc (newer offerings first). Stable across renders.
 
 ### D12: Soft validation only on age-range filter
 
@@ -196,9 +238,10 @@ Re-runs on every filter change; pure-function chain means it's cheap and testabl
 - `frontend/src/routeTree.gen.ts` — regenerated by build.
 - `frontend/src/test/handlers.ts` — confirm `/api/matches` GET handler exists; verify it accepts the limit/min_score query params and returns a default fixture (likely already there from earlier phases).
 
-**Possibly modify — backend** (only if `OfferingSummary` doesn't already expose location coords; verify in implementation):
-- `src/yas/web/routes/matches_schemas.py` — add `location_lat`/`location_lon` to `OfferingSummary`.
-- `src/yas/web/routes/matches.py` — populate them in the `OfferingSummary.model_validate(offering_data)` call.
+**Modify — backend (required, per D11):**
+- `src/yas/web/routes/matches_schemas.py` — add `location_lat: float | None`, `location_lon: float | None` to `OfferingSummary`.
+- `src/yas/web/routes/matches.py` — load Location for each offering (eagerly via the same join pattern used for `Site.name`, or a separate query) and populate the two fields in the response. Must handle `offering.location_id is None` (returns null/null).
+- Extend `tests/integration/test_api_matches.py` with one test asserting the new fields populate when the offering has a Location with coords and are null otherwise.
 
 **No new dependencies.**
 
@@ -212,7 +255,7 @@ interface FilterState {
   sort: 'best_score' | 'soonest_start' | 'soonest_reg';
   // Secondary
   hideMuted: boolean;                // default true
-  programTypes: string[];            // empty = no filter (don't drop anything)
+  programTypes: string[];            // empty = no filter; populated dropdown is the ProgramType enum minus 'unknown'
   days: ('mon'|'tue'|'wed'|'thu'|'fri'|'sat'|'sun')[]; // empty = no filter; AND-match
   regTiming: 'any' | 'opens_this_week' | 'open_now' | 'closed';
   timeOfDayMin: string | null;       // 'HH:MM' or null
@@ -228,7 +271,7 @@ interface FilterState {
 
 Defaults on first mount:
 - `selectedKidIds`: all kids from `useKids()`. (If a kid is added later, current filter selection doesn't include them — surfaces a small "(N kids hidden)" notice next to the chip group with a "Select all" link.)
-- `minScore`: `household.alert_score_threshold ?? 0.6`.
+- `minScore`: `0.6` hardcoded (per D14).
 - `sort`: `best_score`.
 - All others: defaults shown above.
 
