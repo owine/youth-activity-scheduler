@@ -165,7 +165,7 @@ The codebase doesn't have a toast system. Resend success → render a small gree
 |---|---|---|
 | `/alerts` (new) | `AlertsPage` (route shell) | Reads `?tab=outbox|digest`; renders `<OutboxPanel>` or `<DigestPreviewPanel>`. |
 
-Top-banner nav: add "Alerts" link between Inbox and Sites with an icon (e.g. `lucide-react`'s `Mail` or `Send`).
+Top-banner nav: add "Alerts" link between Offerings and Sites with an icon (e.g. `lucide-react`'s `Mail` or `Send`).
 
 ### Components
 
@@ -229,7 +229,7 @@ export function useResendAlert() {
 - `frontend/src/lib/queries.ts` — add `useAlerts(filters, pageSize)` + `useDigestPreview(kidId)`.
 - `frontend/src/lib/mutations.ts` — add `useResendAlert`.
 - `frontend/src/lib/mutations.test.tsx` — extend with `useResendAlert` tests (~2).
-- `frontend/src/components/layout/TopBar.tsx` — add "Alerts" link between Inbox and Sites.
+- `frontend/src/components/layout/TopBar.tsx` — add "Alerts" link between Offerings and Sites.
 - `frontend/src/test/handlers.ts` — defaults for `GET /api/alerts`, `POST /api/alerts/:id/resend`, `GET /api/digest/preview`.
 - `frontend/src/routeTree.gen.ts` — regenerated.
 

@@ -429,12 +429,12 @@ http.post('/api/alerts/:id/resend', ({ params }) =>
   ),
 ),
 
-// GET /api/digest/preview — default minimal render
+// GET /api/digest/preview — default minimal render (matches actual endpoint shape)
 http.get('/api/digest/preview', () =>
   HttpResponse.json({
-    html: '<p>Preview body</p>',
-    plain: 'Preview body',
-    top_line: 'Today\'s preview',
+    subject: 'Daily digest — preview',
+    body_plain: 'Preview body',
+    body_html: '<p>Preview body</p>',
   }),
 ),
 ```
@@ -1307,7 +1307,7 @@ gh pr create --title "phase 7-4: alerts page (outbox + digest preview)" --body "
 Closes master §7 page #8 (Alerts: outbox, resend, digest preview). New top-level \`/alerts\` route with two tabs.
 
 - **Outbox tab**: paginated list of all alerts beyond the inbox window. Filters: kid / type / status (pending|sent|skipped) / since-until date range. Resend button per row clones the alert; new clone appears at top after cache invalidation.
-- **Digest preview tab**: per-kid render of the next scheduled digest in a sandboxed iframe (\`sandbox="allow-same-origin"\` for inline styles, no scripts). Top-line generated via the deterministic template fallback (\`llm=None\`) so previews never bill against the daily LLM cap.
+- **Digest preview tab**: per-kid render of the next scheduled digest in a sandboxed iframe (\`sandbox="allow-same-origin"\` for inline styles, no scripts). Reuses the existing \`GET /api/digest/preview\` endpoint (shipped previously) which returns \`{subject, body_plain, body_html}\` and uses the household's daily LLM cost cap.
 - **URL search-param state**: \`?tab=\`, \`?kid=\`, \`?type=\`, \`?status=\`, \`?since=\`, \`?until=\`, \`?page=\`, \`?kid_digest=\` all persist filters/tab/page across reloads.
 - **Backend**: \`AlertOut\` extends with \`summary_text\` (composed via existing \`summarize_alert\` helper); new \`GET /api/digest/preview?kid_id=N\` endpoint wires \`gather_digest_payload\` + \`generate_top_line(llm=None)\` + \`render_digest\`.
 - **No new dependencies.** Reuses existing \`<Card>\`, \`<Badge>\`, \`<Button>\`, \`<Skeleton>\`, \`<EmptyState>\`, \`<ErrorBanner>\`. New \`Mail\` icon from lucide-react (already pinned).
