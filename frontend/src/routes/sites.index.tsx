@@ -4,6 +4,7 @@ import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useSites } from '@/lib/queries';
 import { relDate } from '@/lib/format';
 
@@ -13,17 +14,28 @@ function SitesPage() {
   const { data, isLoading, isError, refetch } = useSites();
 
   if (isLoading) return <Skeleton className="h-64 w-full" />;
-  if (isError || !data) return <ErrorBanner message="Failed to load sites" onRetry={() => refetch()} />;
+  if (isError || !data)
+    return <ErrorBanner message="Failed to load sites" onRetry={() => refetch()} />;
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Sites</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Sites</h1>
+        <Button asChild>
+          <Link to="/sites/new">Add site</Link>
+        </Button>
+      </div>
       {data.length === 0 ? (
         <EmptyState>No sites tracked yet.</EmptyState>
       ) : (
         <ul className="space-y-2">
           {data.map((s) => {
-            const lastFetched = s.pages.map((p) => p.last_fetched).filter(Boolean).sort().reverse()[0] ?? null;
+            const lastFetched =
+              s.pages
+                .map((p) => p.last_fetched)
+                .filter(Boolean)
+                .sort()
+                .reverse()[0] ?? null;
             return (
               <li key={s.id}>
                 <Link to="/sites/$id" params={{ id: String(s.id) }}>
