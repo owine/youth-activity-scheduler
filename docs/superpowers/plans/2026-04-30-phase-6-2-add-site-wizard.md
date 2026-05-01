@@ -1532,7 +1532,7 @@ Closes master §10 terminal criterion #1 ("User can add a site via the UI in <2 
 
 ## Master §10 terminal-criteria delta
 
-- **Closes #1** (Add Site UI in <2 min). After this PR: 8 of 8 v1 terminal criteria met.
+- **Closes criterion #1** (Add Site UI in <2 min). After this PR: 8 of 8 v1 terminal criteria met.
 - Criterion #4 (30-day observation) is now runnable end-to-end — kicks off Phase 9.
 EOF
 )"

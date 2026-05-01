@@ -1588,8 +1588,8 @@ Closes master §10 criterion #6 (UI for setting kid school hours that produce ma
 
 ## Master §10 terminal-criteria delta
 
-- Closes #6 (school-hours UI). Backend already shipped; this UI provides the criterion's "user can set" affordance.
-- Does NOT close #1 (Add Site wizard) — that's Phase 6-2.
+- Closes criterion #6 (school-hours UI). Backend already shipped; this UI provides the criterion's "user can set" affordance.
+- Does NOT close criterion #1 (Add Site wizard) — that's Phase 6-2.
 
 After this lands: 7 of 8 v1 terminal criteria met. Criterion #4 (30-day observation) becomes runnable as soon as #1 lands.
 EOF
