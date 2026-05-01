@@ -6,19 +6,22 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from yas.db.models._types import EnrollmentStatus
+from yas.web.routes.matches_schemas import OfferingSummary
+
 
 class EnrollmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kid_id: int
     offering_id: int
-    status: str = "interested"
+    status: EnrollmentStatus = EnrollmentStatus.interested
     enrolled_at: datetime | None = None
     notes: str | None = None
 
 
 class EnrollmentPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: str | None = None
+    status: EnrollmentStatus | None = None
     enrolled_at: datetime | None = None
     notes: str | None = None
 
@@ -28,7 +31,8 @@ class EnrollmentOut(BaseModel):
     id: int
     kid_id: int
     offering_id: int
-    status: str
+    status: EnrollmentStatus
     enrolled_at: datetime | None
     notes: str | None
     created_at: datetime
+    offering: OfferingSummary

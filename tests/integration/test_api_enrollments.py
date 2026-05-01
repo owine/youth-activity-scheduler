@@ -171,3 +171,30 @@ async def test_rejects_unknown_fields(client):
         json={"kid_id": 1, "offering_id": 1, "garbage": 1},
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_enrollment_includes_offering_summary(client):
+    """EnrollmentOut.offering populated from join (D2)."""
+    c, _ = client
+    # Create an enrollment for the seeded kid+offering.
+    r = await c.post(
+        "/api/enrollments",
+        json={"kid_id": 1, "offering_id": 1, "status": "interested"},
+    )
+    assert r.status_code == 201
+
+    # Fetch enrollments — verify offering field is populated.
+    r2 = await c.get("/api/enrollments?kid_id=1")
+    assert r2.status_code == 200
+    rows = r2.json()
+    assert len(rows) == 1
+    assert "offering" in rows[0]
+    offering = rows[0]["offering"]
+    assert offering["name"] == "Sat Soccer"
+    assert offering["site_name"] == "X"
+    assert offering["program_type"] == "soccer"
+    assert offering["days_of_week"] == ["sat"]
+    # Location is null on this offering (no location_id).
+    assert offering["location_lat"] is None
+    assert offering["location_lon"] is None
