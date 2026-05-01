@@ -208,7 +208,7 @@ export interface SmtpConfig {
   port: number;
   use_tls: boolean;
   username?: string;
-  password_env: string;
+  password_env?: string;
   from_addr: string;
   to_addrs: string[];
 }
