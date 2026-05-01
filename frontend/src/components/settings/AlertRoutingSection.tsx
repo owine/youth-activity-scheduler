@@ -71,6 +71,7 @@ export function AlertRoutingSection() {
                 <td className="border border-gray-200 px-4 py-2">
                   <input
                     type="checkbox"
+                    aria-label={`${row.type} enabled`}
                     checked={row.enabled}
                     onChange={(e) => handleEnabledToggle(row.type, e.target.checked)}
                     className="cursor-pointer"
@@ -85,6 +86,7 @@ export function AlertRoutingSection() {
                     <td key={`${row.type}-${ch}`} className="border border-gray-200 px-4 py-2">
                       <input
                         type="checkbox"
+                        aria-label={`${row.type} ${ch}`}
                         checked={isChecked}
                         disabled={!isConfigured}
                         onChange={() => handleChannelToggle(row, ch)}

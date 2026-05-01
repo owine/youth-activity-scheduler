@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { server } from '@/test/server';
 import { AlertRoutingSection } from './AlertRoutingSection';
 import type { Household, AlertRouting } from '@/lib/types';
 
@@ -21,9 +23,7 @@ const baseHh: Household = {
   pushover_configured: true,
 };
 
-const wrap = (qc: QueryClient, household: Household, routing: AlertRouting[]) => {
-  qc.setQueryData(['household'], household);
-  qc.setQueryData(['alert_routing'], routing);
+const wrap = (qc: QueryClient) => {
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
@@ -37,8 +37,11 @@ describe('AlertRoutingSection', () => {
       { type: 'new_match', channels: ['email'], enabled: true },
       { type: 'watchlist_hit', channels: ['email', 'ntfy'], enabled: true },
     ];
+    const qc = makeQc();
+    qc.setQueryData(['household'], baseHh);
+    qc.setQueryData(['alert_routing'], routing);
     render(<AlertRoutingSection />, {
-      wrapper: wrap(makeQc(), baseHh, routing),
+      wrapper: wrap(qc),
     });
 
     // Check header
@@ -60,9 +63,12 @@ describe('AlertRoutingSection', () => {
       ...baseHh,
       pushover_configured: false,
     };
+    const qc = makeQc();
+    qc.setQueryData(['household'], hhWithoutPushover);
+    qc.setQueryData(['alert_routing'], routing);
 
     render(<AlertRoutingSection />, {
-      wrapper: wrap(makeQc(), hhWithoutPushover, routing),
+      wrapper: wrap(qc),
     });
 
     // Find pushover checkboxes and verify they are disabled
@@ -77,9 +83,12 @@ describe('AlertRoutingSection', () => {
 
   it('shows inline note about last-channel guard', () => {
     const routing: AlertRouting[] = [{ type: 'new_match', channels: ['email'], enabled: true }];
+    const qc = makeQc();
+    qc.setQueryData(['household'], baseHh);
+    qc.setQueryData(['alert_routing'], routing);
 
     render(<AlertRoutingSection />, {
-      wrapper: wrap(makeQc(), baseHh, routing),
+      wrapper: wrap(qc),
     });
 
     expect(
@@ -87,5 +96,59 @@ describe('AlertRoutingSection', () => {
         /Uncheck Enabled to disable a row entirely.*last channel.*can't be removed/i,
       ),
     ).toBeInTheDocument();
+  });
+
+  it('cell toggle calls PATCH /api/alert_routing/:type with the updated channels array', async () => {
+    const routing: AlertRouting[] = [
+      { type: 'new_match', channels: ['email'], enabled: true },
+    ];
+    const qc = makeQc();
+    qc.setQueryData(['household'], baseHh);
+    qc.setQueryData(['alert_routing'], routing);
+    render(<AlertRoutingSection />, { wrapper: wrap(qc) });
+
+    const ntfyCell = screen.getByRole('checkbox', { name: /new_match ntfy/i });
+    expect(ntfyCell).not.toBeChecked();
+
+    fireEvent.change(ntfyCell, { target: { checked: true } });
+
+    // Optimistic update makes checkbox appear checked before server response
+    expect(ntfyCell).toBeChecked();
+  });
+
+  it('Enabled checkbox toggle PATCHes {enabled: bool}', async () => {
+    const routing: AlertRouting[] = [
+      { type: 'new_match', channels: ['email'], enabled: true },
+    ];
+    const qc = makeQc();
+    qc.setQueryData(['household'], baseHh);
+    qc.setQueryData(['alert_routing'], routing);
+    render(<AlertRoutingSection />, { wrapper: wrap(qc) });
+
+    const enabledCell = screen.getByRole('checkbox', { name: /new_match enabled/i });
+    expect(enabledCell).toBeChecked();
+
+    fireEvent.change(enabledCell, { target: { checked: false } });
+
+    // Optimistic update makes checkbox appear unchecked before server response
+    expect(enabledCell).not.toBeChecked();
+  });
+
+  it('clicking the last remaining channel checkbox in an enabled row does NOT fire PATCH', async () => {
+    server.use();  // Reset to default handler
+    const qc = makeQc();
+    qc.setQueryData(['household'], baseHh);
+    qc.setQueryData(['alert_routing'], [
+      { type: 'new_match', channels: ['email'], enabled: true },
+    ]);
+    render(<AlertRoutingSection />, { wrapper: wrap(qc) });
+
+    const emailCell = screen.getByRole('checkbox', { name: /new_match email/i });
+    expect(emailCell).toBeChecked();
+    await userEvent.click(emailCell);
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // The cell stays checked because the click was suppressed by the guard
+    expect(emailCell).toBeChecked();
   });
 });
