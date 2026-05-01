@@ -37,6 +37,47 @@ export interface OfferingSummary {
   site_name: string;
   registration_opens_at: string | null;
   muted_until: string | null;
+  // Added in Task 2:
+  location_lat: number | null;
+  location_lon: number | null;
+}
+
+// Phase 7-2 types
+export type SortKey = 'best_score' | 'soonest_start' | 'soonest_reg';
+
+export type ChipKind = 'watchlist' | 'top_match' | 'opens_this_week' | 'near_home' | 'in_interests';
+
+export interface Chip {
+  kind: ChipKind;
+  label: string; // emoji + text
+  className: string; // Tailwind classes
+}
+
+export interface OfferingRow {
+  offering: OfferingSummary;
+  matches: Match[]; // sorted by score desc
+}
+
+export type RegTiming = 'any' | 'opens_this_week' | 'open_now' | 'closed';
+
+export interface FilterState {
+  // Primary
+  selectedKidIds: number[];
+  minScore: number;
+  sort: SortKey;
+  // Secondary
+  hideMuted: boolean;
+  programTypes: string[];
+  days: ('mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun')[];
+  regTiming: RegTiming;
+  timeOfDayMin: string | null; // 'HH:MM'
+  timeOfDayMax: string | null;
+  maxDistanceMi: number | null;
+  ageMin: number | null;
+  ageMax: number | null;
+  watchlistOnly: boolean;
+  // Persistent UI
+  moreFiltersOpen: boolean;
 }
 
 export interface Match {
