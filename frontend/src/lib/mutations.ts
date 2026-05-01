@@ -11,6 +11,13 @@ import type {
   DiscoveryResult,
   Page,
   PageKind,
+  Household,
+  AlertRouting,
+  SmtpConfig,
+  ForwardEmailConfig,
+  NtfyConfig,
+  PushoverConfig,
+  TestSendResult,
 } from './types';
 
 const keyIncludesClosed = (key: QueryKey): boolean => key.length >= 4 && key[3] === 'with-closed';
@@ -515,5 +522,107 @@ export function useAddPage() {
     onSettled: async (_d, _e, { siteId }) => {
       await qc.invalidateQueries({ queryKey: ['sites', siteId] });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7-1 Task 2 — Household, Alert Routing, and Test Notifier mutations
+// ---------------------------------------------------------------------------
+
+type HouseholdPatch = Partial<{
+  home_address: string | null;
+  home_location_name: string | null;
+  default_max_distance_mi: number | null;
+  digest_time: string;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  daily_llm_cost_cap_usd: number;
+  smtp_config_json: SmtpConfig | ForwardEmailConfig | null;
+  ntfy_config_json: NtfyConfig | null;
+  pushover_config_json: PushoverConfig | null;
+}>;
+
+export function useUpdateHousehold() {
+  const qc = useQueryClient();
+  type Ctx = { snapshot: Household | undefined };
+  return useMutation<Household, Error, HouseholdPatch, Ctx>({
+    mutationFn: (patch) => api.patch<Household>('/api/household', patch),
+    onMutate: async (patch) => {
+      await qc.cancelQueries({ queryKey: ['household'] });
+      const snapshot = qc.getQueryData<Household>(['household']);
+      if (snapshot) {
+        // Apply only fields known to be mirrored on Household (skip *_config_json which lives on the row but isn't on HouseholdOut).
+        const merged: Household = { ...snapshot };
+        const safeKeys = [
+          'home_address',
+          'home_location_name',
+          'default_max_distance_mi',
+          'digest_time',
+          'quiet_hours_start',
+          'quiet_hours_end',
+          'daily_llm_cost_cap_usd',
+        ] as const;
+        for (const key of safeKeys) {
+          if (key in patch) {
+            merged[key] = patch[key] as never;
+          }
+        }
+        qc.setQueryData<Household>(['household'], merged);
+      }
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(['household'], ctx.snapshot);
+    },
+    onSettled: async (_d, _e, patch) => {
+      const promises: Promise<unknown>[] = [qc.invalidateQueries({ queryKey: ['household'] })];
+      // If a *_config_json was changed (especially set to null), routing matrix may change too.
+      const touchesChannels =
+        'smtp_config_json' in patch ||
+        'ntfy_config_json' in patch ||
+        'pushover_config_json' in patch;
+      if (touchesChannels) {
+        promises.push(qc.invalidateQueries({ queryKey: ['alert_routing'] }));
+      }
+      await Promise.all(promises);
+    },
+  });
+}
+
+interface UpdateAlertRoutingInput {
+  type: string;
+  patch: { channels?: string[]; enabled?: boolean };
+}
+
+export function useUpdateAlertRouting() {
+  const qc = useQueryClient();
+  type Ctx = { snapshot: AlertRouting[] | undefined };
+  return useMutation<AlertRouting, Error, UpdateAlertRoutingInput, Ctx>({
+    mutationFn: ({ type, patch }) => api.patch<AlertRouting>(`/api/alert_routing/${type}`, patch),
+    onMutate: async ({ type, patch }) => {
+      await qc.cancelQueries({ queryKey: ['alert_routing'] });
+      const snapshot = qc.getQueryData<AlertRouting[]>(['alert_routing']);
+      if (snapshot) {
+        qc.setQueryData<AlertRouting[]>(
+          ['alert_routing'],
+          snapshot.map((r) => (r.type === type ? { ...r, ...patch } : r)),
+        );
+      }
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(['alert_routing'], ctx.snapshot);
+    },
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: ['alert_routing'] });
+    },
+  });
+}
+
+type TestNotifierChannel = 'email' | 'ntfy' | 'pushover';
+
+export function useTestNotifier() {
+  return useMutation<TestSendResult, Error, { channel: TestNotifierChannel }>({
+    mutationFn: ({ channel }) => api.post<TestSendResult>(`/api/notifiers/${channel}/test`, {}),
   });
 }

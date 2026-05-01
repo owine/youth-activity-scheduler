@@ -18,6 +18,8 @@ export const handlers = [
       home_location_id: null,
       home_address: null,
       home_location_name: null,
+      home_lat: null,
+      home_lon: null,
       default_max_distance_mi: null,
       digest_time: '07:00',
       quiet_hours_start: null,
@@ -276,4 +278,30 @@ export const handlers = [
       { status: 201 },
     );
   }),
+  http.patch('/api/household', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: 1,
+      home_location_id: null,
+      home_address: null,
+      home_location_name: null,
+      home_lat: null,
+      home_lon: null,
+      default_max_distance_mi: null,
+      digest_time: '07:00',
+      quiet_hours_start: null,
+      quiet_hours_end: null,
+      daily_llm_cost_cap_usd: 1.0,
+      ...body,
+    });
+  }),
+  http.patch('/api/alert_routing/:type', async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      type: 'new_match',
+      channels: body.channels ?? [],
+      enabled: body.enabled !== undefined ? body.enabled : true,
+    });
+  }),
+  http.post('/api/notifiers/:channel/test', () => HttpResponse.json({ ok: true, detail: 'sent' })),
 ];
