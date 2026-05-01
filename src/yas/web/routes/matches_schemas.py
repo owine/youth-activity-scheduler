@@ -26,6 +26,8 @@ class OfferingSummary(BaseModel):
     registration_opens_at: datetime | None = None
     site_name: str
     muted_until: datetime | None = None
+    location_lat: float | None = None
+    location_lon: float | None = None
 
 
 class MatchOut(BaseModel):

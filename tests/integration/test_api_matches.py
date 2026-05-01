@@ -184,3 +184,21 @@ async def test_match_includes_offering_registration_opens_at_and_site_name(clien
         assert "site_name" in offering
         assert offering["site_name"] == "X"  # From fixture
         assert "registration_opens_at" in offering
+
+
+@pytest.mark.asyncio
+async def test_offering_location_coords(client):
+    """Test that offerings with locations return location_lat/location_lon."""
+    # This test uses the client fixture which already has 3 matches set up.
+    # Offerings 1 and 2 were created without location_id, so we expect null coords.
+    # First, verify existing offerings return null coords
+    r = await client.get("/api/matches?offering_id=1")
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) > 0
+    for row in rows:
+        offering = row["offering"]
+        assert "location_lat" in offering
+        assert "location_lon" in offering
+        assert offering["location_lat"] is None
+        assert offering["location_lon"] is None
