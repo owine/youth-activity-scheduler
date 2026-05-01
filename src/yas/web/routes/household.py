@@ -53,6 +53,9 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
         quiet_hours_start=hh.quiet_hours_start,
         quiet_hours_end=hh.quiet_hours_end,
         daily_llm_cost_cap_usd=hh.daily_llm_cost_cap_usd,
+        email_configured=hh.smtp_config_json is not None,
+        ntfy_configured=hh.ntfy_config_json is not None,
+        pushover_configured=hh.pushover_config_json is not None,
     )
 
 

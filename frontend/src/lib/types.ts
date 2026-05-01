@@ -199,6 +199,9 @@ export interface Household {
   quiet_hours_start: string | null;
   quiet_hours_end: string | null;
   daily_llm_cost_cap_usd: number;
+  email_configured: boolean;
+  ntfy_configured: boolean;
+  pushover_configured: boolean;
 }
 
 // Channel configuration types for Phase 7-1 Settings

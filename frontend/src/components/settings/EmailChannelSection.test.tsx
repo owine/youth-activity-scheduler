@@ -19,6 +19,9 @@ const baseHh: Household = {
   quiet_hours_start: null,
   quiet_hours_end: null,
   daily_llm_cost_cap_usd: 1.0,
+  email_configured: false,
+  ntfy_configured: false,
+  pushover_configured: false,
 };
 
 const wrap = (qc: QueryClient, household: Household) => {

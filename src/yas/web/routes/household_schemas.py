@@ -18,6 +18,9 @@ class HouseholdOut(BaseModel):
     quiet_hours_start: str | None
     quiet_hours_end: str | None
     daily_llm_cost_cap_usd: float
+    email_configured: bool
+    ntfy_configured: bool
+    pushover_configured: bool
 
 
 class HouseholdPatch(BaseModel):
