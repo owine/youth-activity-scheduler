@@ -19,6 +19,7 @@ import { Route as SitesIdRouteImport } from './routes/sites.$id'
 import { Route as KidsNewRouteImport } from './routes/kids.new'
 import { Route as KidsIdWatchlistRouteImport } from './routes/kids.$id.watchlist'
 import { Route as KidsIdMatchesRouteImport } from './routes/kids.$id.matches'
+import { Route as KidsIdEnrollmentsRouteImport } from './routes/kids.$id.enrollments'
 import { Route as KidsIdEditRouteImport } from './routes/kids.$id.edit'
 import { Route as KidsIdCalendarRouteImport } from './routes/kids.$id.calendar'
 
@@ -72,6 +73,11 @@ const KidsIdMatchesRoute = KidsIdMatchesRouteImport.update({
   path: '/kids/$id/matches',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KidsIdEnrollmentsRoute = KidsIdEnrollmentsRouteImport.update({
+  id: '/kids/$id/enrollments',
+  path: '/kids/$id/enrollments',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const KidsIdEditRoute = KidsIdEditRouteImport.update({
   id: '/kids/$id/edit',
   path: '/kids/$id/edit',
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/sites/': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/edit': typeof KidsIdEditRoute
+  '/kids/$id/enrollments': typeof KidsIdEnrollmentsRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/sites': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/edit': typeof KidsIdEditRoute
+  '/kids/$id/enrollments': typeof KidsIdEnrollmentsRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/sites/': typeof SitesIndexRoute
   '/kids/$id/calendar': typeof KidsIdCalendarRoute
   '/kids/$id/edit': typeof KidsIdEditRoute
+  '/kids/$id/enrollments': typeof KidsIdEnrollmentsRoute
   '/kids/$id/matches': typeof KidsIdMatchesRoute
   '/kids/$id/watchlist': typeof KidsIdWatchlistRoute
 }
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/sites/'
     | '/kids/$id/calendar'
     | '/kids/$id/edit'
+    | '/kids/$id/enrollments'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesByTo: FileRoutesByTo
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/kids/$id/calendar'
     | '/kids/$id/edit'
+    | '/kids/$id/enrollments'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   id:
@@ -167,6 +178,7 @@ export interface FileRouteTypes {
     | '/sites/'
     | '/kids/$id/calendar'
     | '/kids/$id/edit'
+    | '/kids/$id/enrollments'
     | '/kids/$id/matches'
     | '/kids/$id/watchlist'
   fileRoutesById: FileRoutesById
@@ -182,6 +194,7 @@ export interface RootRouteChildren {
   SitesIndexRoute: typeof SitesIndexRoute
   KidsIdCalendarRoute: typeof KidsIdCalendarRoute
   KidsIdEditRoute: typeof KidsIdEditRoute
+  KidsIdEnrollmentsRoute: typeof KidsIdEnrollmentsRoute
   KidsIdMatchesRoute: typeof KidsIdMatchesRoute
   KidsIdWatchlistRoute: typeof KidsIdWatchlistRoute
 }
@@ -258,6 +271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KidsIdMatchesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kids/$id/enrollments': {
+      id: '/kids/$id/enrollments'
+      path: '/kids/$id/enrollments'
+      fullPath: '/kids/$id/enrollments'
+      preLoaderRoute: typeof KidsIdEnrollmentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/kids/$id/edit': {
       id: '/kids/$id/edit'
       path: '/kids/$id/edit'
@@ -286,6 +306,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitesIndexRoute: SitesIndexRoute,
   KidsIdCalendarRoute: KidsIdCalendarRoute,
   KidsIdEditRoute: KidsIdEditRoute,
+  KidsIdEnrollmentsRoute: KidsIdEnrollmentsRoute,
   KidsIdMatchesRoute: KidsIdMatchesRoute,
   KidsIdWatchlistRoute: KidsIdWatchlistRoute,
 }

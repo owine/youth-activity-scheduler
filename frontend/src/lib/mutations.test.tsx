@@ -24,8 +24,16 @@ import {
   useUpdateHousehold,
   useUpdateAlertRouting,
   useTestNotifier,
+  useUpdateEnrollment,
 } from './mutations';
-import type { InboxSummary, KidCalendarResponse, KidDetail, WatchlistEntry, Site } from './types';
+import type {
+  Enrollment,
+  InboxSummary,
+  KidCalendarResponse,
+  KidDetail,
+  WatchlistEntry,
+  Site,
+} from './types';
 
 function makeWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -973,5 +981,104 @@ describe('useTestNotifier', () => {
     const r = await result.current.mutateAsync({ channel: 'pushover' });
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/channel init failed/);
+  });
+});
+
+describe('useUpdateEnrollment', () => {
+  it('PATCHes status and applies optimistic cache update', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData<Enrollment[]>(
+      ['kids', 1, 'enrollments'],
+      [
+        {
+          id: 7,
+          kid_id: 1,
+          offering_id: 1,
+          status: 'interested',
+          enrolled_at: null,
+          notes: null,
+          created_at: '2026-05-01T00:00:00Z',
+          offering: {
+            id: 1,
+            name: 'X',
+            program_type: 'soccer',
+            age_min: null,
+            age_max: null,
+            start_date: null,
+            end_date: null,
+            days_of_week: [],
+            time_start: null,
+            time_end: null,
+            price_cents: null,
+            registration_url: null,
+            site_id: 1,
+            registration_opens_at: null,
+            site_name: 'S',
+            muted_until: null,
+            location_lat: null,
+            location_lon: null,
+          },
+        },
+      ],
+    );
+    const { result } = renderHook(() => useUpdateEnrollment(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({
+        enrollmentId: 7,
+        kidId: 1,
+        patch: { status: 'enrolled' },
+      });
+    });
+    const updated = qc.getQueryData<Enrollment[]>(['kids', 1, 'enrollments']);
+    expect(updated?.[0]?.status).toBe('enrolled');
+  });
+
+  it('rolls back optimistic update on error', async () => {
+    server.use(
+      http.patch('/api/enrollments/:id', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    qc.setQueryData<Enrollment[]>(
+      ['kids', 1, 'enrollments'],
+      [
+        {
+          id: 7,
+          kid_id: 1,
+          offering_id: 1,
+          status: 'interested',
+          enrolled_at: null,
+          notes: null,
+          created_at: '2026-05-01T00:00:00Z',
+          offering: {
+            id: 1,
+            name: 'X',
+            program_type: 'soccer',
+            age_min: null,
+            age_max: null,
+            start_date: null,
+            end_date: null,
+            days_of_week: [],
+            time_start: null,
+            time_end: null,
+            price_cents: null,
+            registration_url: null,
+            site_id: 1,
+            registration_opens_at: null,
+            site_name: 'S',
+            muted_until: null,
+            location_lat: null,
+            location_lon: null,
+          },
+        },
+      ],
+    );
+    const { result } = renderHook(() => useUpdateEnrollment(), { wrapper: makeWrapper(qc) });
+    await expect(
+      result.current.mutateAsync({ enrollmentId: 7, kidId: 1, patch: { status: 'enrolled' } }),
+    ).rejects.toThrow();
+    const after = qc.getQueryData<Enrollment[]>(['kids', 1, 'enrollments']);
+    expect(after?.[0]?.status).toBe('interested'); // rolled back
   });
 });

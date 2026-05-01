@@ -2,6 +2,8 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 import { api } from './api';
 import type {
   CloseReason,
+  Enrollment,
+  EnrollmentStatus,
   InboxAlert,
   InboxSummary,
   KidCalendarResponse,
@@ -624,5 +626,50 @@ type TestNotifierChannel = 'email' | 'ntfy' | 'pushover';
 export function useTestNotifier() {
   return useMutation<TestSendResult, Error, { channel: TestNotifierChannel }>({
     mutationFn: ({ channel }) => api.post<TestSendResult>(`/api/notifiers/${channel}/test`, {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7-3 Task 2 — Enrollment types + hooks
+// ---------------------------------------------------------------------------
+
+interface UpdateEnrollmentInput {
+  enrollmentId: number;
+  kidId: number;
+  patch: {
+    status?: EnrollmentStatus;
+    notes?: string | null;
+    enrolled_at?: string | null;
+  };
+}
+
+export function useUpdateEnrollment() {
+  const qc = useQueryClient();
+  type Ctx = { snapshot: Enrollment[] | undefined };
+  return useMutation<Enrollment, Error, UpdateEnrollmentInput, Ctx>({
+    mutationFn: ({ enrollmentId, patch }) =>
+      api.patch<Enrollment>(`/api/enrollments/${enrollmentId}`, patch),
+    onMutate: async ({ enrollmentId, kidId, patch }) => {
+      const key = ['kids', kidId, 'enrollments'];
+      await qc.cancelQueries({ queryKey: key });
+      const snapshot = qc.getQueryData<Enrollment[]>(key);
+      if (snapshot) {
+        qc.setQueryData<Enrollment[]>(
+          key,
+          snapshot.map((e) => (e.id === enrollmentId ? { ...e, ...patch } : e)),
+        );
+      }
+      return { snapshot };
+    },
+    onError: (_err, { kidId }, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(['kids', kidId, 'enrollments'], ctx.snapshot);
+    },
+    onSettled: async (_d, _e, { kidId }) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'enrollments'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] }),
+        qc.invalidateQueries({ queryKey: ['matches'] }),
+      ]);
+    },
   });
 }

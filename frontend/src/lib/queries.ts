@@ -3,6 +3,7 @@ import { api } from './api';
 import type {
   AlertRouting,
   CrawlRun,
+  Enrollment,
   Household,
   InboxSummary,
   KidBrief,
@@ -120,5 +121,13 @@ export function useKidCalendar({
         `/api/kids/${kidId}/calendar?from=${from}&to=${to}${includeMatches ? '&include_matches=true' : ''}`,
       ),
     enabled: Number.isFinite(kidId) && !!from && !!to,
+  });
+}
+
+export function useKidEnrollments(kidId: number) {
+  return useQuery({
+    queryKey: ['kids', kidId, 'enrollments'],
+    queryFn: () => api.get<Enrollment[]>(`/api/enrollments?kid_id=${kidId}`),
+    enabled: Number.isFinite(kidId) && kidId > 0,
   });
 }

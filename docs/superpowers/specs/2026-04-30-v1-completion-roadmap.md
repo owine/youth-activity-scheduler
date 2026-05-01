@@ -65,7 +65,7 @@ Each deviation was individually defensible (close-the-loop UX wins). The cumulat
 | 4 | Kids: list + detail editing | ✅ list + Add/Edit form (Phase 6-1) |
 | 5 | Sites: list + detail + Add Site flow | ✅ list/detail + Crawl-now/Pause (Phase 6-4) + Add Site wizard (Phase 6-2) |
 | 6 | Watchlist: cross-kid + mutations | ✅ per-kid mutations (Phase 6-3); cross-kid view deferred (low value for single-household; Phase 8 if needed) |
-| 7 | Enrollments: list, status transitions | ❌ → Phase 7-3 |
+| 7 | Enrollments: list, status transitions | ✅ Phase 7-3 (2026-05-01) |
 | 8 | Alerts: outbox, resend, digest preview | ⚠️ inbox ✓; outbox/preview → Phase 7-4 |
 | 9 | Settings | ✅ Phase 7-1 (2026-05-01) |
 
