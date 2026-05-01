@@ -250,7 +250,7 @@ const manualEntrySchema = z.object({
 
 **Frontend test count target:** ~24 new tests, raising 138 → ~162.
 
-### `SiteWizard.test.tsx` (~9 tests)
+### `SiteWizard.test.tsx` (~11 tests)
 
 1. Renders name + base_url inputs and a disabled "Discover pages" button.
 2. Discover button enables when name + base_url are valid.
@@ -311,7 +311,7 @@ After all tests pass and the branch is ready:
 - ✅ Pre-discover dirty cancel triggers ConfirmDialog; post-discover cancel navigates immediately.
 - ✅ PDF candidates from discover are filtered out of the candidate list (per D8).
 - ✅ Post-discover, name + base_url are read-only; "Edit URL & re-discover" link resets state (per D9).
-- ✅ Frontend gates clean: `npm run typecheck`, `npm run lint`, `npm run test` (~159 tests).
+- ✅ Frontend gates clean: `npm run typecheck`, `npm run lint`, `npm run test` (~162 tests).
 - ✅ Manual smoke: end-to-end "add a real site" flow completes in < 2 minutes (closes master §10 criterion #1).
 
 ## Risks
