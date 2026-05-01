@@ -172,7 +172,7 @@ If this turns out to be missed, a future polish adds `?closed=open|closed|any`.
 - **Digest preview loading:** `<Skeleton />`.
 - **Digest preview error:** `<ErrorBanner ... />`.
 - **Digest preview when LLM unavailable:** backend's template fallback in `llm_summary.py` ensures the endpoint never errors on LLM unavailability. Frontend has no special branch.
-- **Digest preview when no recent activity:** backend's `build_digest` produces an empty payload; renderer outputs HTML with empty-state copy. No special frontend branch.
+- **Digest preview when no recent activity:** backend's `gather_digest_payload` produces an empty payload; renderer outputs HTML with empty-state copy. No special frontend branch.
 
 ### D10: Resend success feedback = inline pill, not a global toast
 
@@ -244,7 +244,7 @@ export function useResendAlert() {
 - `tests/integration/test_api_alerts.py` — extend with one assertion for `summary_text`.
 
 **Create — backend:**
-- `src/yas/web/routes/digest_preview.py` — `GET /api/digest/preview?kid_id=N` calls `build_digest()` + `compose_top_line()` + `render_digest()`.
+- `src/yas/web/routes/digest_preview.py` — `GET /api/digest/preview?kid_id=N` calls `gather_digest_payload()` + `generate_top_line()` (with `llm=None` for the v1 template fallback) + `render_digest()` (returns `(plain, html)`).
 - `src/yas/web/routes/digest_preview_schemas.py` — `DigestPreviewOut {html: str, plain: str, top_line: str}`.
 - `tests/integration/test_api_digest_preview.py` — ~3 tests.
 
