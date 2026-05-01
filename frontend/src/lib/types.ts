@@ -315,3 +315,17 @@ export interface KidCalendarResponse {
   to: string;
   events: CalendarEvent[];
 }
+
+// Phase 7-3 enrollments.
+export type EnrollmentStatus = 'interested' | 'enrolled' | 'waitlisted' | 'completed' | 'cancelled';
+
+export interface Enrollment {
+  id: number;
+  kid_id: number;
+  offering_id: number;
+  status: EnrollmentStatus;
+  enrolled_at: string | null; // ISO datetime
+  notes: string | null;
+  created_at: string;
+  offering: OfferingSummary;
+}

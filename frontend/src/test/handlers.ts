@@ -11,6 +11,7 @@ export const inboxSummaryFixture = {
 export const handlers = [
   http.get('/api/kids', () => HttpResponse.json([])),
   http.get('/api/matches', () => HttpResponse.json([])),
+  http.get('/api/enrollments', () => HttpResponse.json([])),
   http.get('/api/inbox/summary', () => HttpResponse.json(inboxSummaryFixture)),
   http.get('/api/sites', () => HttpResponse.json([])),
   http.get('/api/household', () =>
@@ -94,15 +95,35 @@ export const handlers = [
     });
   }),
   http.patch('/api/enrollments/:id', async ({ params, request }) => {
-    const body = (await request.json()) as { status?: string };
+    const body = (await request.json()) as Record<string, unknown>;
     return HttpResponse.json({
       id: Number(params.id),
       kid_id: 1,
       offering_id: 1,
-      status: body.status ?? 'cancelled',
-      enrolled_at: null,
-      notes: null,
+      status: body.status ?? 'interested',
+      enrolled_at: body.enrolled_at ?? null,
+      notes: body.notes ?? null,
       created_at: '2026-04-29T12:00:00Z',
+      offering: {
+        id: 1,
+        name: 'X',
+        program_type: 'soccer',
+        age_min: null,
+        age_max: null,
+        start_date: null,
+        end_date: null,
+        days_of_week: [],
+        time_start: null,
+        time_end: null,
+        price_cents: null,
+        registration_url: null,
+        site_id: 1,
+        registration_opens_at: null,
+        site_name: 'S',
+        muted_until: null,
+        location_lat: null,
+        location_lon: null,
+      },
     });
   }),
   http.delete('/api/unavailability/:id', () => new HttpResponse(null, { status: 204 })),
