@@ -4,16 +4,25 @@ vi.mock('@tanstack/react-router', async () => {
     await vi.importActual<typeof import('@tanstack/react-router')>('@tanstack/react-router');
   return {
     ...actual,
-    Link: ({ to, params, children, ...props }: Record<string, unknown>) => {
+    Link: ({
+      to,
+      params,
+      children,
+      ...props
+    }: {
+      to: string;
+      params?: Record<string, string>;
+      children?: React.ReactNode;
+    } & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, 'href'>) => {
       // Build href from route and params
-      let href = to as string;
+      let href = to;
       if (params && typeof params === 'object') {
         Object.entries(params).forEach(([key, value]) => {
           href = href.replace(`$${key}`, String(value));
         });
       }
       return (
-        <a href={href} {...(props as React.AnchorHTMLAttributes<HTMLAnchorElement>)}>
+        <a href={href} {...props}>
           {children}
         </a>
       );
@@ -131,30 +140,29 @@ describe('EnrollmentRow', () => {
   });
 
   it('blocks calendar pill rendered when status=enrolled, not when status=cancelled', () => {
-    const qc = new QueryClient();
-
     // Test enrolled status - pill should render
     const enrolledEnrollment = makeEnrollment({ status: 'enrolled' });
-    const { container: c1, unmount } = renderWithQueryClient(
+    const { unmount: unmount1 } = renderWithQueryClient(
       <EnrollmentRow
         enrollment={enrolledEnrollment}
         kidId={1}
         isPending={false}
         onEdit={() => {}}
       />,
-      qc,
+      new QueryClient(),
     );
 
-    // Check if Link element is in the DOM (by its aria-label or text content)
-    // The Mock Link should have rendered the aria-label attribute
-    const hasLinkElement = c1.querySelector('[aria-label*="block on calendar"]') !== null;
-    expect(hasLinkElement || c1.innerHTML.includes('Blocks calendar')).toBe(true);
+    // Verify the link renders with correct aria-label and text
+    const link = screen.getByRole('link', { name: /View block on calendar/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveTextContent('Blocks calendar');
 
-    unmount();
+    // Clean up before second render
+    unmount1();
 
     // Test cancelled status - pill should not render
     const cancelledEnrollment = makeEnrollment({ status: 'cancelled' });
-    const { container: c2 } = renderWithQueryClient(
+    renderWithQueryClient(
       <EnrollmentRow
         enrollment={cancelledEnrollment}
         kidId={1}
@@ -164,28 +172,23 @@ describe('EnrollmentRow', () => {
       new QueryClient(),
     );
 
-    const noLinkElement =
-      c2.querySelector('[aria-label*="block on calendar"]') === null &&
-      !c2.innerHTML.includes('Blocks calendar');
-    expect(noLinkElement).toBe(true);
+    // Verify the link does not render
+    expect(screen.queryByRole('link', { name: /View block on calendar/i })).toBeNull();
   });
 
   it('blocks calendar pill uses Link with correct target URL', () => {
-    // This test verifies the component logic for Link configuration
-    const enrollments = [
-      makeEnrollment({ status: 'enrolled', id: 1 }),
-      makeEnrollment({ status: 'enrolled', id: 2 }),
-    ];
+    // Test that the rendered <a> element has the correct href attribute
+    const qc = new QueryClient();
+    const kidId = 42;
+    const enrollment = makeEnrollment({ status: 'enrolled' });
 
-    enrollments.forEach((_enrollment, idx) => {
-      const kidId = idx + 1;
-      const expectedHref = `/kids/${kidId}/calendar`;
+    renderWithQueryClient(
+      <EnrollmentRow enrollment={enrollment} kidId={kidId} isPending={false} onEdit={() => {}} />,
+      qc,
+    );
 
-      // The component should pass to="/kids/$id/calendar" params={{ id: String(kidId) }}
-      // which resolves to /kids/{kidId}/calendar
-      expect(String(kidId)).toBeDefined();
-      expect(expectedHref).toBe(`/kids/${kidId}/calendar`);
-    });
+    const link = screen.getByRole('link', { name: /View block on calendar/i });
+    expect(link.getAttribute('href')).toBe(`/kids/${kidId}/calendar`);
   });
 
   it('Edit button click invokes onEdit callback', async () => {
