@@ -145,12 +145,14 @@ http.post('/api/sites/:id/pages', async ({ request }) => {
 
 ### Step 3: Write failing tests for `useCreateSite`
 
-- [ ] **Edit `frontend/src/lib/mutations.test.tsx`**: append a new describe block. Use the existing test setup (look at the existing `useCreateKid` tests for the exact pattern — same `wrapper`, same `QueryClient` factory).
+- [ ] **Edit `frontend/src/lib/mutations.test.tsx`**: append a new describe block.
+
+**The existing file already exports a `makeWrapper(qc)` helper (around line 24) but inlines `new QueryClient(...)` per test.** Match that exact pattern — do NOT introduce a `makeQc()` factory. Top-level imports already include `QueryClient`, `QueryClientProvider`, `server`, `http`, `HttpResponse` — verify before adding.
 
 ```tsx
 describe('useCreateSite', () => {
   it('POSTs name + base_url and returns the created Site', async () => {
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useCreateSite(), { wrapper: makeWrapper(qc) });
     const created = await result.current.mutateAsync({
       name: 'TestSite',
@@ -164,7 +166,7 @@ describe('useCreateSite', () => {
     server.use(
       http.post('/api/sites', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
     );
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useCreateSite(), { wrapper: makeWrapper(qc) });
     await expect(
       result.current.mutateAsync({ name: 'x', base_url: 'https://x' }),
@@ -220,7 +222,7 @@ describe('useDiscoverPages', () => {
         }),
       ),
     );
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useDiscoverPages(), { wrapper: makeWrapper(qc) });
     const r = await result.current.mutateAsync({ siteId: 42 });
     expect(r.candidates).toHaveLength(1);
@@ -233,7 +235,7 @@ describe('useDiscoverPages', () => {
         HttpResponse.json({ detail: 'llm_error: timeout' }, { status: 502 }),
       ),
     );
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useDiscoverPages(), { wrapper: makeWrapper(qc) });
     await expect(result.current.mutateAsync({ siteId: 42 })).rejects.toThrow();
   });
@@ -275,7 +277,7 @@ describe('useAddPage', () => {
         );
       }),
     );
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useAddPage(), { wrapper: makeWrapper(qc) });
     await result.current.mutateAsync({ siteId: 42, url: 'https://x.com/sched', kind: 'schedule' });
     expect(captured).toMatchObject({ url: 'https://x.com/sched', kind: 'schedule' });
@@ -287,7 +289,7 @@ describe('useAddPage', () => {
         HttpResponse.json({ detail: 'invalid kind' }, { status: 422 }),
       ),
     );
-    const qc = makeQc();
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useAddPage(), { wrapper: makeWrapper(qc) });
     await expect(
       result.current.mutateAsync({ siteId: 42, url: 'https://x', kind: 'schedule' }),
@@ -603,17 +605,22 @@ const make = (overrides: Partial<Candidate>): Candidate => ({
 });
 
 describe('CandidateList', () => {
-  it('sorts candidates by score descending', () => {
+  it('sorts candidates by score descending across high+low sections after disclosure expand', async () => {
     const cands = [
       make({ url: 'https://a', score: 0.5, title: 'A' }),
       make({ url: 'https://b', score: 0.9, title: 'B' }),
       make({ url: 'https://c', score: 0.3, title: 'C' }),
+      make({ url: 'https://d', score: 0.85, title: 'D' }),
     ];
     render(<CandidateList candidates={cands} selectedUrls={new Set()} onChange={vi.fn()} />);
-    // Show all (expand the disclosure if needed) — only B is high-confidence here
-    const titles = screen.getAllByRole('listitem').map((li) => within(li).getByText(/^[A-C]$/).textContent);
-    // High-confidence section first (B), then low (A then C by score)
-    expect(titles).toEqual(['B']); // initially only B visible
+    // Initially only high-confidence (>=0.7) visible: B (0.9), D (0.85). Sorted desc.
+    const visibleHigh = screen.getAllByRole('checkbox').map((cb) => cb.id.replace('cand-', ''));
+    expect(visibleHigh).toEqual(['https://b', 'https://d']);
+    // Expand disclosure
+    await userEvent.click(screen.getByRole('button', { name: /show 2 more/i }));
+    const allTitles = screen.getAllByRole('checkbox').map((cb) => cb.id.replace('cand-', ''));
+    // After expand: low section appended (A 0.5, then C 0.3 — sorted desc within low)
+    expect(allTitles).toEqual(['https://b', 'https://d', 'https://a', 'https://c']);
   });
 
   it('auto-checks candidates with score >= 0.7 and shows their reason', () => {
@@ -793,7 +800,7 @@ import { http, HttpResponse } from 'msw';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { server } from '@/test/setup';
+import { server } from '@/test/server';
 import { SiteWizard } from './SiteWizard';
 
 const navigateMock = vi.fn();
@@ -1023,15 +1030,14 @@ describe('SiteWizard', () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it('dirty cancel before discover shows ConfirmDialog; clean cancel doesnt', async () => {
+  it('clean cancel before discover navigates without ConfirmDialog', async () => {
     render(<SiteWizard />, { wrapper: makeWrapper(makeQc()) });
-    // Clean cancel: click Cancel without typing
     await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(navigateMock).toHaveBeenCalled();
-    navigateMock.mockReset();
+  });
 
-    // Dirty cancel: type something then cancel
+  it('dirty cancel before discover shows ConfirmDialog', async () => {
     render(<SiteWizard />, { wrapper: makeWrapper(makeQc()) });
     await userEvent.type(screen.getByLabelText(/name/i), 'dirty');
     await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
@@ -1040,7 +1046,7 @@ describe('SiteWizard', () => {
 });
 ```
 
-(11 tests total — matches the spec target.)
+(12 tests total — splitting clean/dirty cancel into two `it()` blocks bumps the count by one above the spec's ~11; that's fine.)
 
 ### Step 2: Run tests — confirm fail
 
@@ -1376,7 +1382,7 @@ return (
 );
 ```
 
-(Add `import { Button } from '@/components/ui/button';` to the existing imports if not already present.)
+(The existing imports at the top of the file already include `Link` from `@tanstack/react-router`. Verify `Button` is imported from `@/components/ui/button` — add the import if not already present.)
 
 ### Step 3: Regenerate routeTree
 
@@ -1480,7 +1486,20 @@ print('cleaned')
 
 Then `pkill -f "yas api"; pkill -f "vite"`.
 
-### Step 3: Push + PR
+### Step 3: Update v1 completion roadmap doc
+
+Edit `docs/superpowers/specs/2026-04-30-v1-completion-roadmap.md` to reflect that criterion #1 is now closed and all 8 v1 criteria are met. Search the file for `criterion #1` and the criteria table; flip its status from ❌/Phase-6-2 to ✅. Add a brief "Phase 6-2 closed YYYY-MM-DD" note in whatever changelog section the doc has. Commit:
+
+```bash
+git add docs/superpowers/specs/2026-04-30-v1-completion-roadmap.md
+git commit -m "docs(roadmap): mark criterion #1 closed (Phase 6-2)
+
+After this PR, all 8 v1 terminal criteria are met. Criterion #4
+(30-day observation) becomes runnable end-to-end."
+git cat-file commit HEAD | grep -q '^gpgsig ' && echo signed
+```
+
+### Step 4: Push + PR
 
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
