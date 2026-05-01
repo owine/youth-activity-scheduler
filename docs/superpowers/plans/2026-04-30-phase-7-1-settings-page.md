@@ -28,7 +28,7 @@
 **Create — backend:**
 - `src/yas/web/routes/notifier_test.py` — single `POST /api/notifiers/{channel}/test` route.
 - `src/yas/web/routes/notifier_test_schemas.py` — `TestSendOut` schema.
-- `tests/web/test_notifier_test.py` — ~5 tests.
+- `tests/integration/test_api_notifier_test.py` — ~5 tests.
 
 **Modify — backend:**
 - `src/yas/web/routes/household_schemas.py` — add `home_lat: float | None`, `home_lon: float | None` to `HouseholdOut`.
@@ -61,7 +61,7 @@
 - Modify: `src/yas/web/routes/household.py`
 - Create: `src/yas/web/routes/notifier_test_schemas.py`
 - Create: `src/yas/web/routes/notifier_test.py`
-- Create: `tests/web/test_notifier_test.py`
+- Create: `tests/integration/test_api_notifier_test.py`
 - Modify: `src/yas/web/app.py` (register router)
 
 End state: backend supports the new endpoint + `HouseholdOut` exposes lat/lon. ~5 new backend tests; existing 585 still green.
@@ -121,33 +121,48 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
 ### Step 3: Run existing household tests — they should still pass
 
 ```bash
-uv run pytest tests/web/test_household.py -q 2>&1 | tail -5
+uv run pytest tests/integration/test_api_household.py -q 2>&1 | tail -5
 ```
 
 Expected: all green. The two new fields default to `None` when no Location is set, matching existing test fixtures.
 
 ### Step 4: Write the test-send endpoint failing tests
 
-- [ ] **Create `tests/web/test_notifier_test.py`**:
+- [ ] **Create `tests/integration/test_api_notifier_test.py`** matching the canonical fixture pattern from `tests/integration/test_api_household.py`. The pattern is:
+  - A per-test `client` fixture that creates a tmp SQLite DB, runs `Base.metadata.create_all`, builds a `FakeGeocoder` (from `tests.fakes.geocoder`), and calls `create_app(engine=engine, fetcher=None, llm=None, geocoder=geocoder)`.
+  - Yields `(c, engine, geocoder)` for tests to use directly.
 
 ```python
 """Tests for POST /api/notifiers/{channel}/test."""
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from tests.fakes.geocoder import FakeGeocoder
 from yas.alerts.channels.base import SendResult
+from yas.db.base import Base
 from yas.db.models import HouseholdSettings
-from yas.db.session import session_scope
+from yas.db.session import create_engine_for, session_scope
 from yas.web.app import create_app
 
 
-# Pretty-print test names: each test creates an app, seeds a household, sends a test.
+@pytest.fixture
+async def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    url = f"sqlite+aiosqlite:///{tmp_path}/n.db"
+    monkeypatch.setenv("YAS_DATABASE_URL", url)
+    engine = create_engine_for(url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    app = create_app(engine=engine, fetcher=None, llm=None, geocoder=FakeGeocoder())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        yield c, engine
+    await engine.dispose()
+
 
 async def _seed_household(engine: AsyncEngine, **fields: Any) -> None:
     async with session_scope(engine) as s:
@@ -156,40 +171,38 @@ async def _seed_household(engine: AsyncEngine, **fields: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_channel_returns_404(test_engine: AsyncEngine) -> None:
-    app = create_app(engine=test_engine)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-        r = await ac.post("/api/notifiers/bogus/test")
+async def test_unknown_channel_returns_404(client):
+    c, _engine = client
+    r = await c.post("/api/notifiers/bogus/test")
     assert r.status_code == 404
     assert "unknown channel" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_channel_returns_503(test_engine: AsyncEngine) -> None:
-    await _seed_household(test_engine)  # all *_config_json default null
-    app = create_app(engine=test_engine)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-        r = await ac.post("/api/notifiers/email/test")
+async def test_unconfigured_channel_returns_503(client):
+    c, engine = client
+    await _seed_household(engine)  # all *_config_json default null
+    r = await c.post("/api/notifiers/email/test")
     assert r.status_code == 503
     assert "not configured" in r.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
-async def test_send_returns_ok_true_on_success(test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_send_returns_ok_true_on_success(client, monkeypatch):
     """Mock the channel send to return ok=True."""
+    c, engine = client
     await _seed_household(
-        test_engine,
+        engine,
         ntfy_config_json={"base_url": "https://ntfy.sh", "topic": "test"},
     )
-    # Patch NtfyChannel.send to return ok=True.
     from yas.alerts.channels import ntfy as ntfy_mod
+
     async def fake_send(self: Any, msg: Any) -> SendResult:
         return SendResult(ok=True, transient_failure=False, detail="published")
+
     monkeypatch.setattr(ntfy_mod.NtfyChannel, "send", fake_send)
 
-    app = create_app(engine=test_engine)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-        r = await ac.post("/api/notifiers/ntfy/test")
+    r = await c.post("/api/notifiers/ntfy/test")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
@@ -197,12 +210,11 @@ async def test_send_returns_ok_true_on_success(test_engine: AsyncEngine, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_channel_init_failure_surfaces_as_ok_false(
-    test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Pushover constructor raises ValueError if user_key_env is missing — should surface as ok=false."""
+async def test_channel_init_failure_surfaces_as_ok_false(client, monkeypatch):
+    """Pushover ctor raises ValueError if user_key_env is missing — surface as ok=false."""
+    c, engine = client
     await _seed_household(
-        test_engine,
+        engine,
         pushover_config_json={
             "user_key_env": "YAS_PUSHOVER_USER_KEY_DOES_NOT_EXIST",
             "app_token_env": "YAS_PUSHOVER_APP_TOKEN_DOES_NOT_EXIST",
@@ -211,9 +223,7 @@ async def test_channel_init_failure_surfaces_as_ok_false(
     monkeypatch.delenv("YAS_PUSHOVER_USER_KEY_DOES_NOT_EXIST", raising=False)
     monkeypatch.delenv("YAS_PUSHOVER_APP_TOKEN_DOES_NOT_EXIST", raising=False)
 
-    app = create_app(engine=test_engine)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-        r = await ac.post("/api/notifiers/pushover/test")
+    r = await c.post("/api/notifiers/pushover/test")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is False
@@ -221,34 +231,33 @@ async def test_channel_init_failure_surfaces_as_ok_false(
 
 
 @pytest.mark.asyncio
-async def test_channel_send_failure_surfaces_as_ok_false(
-    test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """If the channel constructs but send returns ok=False, propagate that."""
+async def test_channel_send_failure_surfaces_as_ok_false(client, monkeypatch):
+    """If the channel constructs but send returns ok=False, propagate."""
+    c, engine = client
     await _seed_household(
-        test_engine,
+        engine,
         ntfy_config_json={"base_url": "https://ntfy.sh", "topic": "test"},
     )
     from yas.alerts.channels import ntfy as ntfy_mod
+
     async def fake_send(self: Any, msg: Any) -> SendResult:
         return SendResult(ok=False, transient_failure=True, detail="connection refused")
+
     monkeypatch.setattr(ntfy_mod.NtfyChannel, "send", fake_send)
 
-    app = create_app(engine=test_engine)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-        r = await ac.post("/api/notifiers/ntfy/test")
+    r = await c.post("/api/notifiers/ntfy/test")
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is False
     assert body["detail"] == "connection refused"
 ```
 
-**Note:** Verify how the existing test files seed households + create the FastAPI app. Look at `tests/web/test_household.py` for the canonical pattern (the `test_engine` fixture + `create_app` shape). Adjust the imports to match if needed.
+This file mirrors `tests/integration/test_api_household.py`'s exact `client` fixture shape. The fixture creates engine + app + httpx client per test; tests yield `(c, engine)` from the fixture.
 
 ### Step 5: Run tests — verify fail
 
 ```bash
-uv run pytest tests/web/test_notifier_test.py -q 2>&1 | tail -10
+uv run pytest tests/integration/test_api_notifier_test.py -q 2>&1 | tail -10
 ```
 
 Expected: 5 failures with "ModuleNotFoundError" or "404 Not Found" — endpoint doesn't exist yet.
@@ -341,7 +350,7 @@ async def test_notifier(channel: str, request: Request) -> TestSendOut:
 ### Step 9: Run tests — verify pass
 
 ```bash
-uv run pytest tests/web/test_notifier_test.py -v 2>&1 | tail -15
+uv run pytest tests/integration/test_api_notifier_test.py -v 2>&1 | tail -15
 ```
 
 Expected: 5/5 pass.
@@ -361,7 +370,7 @@ Expected: ~590 passing (585 + 5), no lint, no type errors.
 ```bash
 export SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
 cd /Users/owine/Git/youth-activity-scheduler
-git add src/yas/web/routes/household_schemas.py src/yas/web/routes/household.py src/yas/web/routes/notifier_test_schemas.py src/yas/web/routes/notifier_test.py src/yas/web/app.py tests/web/test_notifier_test.py
+git add src/yas/web/routes/household_schemas.py src/yas/web/routes/household.py src/yas/web/routes/notifier_test_schemas.py src/yas/web/routes/notifier_test.py src/yas/web/app.py tests/integration/test_api_notifier_test.py
 git commit -m "feat(backend): test-send endpoint + HouseholdOut lat/lon
 
 - POST /api/notifiers/{channel}/test dispatches a fixed message
@@ -1239,13 +1248,28 @@ End state: Checkbox grid driven by `useAlertRouting` + `useHousehold`. Per-cell 
 
 ### Step 1: Write failing tests
 
+Tests **must seed the cache before render** since AlertRoutingSection reads from `['household']` and `['alert_routing']`:
+
+```tsx
+// In each test:
+const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+qc.setQueryData(['household'], {
+  // ...baseHousehold with smtp_config_json: {...} or null per test
+});
+qc.setQueryData(['alert_routing'], [
+  { type: 'new_match', channels: ['email'], enabled: true },
+  { type: 'watchlist_hit', channels: ['email', 'ntfy'], enabled: true },
+]);
+```
+
 ```tsx
 // AlertRoutingSection.test.tsx
-// 1. Renders rows for each alert_type returned by useAlertRouting + columns for [Enabled, email, ntfy, pushover].
-// 2. Cell toggle calls PATCH /api/alert_routing/:type with {channels: [...prev, 'pushover']} (capture body).
-// 3. Optimistic update applied immediately (cache shows the toggled state before the request resolves).
-// 4. Unconfigured channel column rendered with disabled+title attribute (tooltip "Configure <channel> first").
-// 5. The leftmost Enabled checkbox PATCHes {enabled: bool}.
+// 1. Renders rows for each alert_type from cache + columns [Enabled, email, ntfy, pushover].
+// 2. Cell toggle calls PATCH /api/alert_routing/:type with {channels: [...prev, 'pushover']} (capture).
+// 3. Optimistic update applied immediately (cache shows toggled state before request resolves).
+// 4. Unconfigured channel column rendered with disabled+title attribute.
+// 5. Leftmost Enabled checkbox PATCHes {enabled: bool}.
+// 6. Clicking the last-remaining channel checkbox in an enabled row does NOT fire PATCH (UI guard).
 ```
 
 ### Step 2: Run tests — verify fail
@@ -1260,7 +1284,9 @@ Key shape:
 - For unconfigured channel columns: render `<input disabled aria-label="Configure <channel> first" title="Configure <channel> first">`. Don't dispatch anything.
 - On change: call `useUpdateAlertRouting().mutate({ type, patch: { channels: nextChannels } })` (or `{ enabled }`).
 
-Note: the `AlertRoutingPatch` schema rejects empty `channels: []` — when the user un-checks the last channel for a row, the only way to "turn off" is to use the Enabled toggle. Document this in a small note next to the table: *"Uncheck Enabled to disable a row entirely. To remove all channels, disable the row."* The frontend can also coerce `channels: []` → `enabled: false` automatically on the last uncheck — pick the simpler path: a small note + UI-side check that prevents un-checking the last channel (toast-explanation if attempted).
+Note: the `AlertRoutingPatch` schema rejects empty `channels: []` — when the user un-checks the last channel for a row, the backend would 422. **Pick the UI-guard path**: when the user clicks the last remaining channel checkbox in a row, do NOT fire the mutation. Instead, render a small inline note next to the table: *"Uncheck Enabled to disable a row entirely. The last channel can't be removed individually."* The Enabled toggle is the disable affordance; channel checkboxes only manage which channels.
+
+The `<input>` for the last-remaining channel in an enabled row should also have a `title` attribute that explains why clicking it does nothing ("Use Enabled toggle to disable this alert type entirely"). Cheaper than auto-coercing to `enabled=false` and avoids surprising the user.
 
 ### Step 4: Run tests — verify pass + Prettier
 
@@ -1450,7 +1476,7 @@ Return the PR URL.
 ## Notes for the implementer
 
 - **TanStack Form 1.29.1** uses Standard Schema — no `zodValidator` adapter needed; pass the zod schema directly to `validators: { onChange: schema, onMount: schema }`. The `onMount` validator is what makes `form.state.canSubmit` reflect "the empty form is invalid" on initial render so the Save button is disabled.
-- **`form.state.canSubmit` reactivity**: wrap the Save button in `<form.Subscribe selector={(s) => s.canSubmit}>` so it re-renders when validation status changes. Inline reads of `form.state.canSubmit` may not re-trigger.
+- **`form.state.canSubmit` reactivity**: KidForm uses inline `disabled={!form.state.canSubmit}` (line 404) — that's the canonical pattern in this codebase. SiteWizard uses `<form.Subscribe>` instead (line 179) for the Discover button because the form re-render didn't propagate fast enough during a mount-validation race. Default to inline; switch to `<form.Subscribe selector={(s) => s.canSubmit}>` ONLY if a test fails because the Save button stays disabled after typing valid input.
 - **`form.state.isDirty`** is what the test-send button reads via the `dirty` prop on `<TestSendButton>`.
 - **ApiError extraction** matches the KidForm/SiteWizard pattern: `err instanceof ApiError ? (err.body as { detail?: string })?.detail : err.message`.
 - **MSW handlers in handlers.ts are defaults**; per-test `server.use(...)` overrides them. The mutation tests rely on this.
