@@ -42,14 +42,16 @@ The backend `/api/alerts` endpoint suite is already implemented:
 
 `AlertOut` returns full `payload_json` plus IDs (no embedded names). The existing `InboxAlert.summary_text` shows the pattern we'll mirror: server composes a human-readable summary at query time.
 
-The backend digest pipeline:
-- `yas.alerts.digest.builder.build_digest(kid_id, ...)` returns a `DigestPayload` (per-kid, summarizes recent matches/alerts).
-- `yas.alerts.digest.llm_summary.compose_top_line(payload, ...)` returns a one-line top summary; falls back to a template when the LLM client is unavailable.
-- `yas.alerts.digest.builder.render_digest(payload, top_line) → (html_str, plain_str)` — produces both an HTML email body and a plain-text fallback.
+The backend digest pipeline (verified function names + signatures):
+- `yas.alerts.digest.builder.gather_digest_payload(session, kid, *, window_start, window_end, alert_no_matches_kid_days, now=None) -> DigestPayload` — takes an active `AsyncSession`, a fully-loaded `Kid` ORM instance (not just an ID), an explicit time window, and a `alert_no_matches_kid_days` threshold sourced from settings.
+- `yas.alerts.digest.llm_summary.generate_top_line(payload, llm, *, cost_cap_remaining_usd) -> str` — takes the payload, an `LLMClient | None`, and a remaining-budget float. Falls back to a deterministic template when `llm` is `None`.
+- `yas.alerts.digest.builder.render_digest(payload, top_line) -> tuple[str, str]` — **returns `(plain_str, html_str)`** in that order (plain first, HTML second). The endpoint must respect this tuple order.
 
 There is no HTTP endpoint for the digest pipeline today. Phase 7-4 adds one.
 
-The frontend already has the inbox at `/` (`useInboxSummary` over a 24h window). No outbox or alerts route exists.
+The summary-text helper for alerts is already exported: `yas.web.routes.inbox_alert_summary.summarize_alert` is a pure importable function that handles all 11 `AlertType` branches (including system alerts without kid_id/offering_id). Phase 7-4 reuses it directly — no duplication.
+
+The frontend already has the inbox at `/` (`useInboxSummary`, default 7-day window per `frontend/src/lib/queries.ts`). No outbox or alerts route exists.
 
 ## Decisions
 
@@ -59,7 +61,7 @@ Master §7 page #8 — "Alerts: outbox, resend, digest preview" — is one logic
 
 Two-route alternative (`/alerts/outbox` + `/alerts/digest`) doubles route count for two halves of the same page. Extending the existing inbox `/` mixes "what needs my attention NOW" with archival/preview tasks — wrong scope.
 
-### D2: Server-composed `summary_text` on `AlertOut` (mirrors `InboxAlert`)
+### D2: Server-composed `summary_text` on `AlertOut`, reusing `summarize_alert`
 
 Three patterns considered:
 - **A. Server-composed `summary_text`** — backend reads kid + offering + site joins at query time, composes "T-Ball Spring 2026 — Sam". Frontend renders the string.
@@ -71,13 +73,23 @@ Pattern A wins because:
 - Zero N+1, simple frontend, narrow backend extension.
 - We don't need flexible formatting; the user just wants to identify the alert.
 
-For system alerts with no kid_id and no offering_id (e.g. `crawl_failed` for a site, or `push_cap`), `summary_text` falls back to a sensible string composed from whatever IDs exist (mirror `InboxAlert.summary_text`'s composition logic).
+**The composition helper already exists.** `yas.web.routes.inbox_alert_summary.summarize_alert` is a pure, importable function used by `inbox.py` to build `InboxAlert.summary_text`. It handles all 11 `AlertType` branches including system alerts (`crawl_failed`, `push_cap`, etc.). Phase 7-4 imports and calls it directly — no duplication, no risk of drift between the two summaries.
 
-### D3: Filter state + tab + page in URL search params
+The function takes the alert + relevant entity dicts (kid name, offering name, site name) and returns the composed string. The `list_alerts` / `get_alert` handlers will join Kid + Offering + Site at query time and pass the resolved names to `summarize_alert` per row.
+
+### D3: Filter state + tab + page in URL search params (untyped strings)
 
 URL state for: `?tab=outbox|digest`, `?kid=N` (single integer for v1, see D4), `?type=alert_type` (single for v1; backend supports single value), `?status=pending|sent|skipped`, `?since=YYYY-MM-DD`, `?until=YYYY-MM-DD`, `?page=0` (offset = page × pageSize), `?kid_digest=N` (digest preview kid).
 
-Reload + back-button + share-by-link all work. Different from Phase 7-2 (which used localStorage) because alerts is a more "I want to send this query to a teammate" surface, even though we have one user. The URL approach is also slightly less code (no localStorage hydration race).
+**Implementation: untyped string params, NOT `validateSearch`.** This codebase has zero precedent for TanStack Router's typed search schema (no `useSearch`/`validateSearch` usages anywhere). Phase 7-4 keeps it simple:
+
+- The route reads search params via `Route.useSearch()` returning `Record<string, string | undefined>`.
+- A small per-component helper parses the string params into the typed `OutboxFilterState` (Number-coerce `kid`, validate against allowed `status` literals, etc.); invalid values become null/default.
+- Updates use `navigate({ search: { ...current, kid: '5' } })` with explicit string values.
+
+This matches the codebase's "small, focused" idiom over heavy framework features. If multiple future routes need typed params, an extraction can introduce `validateSearch`. v1 doesn't.
+
+Reload + back-button + share-by-link all work. Different from Phase 7-2 (which used localStorage) because alerts is a more "I want to send this query to a teammate" surface, even though we have one user. The URL approach is also slightly less code than localStorage hydration (no first-mount race).
 
 ### D4: Single-kid filter for v1
 
@@ -93,7 +105,45 @@ Cursor-based pagination is over-engineered for ≤500 alerts.
 
 ### D6: Digest preview = next-scheduled, rendered as iframe
 
-`GET /api/digest/preview?kid_id=N` calls `build_digest()` + `compose_top_line()` + `render_digest()` and returns `{html: string, plain: string, top_line: string}`. Frontend renders:
+`GET /api/digest/preview?kid_id=N` returns `{html: string, plain: string, top_line: string}`.
+
+**Endpoint flow** (concrete, since the actual function names are different from earlier draft):
+
+```python
+# src/yas/web/routes/digest_preview.py (sketch)
+@router.get("", response_model=DigestPreviewOut)
+async def get_digest_preview(kid_id: int, request: Request) -> DigestPreviewOut:
+    settings = request.app.state.yas.settings
+    async with session_scope(_engine(request)) as s:
+        kid = (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one_or_none()
+        if kid is None:
+            raise HTTPException(404, f"kid {kid_id} not found")
+        now = datetime.now(UTC)
+        window_start = now - timedelta(days=1)  # 24h window for preview
+        window_end = now
+        payload = await gather_digest_payload(
+            s, kid,
+            window_start=window_start,
+            window_end=window_end,
+            alert_no_matches_kid_days=settings.alert_no_matches_kid_days,
+            now=now,
+        )
+    # Force template fallback for the preview top-line so the preview never
+    # bills against the household's daily LLM cap. If we want LLM previews
+    # later, source request.app.state.yas.llm + a dedicated preview budget.
+    top_line = await generate_top_line(payload, llm=None, cost_cap_remaining_usd=0.0)
+    plain, html = render_digest(payload, top_line)  # NOTE: order is (plain, html)
+    return DigestPreviewOut(html=html, plain=plain, top_line=top_line)
+```
+
+Key correctness points (each was a draft-spec mistake the reviewer caught):
+
+- `gather_digest_payload` takes the **`Kid` ORM instance** (not the int id) and an active `AsyncSession`; the route must look up the kid first (404 on miss) and pass the loaded ORM.
+- `generate_top_line` requires an `llm: LLMClient | None` argument. v1 passes **`llm=None`** to force the deterministic template fallback — preview should never bill against the household's daily LLM cost cap. (Future polish: thread `request.app.state.yas.llm` through with a dedicated preview budget.)
+- `render_digest` returns the tuple as **`(plain, html)`** — plain first, HTML second. The endpoint must unpack in that order.
+- 24-hour preview window is hardcoded for v1; the existing inbox is configurable (default 7d) but preview is always "what would land if we sent it right now."
+
+Frontend renders:
 - Top line as plain text above the iframe.
 - HTML body in `<iframe srcDoc={html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
 
@@ -165,11 +215,11 @@ export function useAlerts(filters: OutboxFilterState, pageSize = 25) {
   });
 }
 
-export function useDigestPreview(kidId: number) {
+export function useDigestPreview(kidId: number | null) {
   return useQuery({
     queryKey: ['digest', 'preview', kidId],
     queryFn: () => api.get<DigestPreviewResponse>(`/api/digest/preview?kid_id=${kidId}`),
-    enabled: Number.isFinite(kidId) && kidId > 0,
+    enabled: kidId != null && Number.isFinite(kidId) && kidId > 0,
   });
 }
 
@@ -189,7 +239,7 @@ export function useResendAlert() {
 
 **Modify — backend:**
 - `src/yas/web/routes/alerts_schemas.py` — add `summary_text: str` to `AlertOut`.
-- `src/yas/web/routes/alerts.py` — `list_alerts` and `get_alert` compose `summary_text` via joins on Kid + Offering + Site (or however the existing `InboxAlert.summary_text` is composed; reuse the pattern). Mirror the helper if there is one in `inbox.py`.
+- `src/yas/web/routes/alerts.py` — `list_alerts` and `get_alert` import `summarize_alert` from `yas.web.routes.inbox_alert_summary` and call it per row after joining Kid + Offering + Site. Use the same join pattern as `inbox.py`.
 - `src/yas/web/app.py` — register the new digest preview router.
 - `tests/integration/test_api_alerts.py` — extend with one assertion for `summary_text`.
 
@@ -271,7 +321,7 @@ export function useResendAlert() {
 - Kid picker: `<select>` populated from `useKids()`. Default = first kid. Selection writes to URL `?kid_digest=N`.
 - Top-line text: `{response.top_line}` rendered above the iframe.
 - Iframe: `<iframe srcDoc={response.html} sandbox="allow-same-origin" className="w-full h-[600px] rounded border border-border" title="Digest preview" />`.
-- Disclaimer below iframe: small italicized text noting this is a preview based on recent activity.
+- Disclaimer below iframe: "This is a preview of the next scheduled digest based on the last 24 hours of activity." (matches the hardcoded preview window in D6.)
 
 ## Data flow
 
@@ -443,7 +493,7 @@ export interface AlertListResponse {
 ## Risks
 
 - **Iframe height.** Fixed 600px works for typical digests but truncates long ones. Acceptable v1; future polish can add `postMessage`-based auto-resize.
-- **Sandbox attribute.** `sandbox="allow-same-origin"` lets `<style>` work without scripts; verify when implementing that the digest renderer produces self-contained HTML.
+- **Sandbox attribute.** `sandbox="allow-same-origin"` lets `<style>` work without scripts; the digest renderer uses Jinja `select_autoescape(["html"])` and self-contained inline styles (verified). No remote-asset issues expected.
 - **`summary_text` for system alerts.** Composition logic for alerts without kid_id/offering_id (e.g. `crawl_failed`, `push_cap`) needs a sensible fallback. Mirror `InboxAlert.summary_text`'s composition.
 - **`useResendAlert` invalidation.** Invalidating `['alerts']` is broad enough to cover all outbox views — fine since there's only one outbox at a time.
 - **Filter URL serialization.** Multi-value filters not supported in v1 (single kid, single type). Future-extensible.
