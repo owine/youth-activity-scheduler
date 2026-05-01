@@ -18,6 +18,9 @@ import {
   useDeleteWatchlistEntry,
   useCrawlNow,
   useToggleSiteActive,
+  useCreateSite,
+  useDiscoverPages,
+  useAddPage,
 } from './mutations';
 import type { InboxSummary, KidCalendarResponse, KidDetail, WatchlistEntry, Site } from './types';
 
@@ -744,5 +747,122 @@ describe('useToggleSiteActive', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(qc.getQueryData<Site>(['sites', 1])?.active).toBe(true);
+  });
+});
+
+describe('useCreateSite', () => {
+  it('POSTs name + base_url and returns the created Site', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useCreateSite(), { wrapper: makeWrapper(qc) });
+    const created = await result.current.mutateAsync({
+      name: 'TestSite',
+      base_url: 'https://example.com',
+    });
+    expect(created.id).toBe(99);
+    expect(created.name).toBe('TestSite');
+  });
+
+  it('surfaces server errors as Error', async () => {
+    server.use(
+      http.post('/api/sites', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useCreateSite(), { wrapper: makeWrapper(qc) });
+    await expect(
+      result.current.mutateAsync({ name: 'x', base_url: 'https://x' }),
+    ).rejects.toThrow();
+  });
+});
+
+describe('useDiscoverPages', () => {
+  it('POSTs to /api/sites/:id/discover and returns DiscoveryResult', async () => {
+    server.use(
+      http.post('/api/sites/:id/discover', () =>
+        HttpResponse.json({
+          site_id: 42,
+          seed_url: 'https://example.com',
+          stats: {
+            sitemap_urls: 1,
+            link_urls: 5,
+            filtered_junk: 0,
+            fetched_heads: 5,
+            classified: 5,
+            returned: 3,
+          },
+          candidates: [
+            {
+              url: 'https://example.com/sched',
+              title: 'Schedule',
+              kind: 'html',
+              score: 0.9,
+              reason: 'top match',
+            },
+          ],
+        }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useDiscoverPages(), { wrapper: makeWrapper(qc) });
+    const r = await result.current.mutateAsync({ siteId: 42 });
+    expect(r.candidates).toHaveLength(1);
+    expect(r.candidates[0]!.kind).toBe('html');
+  });
+
+  it('surfaces 502 LLM errors', async () => {
+    server.use(
+      http.post('/api/sites/:id/discover', () =>
+        HttpResponse.json({ detail: 'llm_error: timeout' }, { status: 502 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useDiscoverPages(), { wrapper: makeWrapper(qc) });
+    await expect(result.current.mutateAsync({ siteId: 42 })).rejects.toThrow();
+  });
+});
+
+describe('useAddPage', () => {
+  it('POSTs url + kind to /api/sites/:id/pages', async () => {
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/sites/:id/pages', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          {
+            id: 1,
+            url: captured?.url,
+            kind: captured?.kind,
+            content_hash: null,
+            last_fetched: null,
+            next_check_at: null,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useAddPage(), { wrapper: makeWrapper(qc) });
+    await result.current.mutateAsync({
+      siteId: 42,
+      url: 'https://x.com/sched',
+      kind: 'schedule',
+    });
+    expect(captured).toMatchObject({ url: 'https://x.com/sched', kind: 'schedule' });
+  });
+
+  it('surfaces 422 validation errors', async () => {
+    server.use(
+      http.post('/api/sites/:id/pages', () =>
+        HttpResponse.json({ detail: 'invalid kind' }, { status: 422 }),
+      ),
+    );
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const { result } = renderHook(() => useAddPage(), { wrapper: makeWrapper(qc) });
+    await expect(
+      result.current.mutateAsync({
+        siteId: 42,
+        url: 'https://x',
+        kind: 'schedule',
+      }),
+    ).rejects.toThrow();
   });
 });

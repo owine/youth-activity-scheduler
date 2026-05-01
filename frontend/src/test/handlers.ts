@@ -230,4 +230,50 @@ export const handlers = [
     }),
   ),
   http.get('/api/sites/:id/crawls', () => HttpResponse.json([])),
+  http.post('/api/sites', async ({ request }) => {
+    const body = (await request.json()) as { name: string; base_url: string };
+    return HttpResponse.json(
+      {
+        id: 99,
+        name: body.name,
+        base_url: body.base_url,
+        adapter: 'llm',
+        needs_browser: false,
+        active: true,
+        default_cadence_s: 21600,
+        muted_until: null,
+        pages: [],
+      },
+      { status: 201 },
+    );
+  }),
+  http.post('/api/sites/:id/discover', () =>
+    HttpResponse.json({
+      site_id: 99,
+      seed_url: 'https://example.com',
+      stats: {
+        sitemap_urls: 0,
+        link_urls: 0,
+        filtered_junk: 0,
+        fetched_heads: 0,
+        classified: 0,
+        returned: 0,
+      },
+      candidates: [],
+    }),
+  ),
+  http.post('/api/sites/:id/pages', async ({ request }) => {
+    const body = (await request.json()) as { url: string; kind: string };
+    return HttpResponse.json(
+      {
+        id: 999,
+        url: body.url,
+        kind: body.kind,
+        content_hash: null,
+        last_fetched: null,
+        next_check_at: null,
+      },
+      { status: 201 },
+    );
+  }),
 ];
