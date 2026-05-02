@@ -26,15 +26,18 @@ The existing `GET /api/kids/{kid_id}/calendar?from&to&include_matches` endpoint 
 | `frontend/src/routes/calendar.tsx` | Route + state (date, view, filters), URL-search-param plumbing, fan-out queries |
 | `frontend/src/components/calendar/CombinedCalendarFilters.tsx` | Kid checkboxes (with color swatches) + event-type checkboxes + Clear button |
 | `frontend/src/lib/calendarColors.ts` | 8-color palette + stable `colorForKid(kidId)` indexer |
-| `frontend/src/lib/combinedCalendar.ts` | Pure `mergeKidCalendars(responses, kidsById, filters): CalendarEvent[]` |
+| `frontend/src/lib/combinedCalendar.ts` | Pure `mergeKidCalendars(responses, kidsById, filters): CombinedCalendarEvent[]` |
+| `frontend/src/lib/calendarRange.ts` | `rangeFor(view, cursor)` + `BUFFER_DAYS` constant — extracted from per-kid route so combined route imports the same helper |
 
 ### Modify
 
 | File | Change |
 |---|---|
 | `frontend/src/components/layout/TopBar.tsx` (+ test) | Add `Calendar` link with `CalendarDays` icon between Kids and Offerings |
-| `frontend/src/components/calendar/CalendarView.tsx` | Accept an optional `eventStyle?(event): { className?: string; style?: React.CSSProperties }` prop so the combined route can color by kid without forking the component |
-| `frontend/src/lib/types.ts` | Add `CombinedCalendarFilterState { kidIds, types, includeMatches }` (URL state shape) |
+| `frontend/src/components/calendar/CalendarView.tsx` | Accept an optional `eventStyle?(event): { className?: string; style?: React.CSSProperties }` prop. **Composition rule:** the existing kind-based `className` (e.g. `rbc-event-enrollment`) is preserved; `eventStyle`'s `className` is concatenated, and `style` is shallow-merged on top. This way kid-color overlays work without losing kind styling from `calendar-overrides.css`. |
+| `frontend/src/components/calendar/CalendarEventPopover.tsx` | No code change — already takes a `kidId` prop. Combined route resolves it from `event.kid_id` (see D3a) when wiring the click handler. |
+| `frontend/src/routes/kids.$id.calendar.tsx` | Replace inline `rangeFor` / `BUFFER_DAYS` with import from `lib/calendarRange.ts`. Pure refactor, no behavior change. |
+| `frontend/src/lib/types.ts` | Add `CombinedCalendarEvent extends CalendarEvent { kid_id: number }` and `CombinedCalendarFilterState { kidIds, types, includeMatches }` |
 
 ### Tests (create)
 
@@ -53,6 +56,8 @@ The existing `GET /api/kids/{kid_id}/calendar?from&to&include_matches` endpoint 
 
 **D3. Title prefix `"{kid_name}: {original_title}"`** applied in the merge step. Raw `CalendarEvent.title` stays untouched in API responses; prefix is a render-layer concern only. Keeps deep-link to per-kid view (where titles aren't prefixed) consistent.
 
+**D3a. Merge output carries `kid_id`.** The fan-out produces one `KidCalendarResponse` per kid. The merge step injects `kid_id` into each event, returning `CombinedCalendarEvent extends CalendarEvent { kid_id: number }`. This is required for (a) `colorForKid(event.kid_id)` in the `eventStyle` callback, (b) the `"{kid_name}: {title}"` prefix lookup, (c) passing `kidId` to `CalendarEventPopover` on click, and (d) the kid-checkbox filter. The base `CalendarEvent` type stays untouched so per-kid pages don't need changes.
+
 **D4. URL search params (untyped string passthrough, Phase 7-4 pattern).**
 - `?view=week|month` (default `week`)
 - `?date=YYYY-MM-DD` (default today)
@@ -60,7 +65,7 @@ The existing `GET /api/kids/{kid_id}/calendar?from&to&include_matches` endpoint 
 - `?types=enrollment,unavailability,match` (default = all)
 - `?include_matches=true` (default `false`)
 
-`validateSearch` filters non-strings (matches `routes/alerts.tsx` precedent). Components are decoupled from `Route.useSearch()` directly — they take a `searchParams` prop, simplifying tests.
+`validateSearch` filters non-strings (matches `routes/alerts.tsx` precedent — Phase 7-4). Components are decoupled from `Route.useSearch()` directly — they take a `searchParams` prop, simplifying tests.
 
 **D5. Filters: kid checkboxes + event-type checkboxes.** Both default to all-on. Risk: combinatoric noise. Mitigation: keep the filter bar in one row, hide event-type filters behind a "More filters" disclosure if it gets ugly during implementation. **Defer the disclosure decision to implementation review** — start with one row.
 
