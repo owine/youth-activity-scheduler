@@ -274,12 +274,23 @@ jobs:
           ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
         run: |
           short_sha="${SHA:0:7}"
-          # Convert metadata-action's newline-separated annotations to
-          # repeated --annotation flags for imagetools create.
+          # Convert metadata-action's annotations to --annotation flags.
+          # metadata-action emits "manifest:<key>=<value>" which buildx
+          # imagetools create rejects ("manifest annotations not supported
+          # yet"). Strip the manifest: prefix and replace with index:
+          # since the multi-arch manifest IS an OCI image index — that's
+          # what GHCR's package page surfaces.
+          # Skip lines whose value is empty (metadata-action emits blank
+          # entries for fields like description/licenses where it didn't
+          # auto-resolve a value; the explicit `labels:` above handle them
+          # at the per-arch image level instead).
           ann_args=()
           while IFS= read -r line; do
             [ -z "$line" ] && continue
-            ann_args+=("--annotation" "$line")
+            stripped="${line#manifest:}"
+            value="${stripped#*=}"
+            [ -z "$value" ] && continue
+            ann_args+=("--annotation" "index:${stripped}")
           done <<< "$ANNOTATIONS"
           # shellcheck disable=SC2046
           docker buildx imagetools create \
