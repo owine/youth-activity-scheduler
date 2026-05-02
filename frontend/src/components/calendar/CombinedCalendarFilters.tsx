@@ -5,6 +5,7 @@ const ALL_TYPES: { kind: CalendarEventKind; label: string }[] = [
   { kind: 'enrollment', label: 'Enrollment' },
   { kind: 'unavailability', label: 'Unavailability' },
   { kind: 'match', label: 'Match' },
+  { kind: 'holiday', label: 'Holiday' },
 ];
 
 function isAtDefaults(f: CombinedCalendarFilterState): boolean {

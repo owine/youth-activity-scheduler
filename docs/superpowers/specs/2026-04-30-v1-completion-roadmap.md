@@ -100,7 +100,7 @@ Estimated size: 4 PRs.
 **Why third:** quality-of-life. None block v1 terminal state.
 
 - Phase 8-1: Multi-kid combined calendar (deferred from 5c-1)
-- Phase 8-2: Holiday calendar / school-year integration (school blocks render every weekday in date range today; spring break is a separate manual block)
+- Phase 8-2: ✅ shipped 2026-05-02. Calendar respects `kid.school_holidays` (school blocks skip holiday dates) and emits explicit `holiday` events for in-range, in-school-year holidays.
 - Phase 8-3: Watchlist on calendar (visually distinct from matches)
 - Phase 8-4: Bulk operations (close-many alerts, mute-many offerings, enroll-many)
 - Phase 8-5: E2E test automation in CI (`scripts/e2e_phase5a.sh` is a manual gate today)

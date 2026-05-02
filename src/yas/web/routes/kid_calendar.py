@@ -51,6 +51,25 @@ async def get_kid_calendar(
 
         events: list[CalendarEventOut] = []
 
+        # School holidays: dates the matcher already skips for conflict checks.
+        # Used here to (a) hide school recurring blocks on those dates, and
+        # (b) emit explicit "Holiday" events for the same dates within the
+        # school-year ranges so the calendar isn't silently empty.
+        school_holiday_dates: set[date] = set()
+        for s_iso in kid.school_holidays or []:
+            try:
+                school_holiday_dates.add(date.fromisoformat(s_iso))
+            except ValueError:
+                continue
+        school_year_ranges_parsed: list[tuple[date, date]] = []
+        for entry in kid.school_year_ranges or []:
+            try:
+                school_year_ranges_parsed.append(
+                    (date.fromisoformat(entry["start"]), date.fromisoformat(entry["end"]))
+                )
+            except (KeyError, ValueError):
+                continue
+
         enrollment_rows = (
             await s.execute(
                 select(Enrollment, Offering)
@@ -106,6 +125,9 @@ async def get_kid_calendar(
                 range_from=from_,
                 range_to=to,
             ):
+                # School blocks: hide on holiday dates. Other blocks unchanged.
+                if block.source == "school" and occ.date in school_holiday_dates:
+                    continue
                 events.append(
                     CalendarEventOut(
                         id=f"unavailability:{block.id}:{occ.date.isoformat()}",
@@ -120,6 +142,28 @@ async def get_kid_calendar(
                         from_enrollment_id=block.source_enrollment_id,
                     )
                 )
+
+        # Emit explicit Holiday events for holiday dates that fall in range
+        # AND inside at least one school_year_range (closed interval). A
+        # holiday outside the school year would imply school is being
+        # cancelled on a day that's already free, which is misleading.
+        for h in sorted(school_holiday_dates):
+            if h < from_ or h > to:
+                continue
+            in_school_year = any(start <= h <= end for start, end in school_year_ranges_parsed)
+            if not in_school_year:
+                continue
+            events.append(
+                CalendarEventOut(
+                    id=f"holiday:{kid_id}:{h.isoformat()}",
+                    kind="holiday",
+                    date=h,
+                    time_start=None,
+                    time_end=None,
+                    all_day=True,
+                    title="Holiday",
+                )
+            )
 
         # 3. Match overlay (opt-in).
         if include_matches:
