@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from yas.db.models import Alert, Kid
 from yas.db.models._types import AlertType
 from yas.db.session import session_scope
-from yas.web.routes.alerts_schemas import AlertCloseIn, AlertListResponse, AlertOut
+from yas.web.routes.alerts_schemas import (
+    AlertBulkCloseIn,
+    AlertBulkCloseOut,
+    AlertCloseIn,
+    AlertListResponse,
+    AlertOut,
+)
 from yas.web.routes.inbox_alert_summary import summarize_alert
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -209,6 +215,35 @@ async def resend_alert(request: Request, alert_id: int) -> AlertOut:
         await s.flush()
 
         return await _to_out(s, cloned)
+
+
+# NOTE: /bulk/close MUST be declared before /{alert_id}/close. Otherwise
+# FastAPI tries to match "bulk" as the {alert_id: int} path param and
+# returns 422 before the literal route is consulted.
+@router.post("/bulk/close", response_model=AlertBulkCloseOut)
+async def bulk_close_alerts(request: Request, body: AlertBulkCloseIn) -> AlertBulkCloseOut:
+    """Close many alerts in one request. Idempotent: already-closed alerts
+    have their close_reason updated but closed_at preserved. Missing IDs are
+    returned in `not_found` rather than 404'ing the whole request — partial
+    success is the common case for bulk UX."""
+    if not body.alert_ids:
+        return AlertBulkCloseOut(closed=[], not_found=[])
+    requested = list(set(body.alert_ids))
+    async with session_scope(_engine(request)) as s:
+        rows = (await s.execute(select(Alert).where(Alert.id.in_(requested)))).scalars().all()
+        found_ids = {a.id for a in rows}
+        not_found = [aid for aid in requested if aid not in found_ids]
+        now = datetime.now(UTC)
+        for alert in rows:
+            if alert.closed_at is None:
+                alert.closed_at = now
+            alert.close_reason = body.reason
+        await s.flush()
+        for alert in rows:
+            await s.refresh(alert)
+        closed_outs = [await _to_out(s, a) for a in rows]
+        closed_outs.sort(key=lambda a: a.id)
+        return AlertBulkCloseOut(closed=closed_outs, not_found=sorted(not_found))
 
 
 @router.post("/{alert_id}/close", response_model=AlertOut)

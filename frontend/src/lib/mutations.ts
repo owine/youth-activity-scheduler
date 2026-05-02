@@ -692,3 +692,30 @@ export function useResendAlert() {
     },
   });
 }
+
+interface BulkCloseAlertsInput {
+  alertIds: number[];
+  reason: CloseReason;
+}
+
+interface BulkCloseAlertsResult {
+  closed: Alert[];
+  not_found: number[];
+}
+
+export function useBulkCloseAlerts() {
+  const qc = useQueryClient();
+  return useMutation<BulkCloseAlertsResult, Error, BulkCloseAlertsInput>({
+    mutationFn: ({ alertIds, reason }) =>
+      api.post<BulkCloseAlertsResult>('/api/alerts/bulk/close', {
+        alert_ids: alertIds,
+        reason,
+      }),
+    onSettled: async () => {
+      // Invalidate both the alerts list (Outbox) and the inbox summary
+      // (so closed alerts disappear from Inbox if they were in-window).
+      await qc.invalidateQueries({ queryKey: ['alerts'] });
+      await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+    },
+  });
+}
