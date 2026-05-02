@@ -741,24 +741,70 @@ Wires everything together. Uses `useQueries` for parallel per-kid fetches. URL s
 
 - [ ] **Step 1: Read the alerts route as the URL-state reference pattern**
 
-Read `frontend/src/routes/alerts.tsx` to confirm `validateSearch` pattern and decoupled-component approach.
+Read `frontend/src/routes/alerts.tsx` and `frontend/src/routes/-alerts.test.tsx` to confirm the **decoupled-component pattern**:
+- The route exports `CalendarPage({ searchParams })` (the testable inner component) AND `CalendarPageRoute()` (the file-route wrapper that calls `Route.useSearch()` and passes it down).
+- Tests mock heavy children + `@tanstack/react-router`'s `Link` and `useNavigate`, then render `<CalendarPage searchParams={...} />` directly without a router.
 
 - [ ] **Step 2: Write the failing route test**
 
-Create `frontend/src/routes/-calendar.test.tsx`:
+Create `frontend/src/routes/-calendar.test.tsx` following the `-alerts.test.tsx` pattern:
 
 ```tsx
+import { vi } from 'vitest';
+
+interface MockCalendarViewProps {
+  events: Array<{ title: string }>;
+}
+interface MockFiltersProps {
+  filters: { kidIds: number[] | null };
+  onChange: (next: { kidIds: number[] | null }) => void;
+  onClear: () => void;
+}
+
+// Mock children before importing the page
+vi.mock('@/components/calendar/CalendarView', () => ({
+  CalendarView: ({ events }: MockCalendarViewProps) => (
+    <div data-testid="calendar-view">
+      {events.map((e, i) => (
+        <div key={i}>{e.title}</div>
+      ))}
+    </div>
+  ),
+}));
+
+vi.mock('@/components/calendar/CalendarEventPopover', () => ({
+  CalendarEventPopover: () => null,
+}));
+
+vi.mock('@/components/calendar/CombinedCalendarFilters', () => ({
+  CombinedCalendarFilters: ({ filters, onChange, onClear }: MockFiltersProps) => (
+    <div data-testid="filters">
+      <button onClick={() => onChange({ ...filters, kidIds: [1] })}>FilterKid1</button>
+      <button onClick={onClear}>ClearFilters</button>
+    </div>
+  ),
+}));
+
+vi.mock('@tanstack/react-router', async () => {
+  const actual = await vi.importActual<typeof import('@tanstack/react-router')>(
+    '@tanstack/react-router',
+  );
+  return {
+    ...actual,
+    Link: ({ to, children, ...props }: { to: string; children?: React.ReactNode }) => (
+      <a href={to} {...props}>
+        {children}
+      </a>
+    ),
+    useNavigate: () => vi.fn(),
+  };
+});
+
 import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
-import {
-  createRouter,
-  createRootRoute,
-  createMemoryHistory,
-  RouterProvider,
-} from '@tanstack/react-router';
 import { CalendarPage } from './calendar';
 
 const sam = { id: 1, name: 'Sam', dob: '2019-05-01', interests: [], active: true };
@@ -808,30 +854,25 @@ beforeAll(() => server.listen());
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
-function renderAt(path = '/calendar') {
-  const root = createRootRoute({ component: CalendarPage });
-  const router = createRouter({
-    routeTree: root,
-    history: createMemoryHistory({ initialEntries: [path] }),
-  });
+function renderPage(searchParams: Record<string, string> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <RouterProvider router={router} />
+      <CalendarPage searchParams={searchParams} />
     </QueryClientProvider>,
   );
 }
 
 describe('CalendarPage', () => {
   it('renders both kids events with prefixed titles', async () => {
-    renderAt();
+    renderPage();
     expect(await screen.findByText(/Sam: T-Ball/)).toBeInTheDocument();
     expect(await screen.findByText(/Lila: Soccer/)).toBeInTheDocument();
   });
 
   it('renders empty state when no active kids', async () => {
     server.use(http.get('/api/kids', () => HttpResponse.json([])));
-    renderAt();
+    renderPage();
     expect(await screen.findByText(/Add a kid/i)).toBeInTheDocument();
   });
 });
@@ -854,7 +895,7 @@ import type { View } from 'react-big-calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { useKids } from '@/lib/queries';
-import { fetchJson } from '@/lib/fetcher';
+import { api } from '@/lib/api';
 import { CalendarView } from '@/components/calendar/CalendarView';
 import { CalendarEventPopover } from '@/components/calendar/CalendarEventPopover';
 import { CombinedCalendarFilters } from '@/components/calendar/CombinedCalendarFilters';
@@ -869,10 +910,10 @@ import type {
   KidCalendarResponse,
 } from '@/lib/types';
 
-type SearchParams = Record<string, string | undefined>;
+type SearchParams = Record<string, string>;
 
 export const Route = createFileRoute('/calendar')({
-  component: CalendarPage,
+  component: CalendarPageRoute,
   validateSearch: (input: Record<string, unknown>): SearchParams => {
     const out: SearchParams = {};
     for (const [k, v] of Object.entries(input)) {
@@ -909,23 +950,26 @@ function filtersToParams(f: CombinedCalendarFilterState): SearchParams {
   return out;
 }
 
-export function CalendarPage() {
+// Decoupled inner component — takes searchParams as a prop so tests
+// can render it without router context. Phase 7-4 alerts pattern.
+export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
   const navigate = useNavigate();
-  const sp = Route.useSearch() as SearchParams;
   const kids = useKids();
 
-  const view = (sp.view === 'month' ? 'month' : 'week') as View;
-  const cursor = useMemo(() => (sp.date ? new Date(`${sp.date}T00:00:00`) : new Date()), [sp.date]);
-  const filters = useMemo(() => parseFilters(sp), [sp]);
-
+  const view: View = searchParams.view === 'month' ? 'month' : 'week';
+  const cursor = useMemo(
+    () => (searchParams.date ? new Date(`${searchParams.date}T00:00:00`) : new Date()),
+    [searchParams.date],
+  );
+  const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
   const { from, to } = useMemo(() => rangeFor(view, cursor), [view, cursor]);
   const activeKids = useMemo(() => kids.data?.filter((k) => k.active) ?? [], [kids.data]);
 
   const queries = useQueries({
     queries: activeKids.map((k) => ({
       queryKey: ['kid-calendar', k.id, from, to, filters.includeMatches],
-      queryFn: async (): Promise<KidCalendarResponse> =>
-        fetchJson<KidCalendarResponse>(
+      queryFn: () =>
+        api.get<KidCalendarResponse>(
           `/api/kids/${k.id}/calendar?from=${from}&to=${to}${filters.includeMatches ? '&include_matches=true' : ''}`,
         ),
       enabled: kids.isSuccess,
@@ -935,8 +979,13 @@ export function CalendarPage() {
   const kidsById = useMemo(() => new Map(activeKids.map((k) => [k.id, k])), [activeKids]);
   const [selected, setSelected] = useState<CombinedCalendarEvent | null>(null);
 
-  const updateSearch = (next: SearchParams) => {
-    navigate({ to: '/calendar', search: { ...sp, ...next } });
+  const updateSearch = (next: Partial<SearchParams>) => {
+    const merged: SearchParams = { ...searchParams };
+    for (const [k, v] of Object.entries(next)) {
+      if (v === undefined) delete merged[k];
+      else merged[k] = v;
+    }
+    navigate({ to: '/calendar', search: merged });
   };
 
   if (kids.isLoading) return <Skeleton className="h-32 w-full" />;
@@ -969,10 +1018,9 @@ export function CalendarPage() {
     .filter((r): r is KidCalendarResponse => r !== undefined);
   const events = mergeKidCalendars(responses, kidsById, filters);
 
-  const selectedFiltered = filters.kidIds === null || filters.kidIds.length === 0
-    ? activeKids
-    : activeKids.filter((k) => filters.kidIds!.includes(k.id));
-  if (selectedFiltered.length === 0) {
+  const visibleKidCount =
+    filters.kidIds === null ? activeKids.length : filters.kidIds.length;
+  if (visibleKidCount === 0) {
     return (
       <div>
         <h1 className="text-xl font-semibold mb-2">Combined calendar</h1>
@@ -980,7 +1028,7 @@ export function CalendarPage() {
           kids={activeKids}
           filters={filters}
           onChange={(next) => updateSearch(filtersToParams(next))}
-          onClear={() => navigate({ to: '/calendar', search: { view: sp.view, date: sp.date } })}
+          onClear={() => navigate({ to: '/calendar', search: { view: searchParams.view ?? '', date: searchParams.date ?? '' } as SearchParams })}
         />
         <p className="mt-8 text-center text-muted-foreground">No kids selected.</p>
       </div>
@@ -1001,7 +1049,7 @@ export function CalendarPage() {
           kids={activeKids}
           filters={filters}
           onChange={(next) => updateSearch(filtersToParams(next))}
-          onClear={() => navigate({ to: '/calendar', search: { view: sp.view, date: sp.date } })}
+          onClear={() => navigate({ to: '/calendar', search: {} as SearchParams })}
         />
       </div>
       <CalendarView
@@ -1017,19 +1065,29 @@ export function CalendarPage() {
           return { className: c.bg, style: { color: 'white' } };
         }}
       />
-      {selected && (
-        <CalendarEventPopover
-          event={selected}
-          kidId={selected.kid_id}
-          onClose={() => setSelected(null)}
-        />
-      )}
+      <CalendarEventPopover
+        event={selected}
+        kidId={selected?.kid_id ?? 0}
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }
+
+// Thin wrapper used by the file-route. Reads search params from the
+// router and forwards them to CalendarPage.
+function CalendarPageRoute() {
+  const search = Route.useSearch();
+  return <CalendarPage searchParams={search} />;
+}
 ```
 
-(Note: the `CalendarView` props above assume `events: CalendarEvent[]` since `CombinedCalendarEvent extends CalendarEvent`. Verify the existing `CalendarView` accepts the prop names used here — read `kids.$id.calendar.tsx` for the canonical call shape and align if signatures differ.)
+**Verify before implementing:**
+- `useKids()` returns `{ data, isLoading, isError, error, refetch, isSuccess }` — see `frontend/src/lib/queries.ts:42-46`. Confirm before using these property names.
+- `KidBrief` (used as the kid type) has fields `{ id, name, dob, interests, active }` — see `frontend/src/lib/types.ts`.
+- `<CalendarEventPopover>` props: `{ kidId: number; event: CalendarEvent | null; open: boolean; onClose }` — see `frontend/src/components/calendar/CalendarEventPopover.tsx:20-30`. Render unconditionally; toggle visibility with `open`.
+- `<CalendarView>` prop names: read the per-kid call site at `frontend/src/routes/kids.$id.calendar.tsx` and copy that shape; the new `eventStyle` prop is the only addition.
 
 - [ ] **Step 5: Run test to verify it passes**
 
