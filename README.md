@@ -301,6 +301,127 @@ docker compose build yas-api       # multi-stage build copies dist into /app/sta
 - 5a (this slice): read-only Inbox, Kid matches, Watchlist, Sites, Settings
 - 5b: Add Site wizard, alert ack/dismiss, settings editing, notifier config UI
 
+## Configuration
+
+All app settings load from environment variables prefixed `YAS_` (Pydantic
+`BaseSettings`). Defaults live in `src/yas/config.py`.
+
+### Minimum to run a container
+
+```bash
+docker run -e YAS_ANTHROPIC_API_KEY=sk-ant-... \
+  -p 8080:8080 -v yas-data:/data \
+  ghcr.io/owine/youth-activity-scheduler:latest
+```
+
+### Required
+
+| Var | Purpose |
+|---|---|
+| `YAS_ANTHROPIC_API_KEY` | LLM calls (extraction, discovery, digest top-line). No default — startup fails if unset. |
+
+### Set by the Dockerfile (already baked in)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `YAS_DATABASE_URL` | `sqlite+aiosqlite:////data/activities.db` | DB connection string |
+| `YAS_DATA_DIR` | `/data` | Data root |
+| `YAS_GIT_SHA` | commit SHA at build (or `unknown`) | Reported by `/healthz` |
+
+Override only if you know why (e.g., pointing at an external Postgres).
+
+### Optional (defaults in `src/yas/config.py`)
+
+**HTTP / logging**
+
+| Var | Default |
+|---|---|
+| `YAS_HOST` | `0.0.0.0` |
+| `YAS_PORT` | `8080` |
+| `YAS_LOG_LEVEL` | `INFO` (`DEBUG`/`WARNING`/`ERROR`) |
+
+**Worker**
+
+| Var | Default |
+|---|---|
+| `YAS_WORKER_HEARTBEAT_INTERVAL_S` | `10` |
+| `YAS_WORKER_HEARTBEAT_STALENESS_S` | `60` |
+
+**Crawl scheduler**
+
+| Var | Default |
+|---|---|
+| `YAS_CRAWL_SCHEDULER_ENABLED` | `true` |
+| `YAS_CRAWL_SCHEDULER_TICK_S` | `30` |
+| `YAS_CRAWL_SCHEDULER_BATCH_SIZE` | `10` |
+
+**LLM extraction**
+
+| Var | Default |
+|---|---|
+| `YAS_LLM_EXTRACTION_MODEL` | `claude-haiku-4-5-20251001` |
+
+**Geocoder**
+
+| Var | Default |
+|---|---|
+| `YAS_GEOCODE_ENABLED` | `true` |
+| `YAS_GEOCODE_TICK_S` | `300` |
+| `YAS_GEOCODE_BATCH_SIZE` | `20` |
+| `YAS_GEOCODE_NOMINATIM_MIN_INTERVAL_S` | `1.0` |
+
+**Daily sweep**
+
+| Var | Default |
+|---|---|
+| `YAS_SWEEP_ENABLED` | `true` |
+| `YAS_SWEEP_TIME_UTC` | `07:00` |
+
+**Site discovery**
+
+| Var | Default |
+|---|---|
+| `YAS_DISCOVERY_ENABLED` | `true` |
+| `YAS_DISCOVERY_MAX_CANDIDATES` | `50` |
+| `YAS_DISCOVERY_MAX_RETURNED` | `20` |
+| `YAS_DISCOVERY_MIN_SCORE` | `0.5` |
+| `YAS_DISCOVERY_HEAD_FETCH_CONCURRENCY` | `10` |
+| `YAS_DISCOVERY_HEAD_FETCH_TIMEOUT_S` | `10` |
+
+**Alerting**
+
+| Var | Default |
+|---|---|
+| `YAS_ALERTS_ENABLED` | `true` |
+| `YAS_ALERT_DELIVERY_TICK_S` | `60` |
+| `YAS_ALERT_COALESCE_NORMAL_S` | `600` |
+| `YAS_ALERT_MAX_PUSHES_PER_HOUR` | `5` |
+| `YAS_ALERT_DIGEST_TIME_UTC` | `07:00` |
+| `YAS_ALERT_DETECTOR_TIME_UTC` | `09:00` |
+| `YAS_ALERT_STAGNANT_SITE_DAYS` | `30` |
+| `YAS_ALERT_NO_MATCHES_KID_DAYS` | `7` |
+| `YAS_ALERT_COUNTDOWN_PAST_DUE_GRACE_S` | `86400` |
+| `YAS_ALERT_DIGEST_EMPTY_SKIP` | `true` |
+
+### Channel secrets (set only if you configured that channel)
+
+| Var | Effect when unset |
+|---|---|
+| `YAS_SMTP_PASSWORD` | SMTP email channel disabled at runtime |
+| `YAS_FORWARDEMAIL_API_TOKEN` | ForwardEmail channel disabled |
+| `YAS_NTFY_AUTH_TOKEN` | ntfy falls back to anonymous |
+| `YAS_PUSHOVER_USER_KEY` | Pushover channel disabled |
+| `YAS_PUSHOVER_APP_TOKEN` | Pushover channel disabled |
+
+### User-named channel secrets
+
+Channel JSON config can reference an env var by name (e.g., SMTP config sets
+`password_env: "MY_SMTP_PASS"` → channel reads `$MY_SMTP_PASS` at runtime).
+Whatever name you put in the config must be set in the container's
+environment, otherwise the channel silently fails to construct. Same
+pattern for ForwardEmail (`api_token_env`), ntfy (`auth_token_env`), and
+Pushover (`user_key_env`, `app_token_env`).
+
 ## Development
 
 ```bash
