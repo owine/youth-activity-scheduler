@@ -13,21 +13,23 @@ export function KidSwitcher() {
 
   return (
     <nav aria-label="Switch kid" className="flex gap-1">
-      {data.filter((k) => k.active).map((k) => (
-        <Link
-          key={k.id}
-          to="/kids/$id/matches"
-          params={{ id: String(k.id) }}
-          className={cn(
-            'rounded-md px-3 py-1 text-sm transition',
-            String(k.id) === activeId
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {k.name}
-        </Link>
-      ))}
+      {data
+        .filter((k) => k.active)
+        .map((k) => (
+          <Link
+            key={k.id}
+            to="/kids/$id/matches"
+            params={{ id: String(k.id) }}
+            className={cn(
+              'rounded-md px-3 py-1 text-sm transition',
+              String(k.id) === activeId
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {k.name}
+          </Link>
+        ))}
     </nav>
   );
 }

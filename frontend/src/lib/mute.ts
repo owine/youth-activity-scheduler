@@ -8,20 +8,14 @@ const DAYS: Record<Exclude<MuteDuration, 'forever'>, number> = {
   '90d': 90,
 };
 
-export function muteUntilFromDuration(
-  duration: MuteDuration,
-  now: Date = new Date(),
-): string {
+export function muteUntilFromDuration(duration: MuteDuration, now: Date = new Date()): string {
   if (duration === 'forever') return FOREVER_SENTINEL;
   const out = new Date(now);
   out.setDate(out.getDate() + DAYS[duration]);
   return out.toISOString();
 }
 
-export function isMuted(
-  mutedUntil: string | null,
-  now: Date = new Date(),
-): boolean {
+export function isMuted(mutedUntil: string | null, now: Date = new Date()): boolean {
   if (mutedUntil == null) return false;
   return new Date(mutedUntil) > now;
 }

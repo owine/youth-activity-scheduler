@@ -13,9 +13,7 @@ export const kidSchema = z
     school_weekdays: z.array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])),
     school_time_start: z.string().nullable(),
     school_time_end: z.string().nullable(),
-    school_year_ranges: z.array(
-      z.object({ start: z.string(), end: z.string() }),
-    ),
+    school_year_ranges: z.array(z.object({ start: z.string(), end: z.string() })),
     school_holidays: z.array(z.string()),
     max_distance_mi: z.number().min(1).max(50).nullable(),
     alert_score_threshold: z.number().min(0).max(1),
