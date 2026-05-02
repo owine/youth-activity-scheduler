@@ -28,7 +28,18 @@ async def test_healthz_returns_ok(app_with_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.get("/healthz")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    body = r.json()
+    assert body["status"] == "ok"
+    assert "git_sha" in body  # default "unknown" outside CI; SHA in CI builds
+
+
+@pytest.mark.asyncio
+async def test_healthz_reports_git_sha_when_set(app_with_db, monkeypatch):
+    monkeypatch.setenv("YAS_GIT_SHA", "abc1234")
+    app, _ = app_with_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/healthz")
+    assert r.json()["git_sha"] == "abc1234"
 
 
 @pytest.mark.asyncio

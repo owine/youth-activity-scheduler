@@ -49,6 +49,13 @@ ENV YAS_DATABASE_URL=sqlite+aiosqlite:////data/activities.db \
 # Copy the SPA bundle into the static dir consumed by yas.web.spa_fallback
 COPY --from=frontend-build /build/dist /app/static
 
+# Bake the git commit SHA into the image so /healthz can report it.
+# Placed at the very end so cache invalidation per-commit only rebuilds
+# this trivial layer, not the heavy frontend/backend/playwright layers
+# above. Default is "unknown" so non-CI builds still succeed.
+ARG GIT_SHA=unknown
+ENV YAS_GIT_SHA=$GIT_SHA
+
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
 

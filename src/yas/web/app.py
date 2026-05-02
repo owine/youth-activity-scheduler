@@ -31,7 +31,9 @@ def create_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+        import os
+
+        return {"status": "ok", "git_sha": os.environ.get("YAS_GIT_SHA", "unknown")}
 
     @app.get("/readyz")
     async def readyz(response: Response) -> dict[str, object]:
