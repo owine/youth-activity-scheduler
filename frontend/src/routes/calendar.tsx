@@ -66,16 +66,12 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
 
   const view: View = searchParams.view === 'month' ? 'month' : 'week';
   const cursor = useMemo(
-    () =>
-      searchParams.date ? new Date(`${searchParams.date}T00:00:00`) : new Date(),
+    () => (searchParams.date ? new Date(`${searchParams.date}T00:00:00`) : new Date()),
     [searchParams.date],
   );
   const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
   const { from, to } = useMemo(() => rangeFor(view, cursor), [view, cursor]);
-  const activeKids = useMemo(
-    () => kids.data?.filter((k) => k.active) ?? [],
-    [kids.data],
-  );
+  const activeKids = useMemo(() => kids.data?.filter((k) => k.active) ?? [], [kids.data]);
 
   const queries = useQueries({
     queries: activeKids.map((k) => ({
@@ -88,10 +84,7 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
     })),
   });
 
-  const kidsById = useMemo(
-    () => new Map(activeKids.map((k) => [k.id, k])),
-    [activeKids],
-  );
+  const kidsById = useMemo(() => new Map(activeKids.map((k) => [k.id, k])), [activeKids]);
   const [selected, setSelected] = useState<CombinedCalendarEvent | null>(null);
 
   const updateSearch = (next: Partial<SearchParams>) => {
@@ -105,12 +98,7 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
 
   if (kids.isLoading) return <Skeleton className="h-32 w-full" />;
   if (kids.isError) {
-    return (
-      <ErrorBanner
-        message={(kids.error as Error).message}
-        onRetry={() => kids.refetch()}
-      />
-    );
+    return <ErrorBanner message={(kids.error as Error).message} onRetry={() => kids.refetch()} />;
   }
 
   if (activeKids.length === 0) {
@@ -138,8 +126,7 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
     .filter((r): r is KidCalendarResponse => r !== undefined);
   const events = mergeKidCalendars(responses, kidsById, filters);
 
-  const visibleKidCount =
-    filters.kidIds === null ? activeKids.length : filters.kidIds.length;
+  const visibleKidCount = filters.kidIds === null ? activeKids.length : filters.kidIds.length;
   if (visibleKidCount === 0) {
     return (
       <div>

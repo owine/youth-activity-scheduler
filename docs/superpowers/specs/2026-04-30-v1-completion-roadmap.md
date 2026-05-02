@@ -61,7 +61,7 @@ Each deviation was individually defensible (close-the-loop UX wins). The cumulat
 |---|---|---|
 | 1 | Dashboard | ✓ Inbox |
 | 2 | Offerings browser (cross-kid) | ✅ Phase 7-2 (2026-05-01) |
-| 3 | Calendar (per-kid + combined) | ⚠️ per-kid ✓; combined → Phase 8-1 |
+| 3 | Calendar (per-kid + combined) | ✅ per-kid ✓; combined ✅ Phase 8-1 (2026-05-02) |
 | 4 | Kids: list + detail editing | ✅ list + Add/Edit form (Phase 6-1) |
 | 5 | Sites: list + detail + Add Site flow | ✅ list/detail + Crawl-now/Pause (Phase 6-4) + Add Site wizard (Phase 6-2) |
 | 6 | Watchlist: cross-kid + mutations | ✅ per-kid mutations (Phase 6-3); cross-kid view deferred (low value for single-household; Phase 8 if needed) |

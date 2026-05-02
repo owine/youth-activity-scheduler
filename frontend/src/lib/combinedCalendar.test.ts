@@ -110,12 +110,7 @@ describe('mergeKidCalendars', () => {
 
   it('drops match events when includeMatches=false', () => {
     const out = mergeKidCalendars(
-      [
-        samResp([
-          ev('2026-05-13', 'A', 'enrollment'),
-          ev('2026-05-13', 'M', 'match'),
-        ]),
-      ],
+      [samResp([ev('2026-05-13', 'A', 'enrollment'), ev('2026-05-13', 'M', 'match')])],
       new Map([[1, sam]]),
       { kidIds: null, types: null, includeMatches: false },
     );

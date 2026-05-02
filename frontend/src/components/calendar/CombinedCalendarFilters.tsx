@@ -1,8 +1,4 @@
-import type {
-  CombinedCalendarFilterState,
-  KidBrief,
-  CalendarEventKind,
-} from '@/lib/types';
+import type { CombinedCalendarFilterState, KidBrief, CalendarEventKind } from '@/lib/types';
 import { colorForKid } from '@/lib/calendarColors';
 
 const ALL_TYPES: { kind: CalendarEventKind; label: string }[] = [
