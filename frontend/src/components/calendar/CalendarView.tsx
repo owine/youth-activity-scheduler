@@ -1,7 +1,7 @@
 import { Calendar, dateFnsLocalizer, Views, type View } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale';
-import type { CalendarEvent } from '@/lib/types';
+import type { CalendarEvent, CalendarEventKind } from '@/lib/types';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import './calendar-overrides.css';
 
@@ -25,6 +25,15 @@ function parseTimeParts(timeStr: string): [number, number] {
   const parts = timeStr.split(':').map(Number);
   return [parts[0] ?? 0, parts[1] ?? 0];
 }
+
+// Exhaustive map: TypeScript will flag any future CalendarEventKind member
+// that's missing here. Avoids the silent fall-through a chained ternary had.
+const KIND_CLASS: Record<CalendarEventKind, string> = {
+  enrollment: 'rbc-event-enrollment',
+  unavailability: 'rbc-event-unavailability',
+  match: 'rbc-event-match',
+  holiday: 'rbc-event-holiday',
+};
 
 function toRbc(e: CalendarEvent): RbcEvent {
   const [y, m, d] = parseDateParts(e.date);
@@ -79,12 +88,7 @@ export function CalendarView({
         onSelectEvent={(rbc) => onSelectEvent((rbc as RbcEvent).resource)}
         eventPropGetter={(rbc) => {
           const ev = (rbc as RbcEvent).resource;
-          const kindClass =
-            ev.kind === 'enrollment'
-              ? 'rbc-event-enrollment'
-              : ev.kind === 'match'
-                ? 'rbc-event-match'
-                : 'rbc-event-unavailability';
+          const kindClass = KIND_CLASS[ev.kind];
           const override = eventStyle?.(ev);
           return {
             className: [kindClass, override?.className].filter(Boolean).join(' '),

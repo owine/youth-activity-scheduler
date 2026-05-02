@@ -285,7 +285,7 @@ export interface TestSendResult {
   detail: string;
 }
 
-export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match';
+export type CalendarEventKind = 'enrollment' | 'unavailability' | 'match' | 'holiday';
 
 export interface CalendarEvent {
   id: string; // composite "kind:source-id:date"

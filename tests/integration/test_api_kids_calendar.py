@@ -552,3 +552,128 @@ async def test_match_overlay_includes_offering_whose_mute_expired(client):
     body = r.json()
     matches = [e for e in body["events"] if e["kind"] == "match"]
     assert len(matches) == 1
+
+
+# Phase 8-2 holiday / school-year integration
+
+
+async def _seed_kid_with_school(
+    engine,
+    *,
+    kid_id: int = 1,
+    holidays: list[str] | None = None,
+    year_ranges: list[dict[str, str]] | None = None,
+    school_block: bool = True,
+) -> None:
+    async with session_scope(engine) as s:
+        s.add(
+            Kid(
+                id=kid_id,
+                name="Sam",
+                dob=date(2019, 5, 1),
+                school_weekdays=["mon", "tue", "wed", "thu", "fri"],
+                school_time_start=time(8, 0),
+                school_time_end=time(15, 0),
+                school_year_ranges=year_ranges or [{"start": "2026-04-01", "end": "2026-06-30"}],
+                school_holidays=holidays or [],
+            )
+        )
+        if school_block:
+            s.add(
+                UnavailabilityBlock(
+                    kid_id=kid_id,
+                    source=UnavailabilitySource.school.value,
+                    label="School",
+                    days_of_week=["mon", "tue", "wed", "thu", "fri"],
+                    time_start=time(8, 0),
+                    time_end=time(15, 0),
+                    date_start=date(2026, 4, 1),
+                    date_end=date(2026, 6, 30),
+                    active=True,
+                )
+            )
+
+
+@pytest.mark.asyncio
+async def test_holiday_skips_school_block_render(client):
+    """A holiday on a school weekday hides the school occurrence."""
+    c, engine = client
+    # Wed 2026-04-29 is a school weekday.
+    await _seed_kid_with_school(engine, holidays=["2026-04-29"])
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
+    body = r.json()
+    school_on_holiday = [
+        e for e in body["events"] if e["kind"] == "unavailability" and e["date"] == "2026-04-29"
+    ]
+    assert school_on_holiday == []
+
+
+@pytest.mark.asyncio
+async def test_holiday_event_emitted_in_range_and_school_year(client):
+    """Holidays within range and inside a school_year_range get a holiday event."""
+    c, engine = client
+    await _seed_kid_with_school(engine, holidays=["2026-04-29"])
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
+    body = r.json()
+    holidays = [e for e in body["events"] if e["kind"] == "holiday"]
+    assert len(holidays) == 1
+    assert holidays[0]["date"] == "2026-04-29"
+    assert holidays[0]["all_day"] is True
+    assert holidays[0]["title"] == "Holiday"
+
+
+@pytest.mark.asyncio
+async def test_holiday_outside_school_year_not_emitted(client):
+    """A holiday date outside any school_year_range is not rendered."""
+    c, engine = client
+    # July 4 falls outside 2026-04-01..2026-06-30.
+    await _seed_kid_with_school(engine, holidays=["2026-07-04"])
+
+    r = await c.get("/api/kids/1/calendar?from=2026-07-01&to=2026-07-08")
+    body = r.json()
+    holidays = [e for e in body["events"] if e["kind"] == "holiday"]
+    assert holidays == []
+
+
+@pytest.mark.asyncio
+async def test_holiday_outside_request_range_not_emitted(client):
+    """A holiday date outside the from/to window is not rendered."""
+    c, engine = client
+    await _seed_kid_with_school(engine, holidays=["2026-04-29"])
+
+    r = await c.get("/api/kids/1/calendar?from=2026-05-04&to=2026-05-11")
+    body = r.json()
+    holidays = [e for e in body["events"] if e["kind"] == "holiday"]
+    assert holidays == []
+
+
+@pytest.mark.asyncio
+async def test_non_school_block_unaffected_by_holidays(client):
+    """A manual unavailability block on a holiday date still renders."""
+    c, engine = client
+    await _seed_kid_with_school(engine, holidays=["2026-04-29"], school_block=False)
+    async with session_scope(engine) as s:
+        s.add(
+            UnavailabilityBlock(
+                kid_id=1,
+                source=UnavailabilitySource.manual.value,
+                label="Doctor",
+                days_of_week=["wed"],
+                time_start=time(10, 0),
+                time_end=time(11, 0),
+                date_start=date(2026, 4, 29),
+                date_end=date(2026, 4, 29),
+                active=True,
+            )
+        )
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
+    body = r.json()
+    manual = [
+        e
+        for e in body["events"]
+        if e["kind"] == "unavailability" and e["source"] == "manual" and e["date"] == "2026-04-29"
+    ]
+    assert len(manual) == 1

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 class CalendarEventOut(BaseModel):
     id: str
-    kind: Literal["enrollment", "unavailability", "match"]
+    kind: Literal["enrollment", "unavailability", "match", "holiday"]
     date: date
     time_start: time | None = None
     time_end: time | None = None

@@ -50,6 +50,7 @@ describe('CombinedCalendarFilters', () => {
     expect(screen.getByLabelText(/Enrollment/i)).toBeChecked();
     expect(screen.getByLabelText(/Unavailability/i)).toBeChecked();
     expect(screen.getByLabelText(/^Match$/i)).toBeChecked();
+    expect(screen.getByLabelText(/Holiday/i)).toBeChecked();
   });
 
   it('toggling a kid checkbox invokes onChange with that kid removed', async () => {

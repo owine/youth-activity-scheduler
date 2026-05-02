@@ -18,6 +18,12 @@
   border: 1px dashed hsl(var(--primary));
 }
 
+.rbc-event-holiday {
+  background-color: rgb(254 243 199); /* amber-100 */
+  color: rgb(180 83 9); /* amber-700 */
+  border: 1px solid rgb(252 211 77); /* amber-300 */
+}
+
 .rbc-today {
   background-color: hsl(var(--accent));
 }
