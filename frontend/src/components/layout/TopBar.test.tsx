@@ -63,5 +63,6 @@ describe('TopBar', () => {
     expect(await screen.findByText('Sam')).toBeInTheDocument();
     expect(await screen.findByText('1')).toBeInTheDocument(); // alert badge
     expect(screen.getByRole('link', { name: 'Kids' })).toHaveAttribute('href', '/kids');
+    expect(screen.getByRole('link', { name: 'Calendar' })).toHaveAttribute('href', '/calendar');
   });
 });
