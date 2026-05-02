@@ -167,6 +167,16 @@ jobs:
         run: |
           echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
 
+      - name: Compute OCI metadata
+        id: meta
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893  # v5.9.0
+        with:
+          images: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.title=Youth Activity Scheduler
+            org.opencontainers.image.description=Self-hosted youth-activity scheduler with crawl, matching, and alerting.
+            org.opencontainers.image.licenses=MIT
+
       - name: Build (push by digest on main)
         id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
@@ -177,6 +187,16 @@ jobs:
           # manifest. On PRs: just build to verify the Dockerfile.
           outputs: |
             type=image,name=${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # OCI labels (manifest-level, zero Dockerfile cache impact). The
+          # metadata-action auto-fills source/revision/created/url/version
+          # from the workflow context.
+          labels: ${{ steps.meta.outputs.labels }}
+          # GIT_SHA is consumed by the trailing ARG/ENV in the Dockerfile so
+          # the running container can report its commit at /healthz. Placed
+          # last in the Dockerfile so this only invalidates the trailing
+          # layer (which busts every commit anyway via the source COPY).
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
@@ -236,18 +256,37 @@ jobs:
         run: |
           echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
 
+      - name: Compute OCI annotations for manifest
+        id: meta
+        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893  # v5.9.0
+        with:
+          images: ${{ steps.image.outputs.name }}
+          labels: |
+            org.opencontainers.image.title=Youth Activity Scheduler
+            org.opencontainers.image.description=Self-hosted youth-activity scheduler with crawl, matching, and alerting.
+            org.opencontainers.image.licenses=MIT
+
       - name: Create multi-arch manifest + push
         working-directory: /tmp/digests
         env:
           IMAGE: ${{ steps.image.outputs.name }}
           SHA: ${{ github.sha }}
+          ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
         run: |
           short_sha="${SHA:0:7}"
+          # Convert metadata-action's newline-separated annotations to
+          # repeated --annotation flags for imagetools create.
+          ann_args=()
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            ann_args+=("--annotation" "$line")
+          done <<< "$ANNOTATIONS"
           # shellcheck disable=SC2046
           docker buildx imagetools create \
             --tag "${IMAGE}:latest" \
             --tag "${IMAGE}:main" \
             --tag "${IMAGE}:sha-${short_sha}" \
+            "${ann_args[@]}" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       - name: Inspect manifest
