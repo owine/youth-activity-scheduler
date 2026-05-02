@@ -574,8 +574,7 @@ async def _seed_kid_with_school(
                 school_weekdays=["mon", "tue", "wed", "thu", "fri"],
                 school_time_start=time(8, 0),
                 school_time_end=time(15, 0),
-                school_year_ranges=year_ranges
-                or [{"start": "2026-04-01", "end": "2026-06-30"}],
+                school_year_ranges=year_ranges or [{"start": "2026-04-01", "end": "2026-06-30"}],
                 school_holidays=holidays or [],
             )
         )

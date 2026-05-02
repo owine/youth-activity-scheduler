@@ -67,7 +67,7 @@ async def get_kid_calendar(
                 school_year_ranges_parsed.append(
                     (date.fromisoformat(entry["start"]), date.fromisoformat(entry["end"]))
                 )
-            except (KeyError, ValueError):
+            except KeyError, ValueError:
                 continue
 
         enrollment_rows = (
