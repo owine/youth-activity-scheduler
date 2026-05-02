@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as OfferingsRouteImport } from './routes/offerings'
+import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
 import { Route as KidsIndexRouteImport } from './routes/kids.index'
@@ -31,6 +32,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const OfferingsRoute = OfferingsRouteImport.update({
   id: '/offerings',
   path: '/offerings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -91,6 +97,7 @@ const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
@@ -122,6 +130,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/alerts': typeof AlertsRoute
   '/offerings': typeof OfferingsRoute
   '/settings': typeof SettingsRoute
   '/kids/new': typeof KidsNewRoute
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/alerts'
     | '/offerings'
     | '/settings'
     | '/kids/new'
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/alerts'
     | '/offerings'
     | '/settings'
     | '/kids/new'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/alerts'
     | '/offerings'
     | '/settings'
     | '/kids/new'
@@ -185,6 +197,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AlertsRoute: typeof AlertsRoute
   OfferingsRoute: typeof OfferingsRoute
   SettingsRoute: typeof SettingsRoute
   KidsNewRoute: typeof KidsNewRoute
@@ -213,6 +226,13 @@ declare module '@tanstack/react-router' {
       path: '/offerings'
       fullPath: '/offerings'
       preLoaderRoute: typeof OfferingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -297,6 +317,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AlertsRoute: AlertsRoute,
   OfferingsRoute: OfferingsRoute,
   SettingsRoute: SettingsRoute,
   KidsNewRoute: KidsNewRoute,

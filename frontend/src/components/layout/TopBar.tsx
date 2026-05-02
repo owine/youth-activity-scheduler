@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Bell, Globe, LayoutGrid, Settings } from 'lucide-react';
+import { Bell, Globe, LayoutGrid, Mail, Settings } from 'lucide-react';
 import { KidSwitcher } from './KidSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { useInboxSummary } from '@/lib/queries';
@@ -33,6 +33,12 @@ export function TopBar() {
         className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <LayoutGrid className="h-4 w-4" /> Offerings
+      </Link>
+      <Link
+        to="/alerts"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <Mail className="h-4 w-4" /> Alerts
       </Link>
       <Link
         to="/sites"
