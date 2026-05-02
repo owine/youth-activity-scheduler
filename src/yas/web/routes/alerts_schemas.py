@@ -28,6 +28,7 @@ class AlertOut(BaseModel):
     payload_json: dict[str, Any]
     closed_at: datetime | None = None
     close_reason: CloseReason | None = None
+    summary_text: str = ""  # populated by handlers via summarize_alert
 
 
 class AlertListResponse(BaseModel):

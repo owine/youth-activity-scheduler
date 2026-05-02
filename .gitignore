@@ -13,3 +13,11 @@ dist/
 build/
 *.egg-info/
 .superpowers/
+
+# Smoke-test / manual-Playwright artifacts (never commit)
+.playwright-mcp/
+popover-snapshot.yml
+*-smoke-*.png
+
+# Local Claude Code scheduled-task lock — runtime state, not source
+.claude/scheduled_tasks.lock

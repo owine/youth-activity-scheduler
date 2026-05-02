@@ -332,4 +332,36 @@ export const handlers = [
     });
   }),
   http.post('/api/notifiers/:channel/test', () => HttpResponse.json({ ok: true, detail: 'sent' })),
+  // GET /api/alerts — default empty list
+  http.get('/api/alerts', () => HttpResponse.json({ items: [], total: 0, limit: 25, offset: 0 })),
+  // POST /api/alerts/:id/resend — clones the alert
+  http.post('/api/alerts/:id/resend', ({ params }) =>
+    HttpResponse.json(
+      {
+        id: 999,
+        type: 'new_match',
+        kid_id: 1,
+        offering_id: null,
+        site_id: null,
+        channels: ['email'],
+        scheduled_for: '2026-05-01T00:00:00Z',
+        sent_at: null,
+        skipped: false,
+        dedup_key: `clone:${params.id}`,
+        payload_json: {},
+        closed_at: null,
+        close_reason: null,
+        summary_text: 'Resent alert',
+      },
+      { status: 202 },
+    ),
+  ),
+  // GET /api/digest/preview — default minimal render
+  http.get('/api/digest/preview', () =>
+    HttpResponse.json({
+      subject: 'Daily digest — preview',
+      body_plain: 'Preview body',
+      body_html: '<p>Preview body</p>',
+    }),
+  ),
 ];
