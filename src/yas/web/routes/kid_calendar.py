@@ -207,6 +207,7 @@ async def get_kid_calendar(
                             location_id=offering.location_id,
                             score=match.score,
                             registration_url=offering.registration_url,
+                            watchlist_hit=bool((match.reasons or {}).get("watchlist_hit")),
                         )
                     )
 

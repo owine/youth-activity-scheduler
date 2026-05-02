@@ -89,9 +89,14 @@ export function CalendarView({
         eventPropGetter={(rbc) => {
           const ev = (rbc as RbcEvent).resource;
           const kindClass = KIND_CLASS[ev.kind];
+          // Watchlist matches get an extra modifier class on top of the
+          // base match class so the user can recognize personally-flagged
+          // hits at a glance (gold ring vs the default dashed border).
+          const watchlistClass =
+            ev.kind === 'match' && ev.watchlist_hit ? 'rbc-event-watchlist' : '';
           const override = eventStyle?.(ev);
           return {
-            className: [kindClass, override?.className].filter(Boolean).join(' '),
+            className: [kindClass, watchlistClass, override?.className].filter(Boolean).join(' '),
             ...(override?.style ? { style: override.style } : {}),
           };
         }}

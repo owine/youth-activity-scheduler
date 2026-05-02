@@ -24,6 +24,14 @@
   border: 1px solid rgb(252 211 77); /* amber-300 */
 }
 
+/* Modifier on top of .rbc-event-match: a watchlist-driven match (the
+ * user explicitly flagged this pattern, not just a high-score discovery).
+ * Solid gold ring distinguishes it from the dashed default. */
+.rbc-event-match.rbc-event-watchlist {
+  border: 2px solid rgb(202 138 4); /* yellow-600 */
+  border-style: solid;
+}
+
 .rbc-today {
   background-color: hsl(var(--accent));
 }
