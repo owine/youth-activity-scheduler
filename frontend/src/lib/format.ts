@@ -18,7 +18,7 @@ export function relDate(value: string | Date | null | undefined, now: Date = new
   return format(d, 'PP');
 }
 
-export function fmt(value: string | Date, fmtStr = "EEE h:mm a · MMM d"): string {
+export function fmt(value: string | Date, fmtStr = 'EEE h:mm a · MMM d'): string {
   const d = typeof value === 'string' ? parseISO(value) : value;
   return format(d, fmtStr);
 }

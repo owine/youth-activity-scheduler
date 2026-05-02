@@ -19,17 +19,10 @@ const DURATION_OPTIONS: Array<{ value: MuteDuration; label: string }> = [
   { value: 'forever', label: 'Forever' },
 ];
 
-export function MuteButton({
-  mutedUntil,
-  onChange,
-  isPending,
-  size = 'default',
-}: MuteButtonProps) {
+export function MuteButton({ mutedUntil, onChange, isPending, size = 'default' }: MuteButtonProps) {
   const [open, setOpen] = useState(false);
   const muted = isMuted(mutedUntil);
-  const label = muted
-    ? `Muted until ${format(new Date(mutedUntil!), 'MMM d')}`
-    : 'Mute';
+  const label = muted ? `Muted until ${format(new Date(mutedUntil!), 'MMM d')}` : 'Mute';
 
   const handle = (next: string | null) => {
     setOpen(false);
@@ -39,11 +32,7 @@ export function MuteButton({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <Button
-          size={size}
-          variant={muted ? 'outline' : 'ghost'}
-          disabled={isPending}
-        >
+        <Button size={size} variant={muted ? 'outline' : 'ghost'} disabled={isPending}>
           {label}
         </Button>
       </Popover.Trigger>

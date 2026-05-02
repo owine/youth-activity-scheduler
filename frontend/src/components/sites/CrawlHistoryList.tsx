@@ -9,9 +9,16 @@ const statusVariant: Record<string, 'default' | 'secondary' | 'destructive' | 'o
   skipped: 'outline',
 };
 
-export function CrawlHistoryList({ crawls, isLoading }: { crawls: CrawlRun[] | undefined; isLoading: boolean }) {
+export function CrawlHistoryList({
+  crawls,
+  isLoading,
+}: {
+  crawls: CrawlRun[] | undefined;
+  isLoading: boolean;
+}) {
   if (isLoading) return <Skeleton className="h-32 w-full" />;
-  if (!crawls || crawls.length === 0) return <p className="text-sm text-muted-foreground">No crawl history.</p>;
+  if (!crawls || crawls.length === 0)
+    return <p className="text-sm text-muted-foreground">No crawl history.</p>;
   return (
     <ul className="space-y-1.5">
       {crawls.map((c) => (
@@ -19,7 +26,9 @@ export function CrawlHistoryList({ crawls, isLoading }: { crawls: CrawlRun[] | u
           <div className="flex items-center gap-3">
             <Badge variant={statusVariant[c.status] ?? 'outline'}>{c.status}</Badge>
             <span className="text-muted-foreground">{fmt(c.started_at)}</span>
-            <span className="ml-auto">{c.pages_fetched} pages · {c.changes_detected} changes</span>
+            <span className="ml-auto">
+              {c.pages_fetched} pages · {c.changes_detected} changes
+            </span>
           </div>
           {c.error_text && <p className="mt-1 text-xs text-destructive">{c.error_text}</p>}
         </li>

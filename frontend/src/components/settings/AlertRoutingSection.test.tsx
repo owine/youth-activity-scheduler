@@ -99,9 +99,7 @@ describe('AlertRoutingSection', () => {
   });
 
   it('cell toggle calls PATCH /api/alert_routing/:type with the updated channels array', async () => {
-    const routing: AlertRouting[] = [
-      { type: 'new_match', channels: ['email'], enabled: true },
-    ];
+    const routing: AlertRouting[] = [{ type: 'new_match', channels: ['email'], enabled: true }];
     const qc = makeQc();
     qc.setQueryData(['household'], baseHh);
     qc.setQueryData(['alert_routing'], routing);
@@ -117,9 +115,7 @@ describe('AlertRoutingSection', () => {
   });
 
   it('Enabled checkbox toggle PATCHes {enabled: bool}', async () => {
-    const routing: AlertRouting[] = [
-      { type: 'new_match', channels: ['email'], enabled: true },
-    ];
+    const routing: AlertRouting[] = [{ type: 'new_match', channels: ['email'], enabled: true }];
     const qc = makeQc();
     qc.setQueryData(['household'], baseHh);
     qc.setQueryData(['alert_routing'], routing);
@@ -135,19 +131,17 @@ describe('AlertRoutingSection', () => {
   });
 
   it('clicking the last remaining channel checkbox in an enabled row does NOT fire PATCH', async () => {
-    server.use();  // Reset to default handler
+    server.use(); // Reset to default handler
     const qc = makeQc();
     qc.setQueryData(['household'], baseHh);
-    qc.setQueryData(['alert_routing'], [
-      { type: 'new_match', channels: ['email'], enabled: true },
-    ]);
+    qc.setQueryData(['alert_routing'], [{ type: 'new_match', channels: ['email'], enabled: true }]);
     render(<AlertRoutingSection />, { wrapper: wrap(qc) });
 
     const emailCell = screen.getByRole('checkbox', { name: /new_match email/i });
     expect(emailCell).toBeChecked();
     await userEvent.click(emailCell);
 
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     // The cell stays checked because the click was suppressed by the guard
     expect(emailCell).toBeChecked();
   });

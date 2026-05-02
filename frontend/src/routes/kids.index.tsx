@@ -19,14 +19,17 @@ export function KidsIndexPage() {
           <Link to="/kids/new">Add kid</Link>
         </Button>
       </div>
-      {(!kids || kids.length === 0) ? (
+      {!kids || kids.length === 0 ? (
         <div className="text-muted-foreground text-sm">
           No kids yet — Add your first kid to start matching.
         </div>
       ) : (
         <ul className="space-y-2">
           {kids.map((k) => (
-            <li key={k.id} className="rounded-md border border-border p-3 flex items-center justify-between">
+            <li
+              key={k.id}
+              className="rounded-md border border-border p-3 flex items-center justify-between"
+            >
               <Link to="/kids/$id/matches" params={{ id: String(k.id) }} className="flex-1">
                 <div className="font-medium">{k.name}</div>
                 <div className="text-xs text-muted-foreground">

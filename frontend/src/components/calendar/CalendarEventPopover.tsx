@@ -9,7 +9,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import type { CalendarEvent } from '@/lib/types';
-import { useCancelEnrollment, useDeleteUnavailability, useEnrollOffering, useUpdateOfferingMute } from '@/lib/mutations';
+import {
+  useCancelEnrollment,
+  useDeleteUnavailability,
+  useEnrollOffering,
+  useUpdateOfferingMute,
+} from '@/lib/mutations';
 import { MuteButton } from '@/components/common/MuteButton';
 
 export function CalendarEventPopover({
@@ -93,8 +98,7 @@ export function CalendarEventPopover({
 
   const isMatch = event?.kind === 'match';
   const isEnrollment = event?.kind === 'enrollment';
-  const isLinkedBlock =
-    event?.kind === 'unavailability' && event.from_enrollment_id != null;
+  const isLinkedBlock = event?.kind === 'unavailability' && event.from_enrollment_id != null;
 
   return (
     <Sheet

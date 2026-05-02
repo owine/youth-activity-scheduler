@@ -9,6 +9,9 @@ test('inbox shows seeded alert and kid match counts', async ({ page }) => {
 
 test('clicking an alert opens detail drawer', async ({ page }) => {
   await page.goto('/');
-  await page.getByText(/Spring T-Ball/).first().click();
+  await page
+    .getByText(/Spring T-Ball/)
+    .first()
+    .click();
   await expect(page.getByRole('dialog').getByText(/Watchlist hit/)).toBeVisible();
 });

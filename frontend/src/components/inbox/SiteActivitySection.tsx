@@ -11,7 +11,8 @@ export function SiteActivitySection({ activity }: { activity: InboxSiteActivity 
         Site activity
       </h2>
       <p className="text-sm text-muted-foreground">
-        {activity.refreshed_count} sites refreshed · {activity.posted_new_count} posted new schedules ·{' '}
+        {activity.refreshed_count} sites refreshed · {activity.posted_new_count} posted new
+        schedules ·{' '}
         {activity.stagnant_count > 0 ? (
           <Link to="/sites" className="underline underline-offset-2 hover:text-foreground">
             {activity.stagnant_count} stagnant

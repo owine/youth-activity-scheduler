@@ -13,9 +13,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api':     { target: 'http://localhost:8080', changeOrigin: true },
+      '/api': { target: 'http://localhost:8080', changeOrigin: true },
       '/healthz': { target: 'http://localhost:8080', changeOrigin: true },
-      '/readyz':  { target: 'http://localhost:8080', changeOrigin: true },
+      '/readyz': { target: 'http://localhost:8080', changeOrigin: true },
     },
   },
   build: {

@@ -63,11 +63,15 @@ describe('AlertDetailDrawer', () => {
 
   it('shows an inline error banner if the mutation fails', async () => {
     server.use(
-      http.post('/api/alerts/:id/close', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+      http.post('/api/alerts/:id/close', () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
     );
     renderDrawer(openAlert);
     await userEvent.click(screen.getByRole('button', { name: /acknowledge/i }));
-    await waitFor(() => expect(screen.getAllByText(/couldn't load|error|failed/i).length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText(/couldn't load|error|failed/i).length).toBeGreaterThan(0),
+    );
     // Buttons re-enabled after error.
     expect(screen.getByRole('button', { name: /acknowledge/i })).not.toBeDisabled();
   });
