@@ -30,14 +30,14 @@ Two coordinated changes:
 |---|---|
 | `src/yas/web/routes/kid_calendar_schemas.py` | Extend the `kind` `Literal` to include `"holiday"`. |
 | `src/yas/web/routes/kid_calendar.py` | (a) Build a `school_holiday_dates: set[date]` from `kid.school_holidays`; (b) when expanding `UnavailabilityBlock` with `source=school`, skip occurrences whose date is in that set; (c) after expanding blocks, emit one `holiday` event per holiday date that falls in range AND inside `school_year_ranges`. |
-| `tests/integration/test_api_kid_calendar.py` | Add tests: school block skipped on holiday; holiday event emitted; holiday outside school year not emitted; non-school blocks not affected by holidays. |
+| `tests/integration/test_api_kids_calendar.py` | Add tests: school block skipped on holiday; holiday event emitted; holiday outside school year not emitted; non-school blocks not affected by holidays. |
 
 ### Frontend
 
 | File | Change |
 |---|---|
 | `frontend/src/lib/types.ts` | Add `'holiday'` to `CalendarEventKind` union. |
-| `frontend/src/components/calendar/CalendarView.tsx` | Extend the kind→className mapping to include `'holiday' → 'rbc-event-holiday'`. |
+| `frontend/src/components/calendar/CalendarView.tsx` | Replace the chained-ternary kind→className mapping with an exhaustive `Record<CalendarEventKind, string>` lookup. The current chain falls through to `'rbc-event-unavailability'` for unknown kinds, so adding a member to the union doesn't TS-error — switching to a `Record` ensures the compiler flags any future kind addition that forgets a class. |
 | `frontend/src/components/calendar/calendar-overrides.css` | Add `.rbc-event-holiday` rule with a soft amber/yellow palette (festive, non-alarming, distinct from the muted unavailability gray). |
 | `frontend/src/components/calendar/CombinedCalendarFilters.tsx` | Add `{ kind: 'holiday', label: 'Holiday' }` to `ALL_TYPES`. Default on (matches other types). |
 | `frontend/src/components/calendar/CombinedCalendarFilters.test.tsx` | Update test that asserts the type-checkbox set; add coverage for toggling Holiday. |
@@ -57,7 +57,7 @@ Two coordinated changes:
 
 **D3. Holiday events are all-day with title `"Holiday"`.** No name field on `school_holidays` (it's a flat list of date strings). Adding labels would require a DB migration to change the column shape — out of scope. Title `"Holiday"` plus the date being on the calendar is enough context.
 
-**D4. Holidays render only inside `school_year_ranges`.** A holiday date outside the school year is meaningless ("today is a school holiday" doesn't apply when it's summer). Filter in the endpoint, not the frontend.
+**D4. Holidays render only inside `school_year_ranges`.** A holiday date outside the school year is meaningless ("today is a school holiday" doesn't apply when it's summer). Filter in the endpoint, not the frontend. **Boundary semantics: closed interval on both ends** — `start <= holiday_date <= end`. Matches how `school_materializer.py` materializes school blocks (inclusive `date_start`/`date_end`).
 
 **D5. Holiday filter defaults ON.** Matches enrollment/unavailability/match defaults. User can hide via the type filter.
 
@@ -69,7 +69,7 @@ Two coordinated changes:
 
 ## 5. Test plan
 
-### Backend (`tests/integration/test_api_kid_calendar.py`)
+### Backend (`tests/integration/test_api_kids_calendar.py`)
 
 - Holiday on a school weekday → school occurrence skipped, holiday event emitted.
 - Holiday on a non-school weekday → no school to skip, holiday event still emitted.
