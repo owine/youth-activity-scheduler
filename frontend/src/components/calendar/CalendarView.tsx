@@ -47,6 +47,7 @@ export function CalendarView({
   date,
   onNavigate,
   onSelectEvent,
+  eventStyle,
 }: {
   events: CalendarEvent[];
   view: View;
@@ -54,6 +55,13 @@ export function CalendarView({
   date: Date;
   onNavigate: (d: Date) => void;
   onSelectEvent: (e: CalendarEvent) => void;
+  /** Optional per-event style override. The kind-based className
+   *  (rbc-event-enrollment etc.) is preserved; the override's className
+   *  is concatenated and `style` is shallow-merged on top. */
+  eventStyle?: (event: CalendarEvent) => {
+    className?: string;
+    style?: React.CSSProperties;
+  };
 }) {
   const rbcEvents = events.map(toRbc);
   return (
@@ -70,14 +78,17 @@ export function CalendarView({
         max={new Date(0, 0, 0, 22, 0, 0)}
         onSelectEvent={(rbc) => onSelectEvent((rbc as RbcEvent).resource)}
         eventPropGetter={(rbc) => {
-          const k = (rbc as RbcEvent).resource.kind;
+          const ev = (rbc as RbcEvent).resource;
+          const kindClass =
+            ev.kind === 'enrollment'
+              ? 'rbc-event-enrollment'
+              : ev.kind === 'match'
+                ? 'rbc-event-match'
+                : 'rbc-event-unavailability';
+          const override = eventStyle?.(ev);
           return {
-            className:
-              k === 'enrollment'
-                ? 'rbc-event-enrollment'
-                : k === 'match'
-                  ? 'rbc-event-match'
-                  : 'rbc-event-unavailability',
+            className: [kindClass, override?.className].filter(Boolean).join(' '),
+            ...(override?.style ? { style: override.style } : {}),
           };
         }}
       />

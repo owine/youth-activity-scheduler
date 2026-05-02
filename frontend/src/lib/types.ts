@@ -370,3 +370,18 @@ export interface DigestPreviewResponse {
   body_plain: string;
   body_html: string;
 }
+
+// Phase 8-1 combined calendar
+export interface CombinedCalendarEvent extends CalendarEvent {
+  /** Injected at merge time; not present in API response. */
+  kid_id: number;
+}
+
+export interface CombinedCalendarFilterState {
+  /** Selected kid ids; null means "all active". */
+  kidIds: number[] | null;
+  /** Selected event types; null means "all". */
+  types: CalendarEventKind[] | null;
+  /** Pull match events into the calendar (defaults false). */
+  includeMatches: boolean;
+}
