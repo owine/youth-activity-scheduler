@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
@@ -5,6 +6,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { OutboxFilterBar } from './OutboxFilterBar';
 import { OutboxRow } from './OutboxRow';
 import { useAlerts, useKids } from '@/lib/queries';
+import { useBulkCloseAlerts } from '@/lib/mutations';
 import type { OutboxFilterState, AlertStatus } from '@/lib/types';
 
 interface Props {
@@ -28,6 +30,8 @@ export function OutboxPanel({ searchParams, onFiltersChange, onClearFilters }: P
   const filters = parseSearchToFilters(searchParams);
   const kids = useKids();
   const { data, isLoading, isError, refetch } = useAlerts(filters);
+  const bulkClose = useBulkCloseAlerts();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   if (isLoading) return <Skeleton className="h-32 w-full" />;
   if (isError || !data) {
@@ -40,9 +44,65 @@ export function OutboxPanel({ searchParams, onFiltersChange, onClearFilters }: P
   const hasNext = end < total;
   const hasPrev = offset > 0;
 
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectableIds = items.filter((a) => a.closed_at == null).map((a) => a.id);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(selectableIds));
+    }
+  };
+
+  const handleBulkClose = async (reason: 'acknowledged' | 'dismissed') => {
+    if (selected.size === 0) return;
+    await bulkClose.mutateAsync({ alertIds: [...selected], reason });
+    setSelected(new Set());
+  };
+
   return (
     <div className="space-y-4">
       <OutboxFilterBar value={filters} onChange={onFiltersChange} kids={kids.data ?? []} />
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 rounded border border-border bg-accent/30 px-3 py-2 text-sm">
+          <span className="font-medium">{selected.size} selected</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={bulkClose.isPending}
+            onClick={() => handleBulkClose('acknowledged')}
+          >
+            Close as acknowledged
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={bulkClose.isPending}
+            onClick={() => handleBulkClose('dismissed')}
+          >
+            Close as dismissed
+          </Button>
+          <button
+            type="button"
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
       {items.length === 0 ? (
         <EmptyState>
           No alerts match your filters.{' '}
@@ -51,13 +111,26 @@ export function OutboxPanel({ searchParams, onFiltersChange, onClearFilters }: P
           </button>
         </EmptyState>
       ) : (
-        <ul className="space-y-2">
-          {items.map((a) => (
-            <li key={a.id}>
-              <OutboxRow alert={a} />
-            </li>
-          ))}
-        </ul>
+        <>
+          {selectableIds.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                aria-label="Select all open alerts on this page"
+              />
+              Select all on this page
+            </label>
+          )}
+          <ul className="space-y-2">
+            {items.map((a) => (
+              <li key={a.id}>
+                <OutboxRow alert={a} selected={selected.has(a.id)} onToggleSelect={toggleSelect} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       {total > 0 && (
         <div className="flex items-center justify-between text-sm">

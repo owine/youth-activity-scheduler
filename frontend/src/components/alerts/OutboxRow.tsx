@@ -8,9 +8,11 @@ import type { Alert } from '@/lib/types';
 
 interface Props {
   alert: Alert;
+  selected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }
 
-export function OutboxRow({ alert }: Props) {
+export function OutboxRow({ alert, selected, onToggleSelect }: Props) {
   const resend = useResendAlert();
   const [pillState, setPillState] = useState<'idle' | 'ok' | 'err'>('idle');
   const [pillDetail, setPillDetail] = useState<string>('');
@@ -38,6 +40,15 @@ export function OutboxRow({ alert }: Props) {
   return (
     <Card className="p-3 space-y-1">
       <div className="flex items-center gap-2">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected ?? false}
+            onChange={() => onToggleSelect(alert.id)}
+            aria-label={`Select alert ${alert.id}`}
+            disabled={alert.closed_at !== null}
+          />
+        )}
         <Badge variant="secondary">{alert.type}</Badge>
         <div className="flex-1 text-sm">{alert.summary_text}</div>
         <Button

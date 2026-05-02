@@ -102,7 +102,7 @@ Estimated size: 4 PRs.
 - Phase 8-1: Multi-kid combined calendar (deferred from 5c-1)
 - Phase 8-2: ✅ shipped 2026-05-02. Calendar respects `kid.school_holidays` (school blocks skip holiday dates) and emits explicit `holiday` events for in-range, in-school-year holidays.
 - Phase 8-3: ✅ shipped 2026-05-02. Match events now carry a `watchlist_hit: bool` flag (set from `Match.reasons.watchlist_hit`); frontend renders watchlist-driven matches with a solid gold ring vs the default dashed border.
-- Phase 8-4: Bulk operations (close-many alerts, mute-many offerings, enroll-many)
+- Phase 8-4: ✅ shipped 2026-05-02 (close-many alerts only — mute-many and enroll-many deferred until usage signals justify them). New `POST /api/alerts/bulk/close` + multi-select on Outbox.
 - Phase 8-5: E2E test automation in CI (`scripts/e2e_phase5a.sh` is a manual gate today)
 - Phase 8-6: Address pre-existing `format:check` failures (~28 files)
 

@@ -44,3 +44,17 @@ class AlertCloseIn(BaseModel):
     """Request body for POST /api/alerts/{id}/close."""
 
     reason: CloseReason
+
+
+class AlertBulkCloseIn(BaseModel):
+    """Request body for POST /api/alerts/bulk/close."""
+
+    alert_ids: list[int]
+    reason: CloseReason
+
+
+class AlertBulkCloseOut(BaseModel):
+    """Response for POST /api/alerts/bulk/close."""
+
+    closed: list[AlertOut]
+    not_found: list[int]
