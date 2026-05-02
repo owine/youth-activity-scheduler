@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { Bell, Globe, LayoutGrid, Mail, Settings } from 'lucide-react';
+import { Bell, Globe, LayoutGrid, Mail, Settings, Users } from 'lucide-react';
 import { KidSwitcher } from './KidSwitcher';
 import { ThemeToggle } from './ThemeToggle';
 import { useInboxSummary } from '@/lib/queries';
@@ -27,6 +27,12 @@ export function TopBar() {
             {alertCount}
           </Badge>
         )}
+      </Link>
+      <Link
+        to="/kids"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <Users className="h-4 w-4" /> Kids
       </Link>
       <Link
         to="/offerings"
