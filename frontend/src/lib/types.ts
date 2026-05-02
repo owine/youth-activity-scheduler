@@ -307,6 +307,7 @@ export interface CalendarEvent {
   // match-only:
   score?: number | null;
   registration_url?: string | null;
+  watchlist_hit?: boolean;
 }
 
 export interface KidCalendarResponse {

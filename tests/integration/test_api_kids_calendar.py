@@ -677,3 +677,85 @@ async def test_non_school_block_unaffected_by_holidays(client):
         if e["kind"] == "unavailability" and e["source"] == "manual" and e["date"] == "2026-04-29"
     ]
     assert len(manual) == 1
+
+
+# Phase 8-3 watchlist-on-calendar
+
+
+async def _seed_match_with_reasons(
+    engine, *, kid_id: int, offering_id: int, score: float, reasons: dict
+) -> None:
+    async with session_scope(engine) as s:
+        s.add(
+            Match(
+                kid_id=kid_id,
+                offering_id=offering_id,
+                score=score,
+                reasons=reasons,
+                computed_at=datetime.now(UTC),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_match_watchlist_hit_flag_true_when_reasons_has_watchlist_hit(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+    await _seed_match_with_reasons(
+        engine,
+        kid_id=1,
+        offering_id=2,
+        score=0.9,
+        reasons={"watchlist_hit": {"entry_id": 5, "pattern": "soccer*"}},
+    )
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    matches = [e for e in body["events"] if e["kind"] == "match"]
+    assert len(matches) == 1
+    assert matches[0]["watchlist_hit"] is True
+
+
+@pytest.mark.asyncio
+async def test_match_watchlist_hit_flag_false_for_score_only_match(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer",
+                normalized_name="soccer",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.85)
+
+    r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
+    body = r.json()
+    matches = [e for e in body["events"] if e["kind"] == "match"]
+    assert len(matches) == 1
+    assert matches[0]["watchlist_hit"] is False

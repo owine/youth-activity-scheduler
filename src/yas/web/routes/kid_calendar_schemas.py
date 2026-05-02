@@ -25,6 +25,11 @@ class CalendarEventOut(BaseModel):
     from_enrollment_id: int | None = None
     score: float | None = None
     registration_url: str | None = None
+    # True when this match event was driven by a watchlist entry hit (vs.
+    # score-based discovery). Frontend renders watchlist hits with a distinct
+    # visual treatment so the user can recognize "things I personally flagged"
+    # at a glance. Always false for non-match events.
+    watchlist_hit: bool = False
 
 
 class KidCalendarOut(BaseModel):
