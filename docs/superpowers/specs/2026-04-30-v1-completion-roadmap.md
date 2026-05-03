@@ -29,6 +29,22 @@ This document is the realignment. It is **not** a deep spec of every remaining p
 | 5d-1 | Site/offering mute (one-click) | `5aa5d69` |
 | infra | GHCR multi-arch publish + compose split | `b817c86` |
 | hotfix | Inherited HEALTHCHECK disabled on worker/migrate | `0f98362` |
+| 6-1 | Add/Edit Kid form (closes criterion #6) | ✓ |
+| 6-2 | Add Site wizard + discovery picker (closes criterion #1) | ✓ |
+| 6-3 | Watchlist add/edit (per-kid mutations) | ✓ |
+| 6-4 | Site detail mutations (Crawl-now / Pause) | ✓ |
+| 7-1 | Settings page | ✓ |
+| 7-2 | Offerings browser | ✓ |
+| 7-3 | Enrollments page | ✓ |
+| 7-4 | Alerts page (Outbox + digest preview) | #29 |
+| 8-1 | Combined multi-kid calendar | #37 |
+| 8-2 | Holiday / school-year calendar integration | #38 |
+| 8-3 | Watchlist matches visually distinct on calendar | #39 |
+| 8-4 | Bulk close-many alerts | #40 |
+| 8-5 | E2E tests in CI | #33 |
+| 8-6 | Prettier sweep + frontend-check CI gate | #32 |
+| infra | OCI labels + git_sha at /healthz | #34, #35 |
+| infra | Python 3.14 alignment in CI | #38 (bundled) |
 
 ## 3. The deviations, named
 
@@ -149,11 +165,19 @@ These remain open from each shipped phase's "Out of scope":
 - **Soft conflicts as warnings** (master § 9) — e.g., "offering ends at 3:15pm but school ends at 3:00pm — too tight?"
 - **Mute reasons / per-channel mute** (5d-1 §1.2) — only if mute volume justifies it
 - **User-controllable match score threshold** (5c-2 §1.2) — only if 0.6 fixed feels wrong
-- **Watchlist on calendar** (5c-1 §1.2) — moved into Phase 8-3
-- **Holiday calendar integration** (5c-1 §1.2) — moved into Phase 8-2
+- **Watchlist on calendar** (5c-1 §1.2) — ✅ shipped 2026-05-02 as Phase 8-3
+- **Holiday calendar integration** (5c-1 §1.2) — ✅ shipped 2026-05-02 as Phase 8-2
+- **Bulk mute-many offerings** (8-4 deferral) — only if mute volume becomes routine toil
+- **Bulk enroll-many** (8-4 deferral) — probably never (enrollment is high-stakes per kid)
 
 ## 10. Next step
 
-**Brainstorm Phase 6-1: Add Kid + Edit Kid form.** Concrete, unblocked, and closes criterion #6.
+**Phase 9 — 30-day observation.** Phases 6, 7, and 8 all shipped (2026-04-30 → 2026-05-02). Master §7 has all 9 pages met; master §10 has 7 of 8 terminal criteria — only #4 (30-day run, <$5 LLM, zero silent failures) remains, and it closes by passage of time + active observation rather than code.
 
-After Phase 6-1 ships, re-evaluate whether to bundle Phase 6-2/Phase 6-3/Phase 6-4 into one larger spec or spec each separately. (Lean: Phase 6-2's discover-wizard is its own thing; Phase 6-3 + Phase 6-4 are small enough to bundle.)
+The observation clock starts when there is something to observe. Use the now-complete UI to seed at least one site + one kid, then watch:
+
+1. Trailing LLM spend (sum `CrawlRun.llm_cost_usd`) stays under $5/30d.
+2. No `ERROR`-level worker log entries; no `CrawlRun.status="error"` rows with non-empty `error_text`.
+3. Match volume is non-zero per active kid each week (subjective check on quality).
+
+After 30 days, if all three signals are green, mark criterion #4 ✓ and v1 is shipped. The deferred questions in §9 above become candidate Phase 10+ work, prioritized by what real usage exposes as friction.
