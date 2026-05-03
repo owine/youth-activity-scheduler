@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any, ClassVar
 
 import httpx
@@ -12,26 +11,21 @@ from yas.alerts.channels.base import (
     NotifierMessage,
     SendResult,
 )
+from yas.config import Settings
 
 
 class NtfyChannel:
     name: str = "ntfy"
     capabilities: ClassVar[set[NotifierCapability]] = {NotifierCapability.push}
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], settings: Settings) -> None:
         self._base_url = str(config["base_url"]).rstrip("/")
         self._topic = str(config["topic"])
 
-        auth_token_env: str | None = config.get("auth_token_env")
-        if auth_token_env is not None:
-            token = os.environ.get(auth_token_env)
-            if token is None:
-                raise ValueError(f"channel disabled: missing env var {auth_token_env}")
-            if token == "":
-                raise ValueError(f"channel disabled: env var {auth_token_env} is set but empty")
-            self._token: str | None = token
-        else:
-            self._token = None
+        # ntfy auth is optional. Resolution: form-stored value → conventional
+        # env var → unauthenticated. Treat empty form value as "use env".
+        token: str | None = config.get("auth_token_value") or settings.ntfy_auth_token or None
+        self._token = token if token else None
 
         self._client = httpx.AsyncClient()
 

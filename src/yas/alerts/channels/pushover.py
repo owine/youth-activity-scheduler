@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, ClassVar
 
 import httpx
@@ -13,6 +12,7 @@ from yas.alerts.channels.base import (
     NotifierMessage,
     SendResult,
 )
+from yas.config import Settings
 from yas.db.models._types import AlertType
 
 _PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
@@ -25,21 +25,23 @@ class PushoverChannel:
         NotifierCapability.push_emergency,
     }
 
-    def __init__(self, config: dict[str, Any]) -> None:
-        user_key_env = str(config["user_key_env"])
-        user_key = os.environ.get(user_key_env)
-        if user_key is None:
-            raise ValueError(f"channel disabled: missing env var {user_key_env}")
-        if user_key == "":
-            raise ValueError(f"channel disabled: env var {user_key_env} is set but empty")
+    def __init__(self, config: dict[str, Any], settings: Settings) -> None:
+        # Resolution: form-stored value → conventional env var. Form value
+        # wins when both are set so the user can override env in the UI.
+        user_key = config.get("user_key_value") or settings.pushover_user_key
+        if not user_key:
+            raise ValueError(
+                "channel disabled: pushover user key not set "
+                "(form override or YAS_PUSHOVER_USER_KEY env var)"
+            )
         self._user_key = user_key
 
-        app_token_env = str(config["app_token_env"])
-        app_token = os.environ.get(app_token_env)
-        if app_token is None:
-            raise ValueError(f"channel disabled: missing env var {app_token_env}")
-        if app_token == "":
-            raise ValueError(f"channel disabled: env var {app_token_env} is set but empty")
+        app_token = config.get("app_token_value") or settings.pushover_app_token
+        if not app_token:
+            raise ValueError(
+                "channel disabled: pushover app token not set "
+                "(form override or YAS_PUSHOVER_APP_TOKEN env var)"
+            )
         self._app_token = app_token
 
         devices: list[str] = list(config.get("devices") or [])

@@ -13,11 +13,21 @@ import respx
 from tests.fakes.smtp_server import fake_smtp_server
 from yas.alerts.channels.base import NotifierCapability, NotifierMessage
 from yas.alerts.channels.email import EmailChannel, _ForwardEmailTransport, _SMTPTransport
+from yas.config import Settings
 from yas.db.models._types import AlertType
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _settings(**overrides: object) -> Settings:
+    """Build a Settings with credentials stubbed. Pass kwargs to override
+    specific credential fields; otherwise they default to None so tests
+    fully control resolution via the config dict."""
+    defaults: dict = {"anthropic_api_key": "sk-test"}
+    defaults.update(overrides)
+    return Settings(**defaults)
 
 
 def _msg(
@@ -46,11 +56,11 @@ async def test_smtp_transport_sends_message():
         transport = _SMTPTransport(
             host=server.host,
             port=server.port,
-            username=None,
-            password=None,
             use_tls=False,
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
+            username=None,
+            password=None,
         )
         msg = _msg()
         result = await transport.send(msg)
@@ -67,11 +77,11 @@ async def test_smtp_transport_message_headers():
         transport = _SMTPTransport(
             host=server.host,
             port=server.port,
-            username=None,
-            password=None,
             use_tls=False,
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
+            username=None,
+            password=None,
         )
         msg = _msg(subject="Hello Scheduler")
         await transport.send(msg)
@@ -91,11 +101,11 @@ async def test_smtp_transport_multipart_alternative():
         transport = _SMTPTransport(
             host=server.host,
             port=server.port,
-            username=None,
-            password=None,
             use_tls=False,
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
+            username=None,
+            password=None,
         )
         msg = _msg(body_plain="Plain text.", body_html="<p>HTML</p>")
         await transport.send(msg)
@@ -116,11 +126,11 @@ async def test_smtp_transport_send_result_detail():
         transport = _SMTPTransport(
             host=server.host,
             port=server.port,
-            username=None,
-            password=None,
             use_tls=False,
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
+            username=None,
+            password=None,
         )
         result = await transport.send(_msg())
 
@@ -139,11 +149,11 @@ async def test_smtp_4xx_is_transient(monkeypatch):
     transport = _SMTPTransport(
         host="127.0.0.1",
         port=9999,
-        username=None,
-        password=None,
         use_tls=False,
         from_addr="from@example.com",
         to_addrs=["to@example.com"],
+        username=None,
+        password=None,
     )
     result = await transport.send(_msg())
 
@@ -164,11 +174,11 @@ async def test_smtp_5xx_is_non_transient(monkeypatch):
     transport = _SMTPTransport(
         host="127.0.0.1",
         port=9999,
-        username=None,
-        password=None,
         use_tls=False,
         from_addr="from@example.com",
         to_addrs=["to@example.com"],
+        username=None,
+        password=None,
     )
     result = await transport.send(_msg())
 
@@ -188,11 +198,11 @@ async def test_smtp_transport_421_transient(monkeypatch):
     transport = _SMTPTransport(
         host="127.0.0.1",
         port=9999,
-        username=None,
-        password=None,
         use_tls=False,
         from_addr="from@example.com",
         to_addrs=["to@example.com"],
+        username=None,
+        password=None,
     )
     result = await transport.send(_msg())
 
@@ -212,11 +222,11 @@ async def test_smtp_transport_connect_error_transient(monkeypatch):
     transport = _SMTPTransport(
         host="127.0.0.1",
         port=9999,
-        username=None,
-        password=None,
         use_tls=False,
         from_addr="from@example.com",
         to_addrs=["to@example.com"],
+        username=None,
+        password=None,
     )
     result = await transport.send(_msg())
 
@@ -236,33 +246,16 @@ async def test_smtp_transport_timeout_transient(monkeypatch):
     transport = _SMTPTransport(
         host="127.0.0.1",
         port=9999,
-        username=None,
-        password=None,
         use_tls=False,
         from_addr="from@example.com",
         to_addrs=["to@example.com"],
+        username=None,
+        password=None,
     )
     result = await transport.send(_msg())
 
     assert result.ok is False
     assert result.transient_failure is True
-
-
-@pytest.mark.asyncio
-async def test_smtp_password_env_missing_raises(monkeypatch):
-    """password_env set but env var absent → ValueError at init."""
-    monkeypatch.delenv("YAS_SMTP_PASSWORD", raising=False)
-
-    with pytest.raises(ValueError, match="YAS_SMTP_PASSWORD"):
-        _SMTPTransport(
-            host="smtp.example.com",
-            port=587,
-            username="user",
-            password_env="YAS_SMTP_PASSWORD",
-            use_tls=True,
-            from_addr="from@example.com",
-            to_addrs=["to@example.com"],
-        )
 
 
 @pytest.mark.asyncio
@@ -275,11 +268,11 @@ async def test_smtp_recipients_refused_is_transient():
         transport = _SMTPTransport(
             host="127.0.0.1",
             port=9999,
-            username=None,
-            password=None,
             use_tls=False,
             from_addr="from@example.com",
             to_addrs=["bad@example.com"],
+            username=None,
+            password=None,
         )
         result = await transport.send(_msg())
 
@@ -293,16 +286,14 @@ async def test_smtp_recipients_refused_is_transient():
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_posts_to_api(monkeypatch):
+async def test_forwardemail_transport_posts_to_api():
     """POST to ForwardEmail API with correct URL and Basic Auth."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "test-api-token")
-
     with respx.mock:
         route = respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(200, json={"id": "abc123"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="test-api-token",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -314,16 +305,14 @@ async def test_forwardemail_transport_posts_to_api(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_basic_auth(monkeypatch):
+async def test_forwardemail_transport_basic_auth():
     """Basic Auth uses the token as username, empty password."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "my-secret-token")
-
     with respx.mock:
         route = respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(200, json={"id": "abc123"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="my-secret-token",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -339,16 +328,14 @@ async def test_forwardemail_transport_basic_auth(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_form_fields(monkeypatch):
+async def test_forwardemail_transport_form_fields():
     """Form fields: from, to, subject, text, html."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         route = respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(200, json={"id": "x"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="yas@example.com",
             to_addrs=["user@example.com", "user2@example.com"],
         )
@@ -370,16 +357,14 @@ async def test_forwardemail_transport_form_fields(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_http_200_detail(monkeypatch):
+async def test_forwardemail_transport_http_200_detail():
     """detail is 'http 200' on success."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(200, json={"id": "x"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -389,16 +374,14 @@ async def test_forwardemail_transport_http_200_detail(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_4xx_non_transient(monkeypatch):
+async def test_forwardemail_transport_4xx_non_transient():
     """4xx (not 429) → ok=False, transient_failure=False."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(400, json={"message": "Bad request"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -410,16 +393,14 @@ async def test_forwardemail_transport_4xx_non_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_429_transient(monkeypatch):
+async def test_forwardemail_transport_429_transient():
     """429 → ok=False, transient_failure=True."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(429, json={"message": "rate limited"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -430,16 +411,14 @@ async def test_forwardemail_transport_429_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_5xx_transient(monkeypatch):
+async def test_forwardemail_transport_5xx_transient():
     """5xx → ok=False, transient_failure=True."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(503, json={"message": "unavailable"})
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -450,16 +429,14 @@ async def test_forwardemail_transport_5xx_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_transport_timeout_transient(monkeypatch):
+async def test_forwardemail_transport_timeout_transient():
     """httpx.TimeoutException → transient failure."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             side_effect=httpx.TimeoutException("timed out")
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -470,16 +447,14 @@ async def test_forwardemail_transport_timeout_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_forwardemail_connect_error_is_transient(monkeypatch):
+async def test_forwardemail_connect_error_is_transient():
     """httpx.ConnectError (DNS failure, connection refused) → transient failure."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     with respx.mock:
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             side_effect=httpx.ConnectError("dns failure")
         )
         transport = _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="tok",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -489,14 +464,11 @@ async def test_forwardemail_connect_error_is_transient(monkeypatch):
     assert result.transient_failure is True
 
 
-@pytest.mark.asyncio
-async def test_forwardemail_token_env_missing_raises(monkeypatch):
-    """api_token_env set but env var absent → ValueError at init."""
-    monkeypatch.delenv("YAS_FE_TOKEN", raising=False)
-
-    with pytest.raises(ValueError, match="YAS_FE_TOKEN"):
+def test_forwardemail_token_missing_raises():
+    """Empty api_token → ValueError at init."""
+    with pytest.raises(ValueError, match="not set"):
         _ForwardEmailTransport(
-            api_token_env="YAS_FE_TOKEN",
+            api_token="",
             from_addr="from@example.com",
             to_addrs=["to@example.com"],
         )
@@ -508,7 +480,7 @@ async def test_forwardemail_token_env_missing_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_email_channel_selects_smtp(monkeypatch):
+async def test_email_channel_selects_smtp():
     """EmailChannel with transport=smtp creates a working SMTP channel."""
     async with fake_smtp_server() as server:
         config = {
@@ -519,7 +491,7 @@ async def test_email_channel_selects_smtp(monkeypatch):
             "from_addr": "yas@example.com",
             "to_addrs": ["user@example.com"],
         }
-        channel = EmailChannel(config)
+        channel = EmailChannel(config, _settings())
         result = await channel.send(_msg())
         await channel.aclose()
 
@@ -528,13 +500,11 @@ async def test_email_channel_selects_smtp(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_email_channel_selects_forwardemail(monkeypatch):
+async def test_email_channel_selects_forwardemail():
     """EmailChannel with transport=forwardemail creates a working FE channel."""
-    monkeypatch.setenv("YAS_FE_TOKEN", "tok")
-
     config = {
         "transport": "forwardemail",
-        "api_token_env": "YAS_FE_TOKEN",
+        "api_token_value": "tok",
         "from_addr": "yas@example.com",
         "to_addrs": ["user@example.com"],
     }
@@ -542,11 +512,41 @@ async def test_email_channel_selects_forwardemail(monkeypatch):
         respx.post("https://api.forwardemail.net/v1/emails").mock(
             return_value=httpx.Response(200, json={"id": "x"})
         )
-        channel = EmailChannel(config)
+        channel = EmailChannel(config, _settings())
         result = await channel.send(_msg())
         await channel.aclose()
 
     assert result.ok is True
+
+
+@pytest.mark.asyncio
+async def test_email_channel_forwardemail_uses_settings_fallback():
+    """When config has no api_token_value, EmailChannel falls back to Settings."""
+    config = {
+        "transport": "forwardemail",
+        "from_addr": "yas@example.com",
+        "to_addrs": ["user@example.com"],
+    }
+    with respx.mock:
+        respx.post("https://api.forwardemail.net/v1/emails").mock(
+            return_value=httpx.Response(200, json={"id": "x"})
+        )
+        channel = EmailChannel(config, _settings(forwardemail_api_token="env-tok"))
+        result = await channel.send(_msg())
+        await channel.aclose()
+
+    assert result.ok is True
+
+
+def test_email_channel_forwardemail_missing_token_raises():
+    """forwardemail with neither config value nor settings → ValueError."""
+    config = {
+        "transport": "forwardemail",
+        "from_addr": "yas@example.com",
+        "to_addrs": ["user@example.com"],
+    }
+    with pytest.raises(ValueError, match="not set"):
+        EmailChannel(config, _settings())
 
 
 def test_email_channel_unknown_transport_raises():
@@ -557,18 +557,11 @@ def test_email_channel_unknown_transport_raises():
         "to_addrs": ["c@d.com"],
     }
     with pytest.raises(ValueError, match="pigeon"):
-        EmailChannel(config)
+        EmailChannel(config, _settings())
 
 
 def test_email_channel_capabilities():
     """EmailChannel reports email capability."""
-    # Use fake_smtp_server is overkill here — just verify without sending.
-    # We can't easily construct without a running SMTP so we check the class attr.
-    assert hasattr(EmailChannel, "__init__")
-    # Verify via a mock config (smtp without tls/auth)
-    # We can't start a server synchronously so inspect the capability in the
-    # channel_selects_smtp test — but also verify the class has the right set.
-    # Instantiate with a port that won't be used for init (smtp init is lazy).
     config = {
         "transport": "smtp",
         "host": "127.0.0.1",
@@ -577,6 +570,6 @@ def test_email_channel_capabilities():
         "from_addr": "a@b.com",
         "to_addrs": ["c@d.com"],
     }
-    ch = EmailChannel(config)
+    ch = EmailChannel(config, _settings())
     assert NotifierCapability.email in ch.capabilities
     assert ch.name == "email"

@@ -50,10 +50,12 @@ async def test_notifier(channel: str, request: Request) -> TestSendOut:
         config = getattr(hh, field, None) if hh else None
     if config is None:
         raise HTTPException(status_code=503, detail=f"{channel} not configured")
-    # Channel constructors raise ValueError if a referenced *_env var is missing.
-    # Surface as ok=false rather than 500.
+    # Channel constructors raise ValueError if a credential is missing in
+    # both the form-stored value and the conventional env var. Surface as
+    # ok=false rather than 500.
+    settings = request.app.state.yas.settings
     try:
-        ch = channel_cls(config)
+        ch = channel_cls(config, settings)
     except ValueError as exc:
         return TestSendOut(ok=False, detail=f"channel init failed: {exc}")
     result = await ch.send(_test_message(channel))
