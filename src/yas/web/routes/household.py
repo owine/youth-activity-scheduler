@@ -66,42 +66,43 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings, settings: Settings) ->
         loc = (
             await s.execute(select(Location).where(Location.id == hh.home_location_id))
         ).scalar_one_or_none()
-    cred_status: dict[str, CredentialStatus] = {}
+    # Always return all five credential statuses, regardless of whether
+    # the user has saved a *_config_json row yet. Otherwise the badge
+    # never appears on a fresh form even when env vars are set, leaving
+    # users unsure whether they need to paste a value.
     smtp = hh.smtp_config_json
-    if smtp is not None and smtp.get("transport") == "smtp":
-        cred_status["smtp_password"] = _credential_status(
-            smtp,
+    cred_status: dict[str, CredentialStatus] = {
+        "smtp_password": _credential_status(
+            smtp if smtp and smtp.get("transport") == "smtp" else None,
             value_key="password_value",
             env_var_name="YAS_SMTP_PASSWORD",
             settings_value=settings.smtp_password,
-        )
-    if smtp is not None and smtp.get("transport") == "forwardemail":
-        cred_status["forwardemail_api_token"] = _credential_status(
-            smtp,
+        ),
+        "forwardemail_api_token": _credential_status(
+            smtp if smtp and smtp.get("transport") == "forwardemail" else None,
             value_key="api_token_value",
             env_var_name="YAS_FORWARDEMAIL_API_TOKEN",
             settings_value=settings.forwardemail_api_token,
-        )
-    if hh.ntfy_config_json is not None:
-        cred_status["ntfy_auth_token"] = _credential_status(
+        ),
+        "ntfy_auth_token": _credential_status(
             hh.ntfy_config_json,
             value_key="auth_token_value",
             env_var_name="YAS_NTFY_AUTH_TOKEN",
             settings_value=settings.ntfy_auth_token,
-        )
-    if hh.pushover_config_json is not None:
-        cred_status["pushover_user_key"] = _credential_status(
+        ),
+        "pushover_user_key": _credential_status(
             hh.pushover_config_json,
             value_key="user_key_value",
             env_var_name="YAS_PUSHOVER_USER_KEY",
             settings_value=settings.pushover_user_key,
-        )
-        cred_status["pushover_app_token"] = _credential_status(
+        ),
+        "pushover_app_token": _credential_status(
             hh.pushover_config_json,
             value_key="app_token_value",
             env_var_name="YAS_PUSHOVER_APP_TOKEN",
             settings_value=settings.pushover_app_token,
-        )
+        ),
+    }
 
     return HouseholdOut(
         id=hh.id,

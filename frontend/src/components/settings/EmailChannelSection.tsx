@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { uniqueFormErrors } from '@/lib/formError';
+import { touchedFormErrors } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -166,7 +166,7 @@ export function EmailChannelSection() {
                           className="mt-1 block w-full rounded border border-input px-3 py-2"
                           placeholder="smtp.example.com"
                         />
-                        {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                        {touchedFormErrors(field.state.meta).map((m, i) => (
                           <p key={i} className="mt-1 text-xs text-destructive">
                             {m}
                           </p>
@@ -193,7 +193,7 @@ export function EmailChannelSection() {
                           min="1"
                           max="65535"
                         />
-                        {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                        {touchedFormErrors(field.state.meta).map((m, i) => (
                           <p key={i} className="mt-1 text-xs text-destructive">
                             {m}
                           </p>
@@ -233,7 +233,7 @@ export function EmailChannelSection() {
                         onChange={field.handleChange}
                         onBlur={field.handleBlur}
                         status={smtpStatus}
-                        errors={uniqueFormErrors(field.state.meta.errors)}
+                        errors={touchedFormErrors(field.state.meta)}
                       />
                     )}
                   />
@@ -264,7 +264,7 @@ export function EmailChannelSection() {
                       onChange={field.handleChange}
                       onBlur={field.handleBlur}
                       status={fwdStatus}
-                      errors={uniqueFormErrors(field.state.meta.errors)}
+                      errors={touchedFormErrors(field.state.meta)}
                     />
                   )}
                 />
@@ -291,7 +291,7 @@ export function EmailChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="noreply@example.com"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -317,7 +317,7 @@ export function EmailChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="admin@example.com, support@example.com"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>

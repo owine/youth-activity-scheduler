@@ -1,4 +1,20 @@
 /**
+ * Visible-when-touched + deduped errors for a TanStack Form field.
+ * Returns [] until the user has interacted with the field, so a fresh
+ * form doesn't shout "required" at every empty input on first paint.
+ *
+ * Pass the field's meta object (or the parts that matter):
+ *   {field.state.meta}
+ */
+export function touchedFormErrors(meta: {
+  errors: readonly unknown[];
+  isTouched?: boolean;
+}): string[] {
+  if (!meta.isTouched) return [];
+  return uniqueFormErrors(meta.errors);
+}
+
+/**
  * Dedupe a list of TanStack Form errors by their rendered message.
  * onMount + onChange validators on the same schema both populate
  * `meta.errors`, producing visually-identical duplicates. We collapse

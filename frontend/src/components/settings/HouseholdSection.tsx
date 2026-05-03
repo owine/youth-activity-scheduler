@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { uniqueFormErrors } from '@/lib/formError';
+import { touchedFormErrors } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -122,7 +122,7 @@ export function HouseholdSection() {
                 aria-invalid={field.state.meta.errors.length > 0}
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -148,7 +148,7 @@ export function HouseholdSection() {
                 aria-invalid={field.state.meta.errors.length > 0}
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -179,7 +179,7 @@ export function HouseholdSection() {
                   min="0"
                   step="0.1"
                 />
-                {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}
                   </p>
@@ -225,7 +225,7 @@ export function HouseholdSection() {
                 aria-invalid={field.state.meta.errors.length > 0}
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -251,7 +251,7 @@ export function HouseholdSection() {
                   aria-invalid={field.state.meta.errors.length > 0}
                   className="mt-1 block w-full rounded border border-input px-3 py-2"
                 />
-                {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}
                   </p>
@@ -276,7 +276,7 @@ export function HouseholdSection() {
                   aria-invalid={field.state.meta.errors.length > 0}
                   className="mt-1 block w-full rounded border border-input px-3 py-2"
                 />
-                {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}
                   </p>
@@ -307,7 +307,7 @@ export function HouseholdSection() {
                   step="0.5"
                 />
               </div>
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
