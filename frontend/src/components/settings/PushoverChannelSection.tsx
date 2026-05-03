@@ -9,7 +9,7 @@ import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
 import { useHousehold } from '@/lib/queries';
 import { ApiError } from '@/lib/api';
-import { uniqueFormErrors } from '@/lib/formError';
+import { touchedFormErrors } from '@/lib/formError';
 import type { PushoverConfig } from '@/lib/types';
 
 // Both credential overrides are optional — empty string means "fall back
@@ -94,7 +94,7 @@ export function PushoverChannelSection() {
               onChange={field.handleChange}
               onBlur={field.handleBlur}
               status={userKeyStatus}
-              errors={uniqueFormErrors(field.state.meta.errors)}
+              errors={touchedFormErrors(field.state.meta)}
             />
           )}
         />
@@ -109,7 +109,7 @@ export function PushoverChannelSection() {
               onChange={field.handleChange}
               onBlur={field.handleBlur}
               status={appTokenStatus}
-              errors={uniqueFormErrors(field.state.meta.errors)}
+              errors={touchedFormErrors(field.state.meta)}
             />
           )}
         />
@@ -154,7 +154,7 @@ export function PushoverChannelSection() {
                   className="mt-1 block w-full rounded border border-input px-3 py-2"
                   min="30"
                 />
-                {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}
                   </p>
@@ -180,7 +180,7 @@ export function PushoverChannelSection() {
                   className="mt-1 block w-full rounded border border-input px-3 py-2"
                   min="60"
                 />
-                {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+                {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}
                   </p>

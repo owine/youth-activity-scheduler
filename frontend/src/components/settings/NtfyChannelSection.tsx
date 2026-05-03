@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { uniqueFormErrors } from '@/lib/formError';
+import { touchedFormErrors } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -80,7 +80,7 @@ export function NtfyChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="https://ntfy.sh"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -106,7 +106,7 @@ export function NtfyChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="my-alerts"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -126,7 +126,7 @@ export function NtfyChannelSection() {
               onChange={field.handleChange}
               onBlur={field.handleBlur}
               status={authStatus}
-              errors={uniqueFormErrors(field.state.meta.errors)}
+              errors={touchedFormErrors(field.state.meta)}
             />
           )}
         />

@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { uniqueFormErrors } from '@/lib/formError';
+import { touchedFormErrors } from '@/lib/formError';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { kidSchema, type KidFormValues } from './kidSchema';
@@ -146,7 +146,7 @@ export function KidForm({ mode, id }: KidFormProps) {
               aria-invalid={field.state.meta.errors.length > 0}
               className="mt-1 block w-full rounded border border-input px-3 py-2"
             />
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -171,7 +171,7 @@ export function KidForm({ mode, id }: KidFormProps) {
               aria-invalid={field.state.meta.errors.length > 0}
               className="mt-1 block w-full rounded border border-input px-3 py-2"
             />
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -215,7 +215,7 @@ export function KidForm({ mode, id }: KidFormProps) {
                 </label>
               ))}
             </div>
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -259,7 +259,7 @@ export function KidForm({ mode, id }: KidFormProps) {
                 aria-invalid={field.state.meta.errors.length > 0}
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
               />
-              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+              {touchedFormErrors(field.state.meta).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
                   {m}
                 </p>
@@ -316,7 +316,7 @@ export function KidForm({ mode, id }: KidFormProps) {
                 No limit
               </label>
             </div>
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -362,7 +362,7 @@ export function KidForm({ mode, id }: KidFormProps) {
                 Use distance instead
               </label>
             </div>
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -391,7 +391,7 @@ export function KidForm({ mode, id }: KidFormProps) {
               onChange={(e) => field.handleChange(parseFloat(e.target.value))}
               className="mt-2 w-full"
             />
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
@@ -423,7 +423,7 @@ export function KidForm({ mode, id }: KidFormProps) {
               rows={4}
               className="mt-1 block w-full rounded border border-input px-3 py-2"
             />
-            {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
+            {touchedFormErrors(field.state.meta).map((m, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
                 {m}
               </p>
