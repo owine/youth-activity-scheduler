@@ -32,13 +32,14 @@ export function PushoverChannelSection() {
   const userKeyStatus = household.data?.credential_status?.['pushover_user_key'];
   const appTokenStatus = household.data?.credential_status?.['pushover_app_token'];
 
+  const saved = household.data?.pushover_config_json as Record<string, unknown> | null | undefined;
   const form = useForm({
     defaultValues: {
       user_key_value: '',
       app_token_value: '',
-      devices: '',
-      emergency_retry_s: 60,
-      emergency_expire_s: 3600,
+      devices: Array.isArray(saved?.devices) ? (saved!.devices as string[]).join(', ') : '',
+      emergency_retry_s: (saved?.emergency_retry_s as number | undefined) ?? 60,
+      emergency_expire_s: (saved?.emergency_expire_s as number | undefined) ?? 3600,
     },
     validators: { onChange: pushoverSchema, onMount: pushoverSchema },
     onSubmit: async ({ value }) => {

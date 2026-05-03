@@ -48,20 +48,22 @@ export function EmailChannelSection() {
   const smtpStatus = household.data?.credential_status?.['smtp_password'];
   const fwdStatus = household.data?.credential_status?.['forwardemail_api_token'];
 
-  // Note: Household does NOT expose smtp_config_json (only HouseholdSettings row has it).
-  // The backend makes *_config_json write-only. So we always start with empty form.
-  // This is a real constraint: form starts empty/default each time page loads; users
-  // must re-enter config when editing. The Disable button still works (PATCHes null).
+  // Pre-populate non-secret fields from the saved (redacted) config.
+  // Secret *_value fields stay blank — the credential_status badge
+  // tells the user where the secret resolves; they can paste a new
+  // value to override or leave blank to keep the stored one.
+  const saved = household.data?.smtp_config_json as Record<string, unknown> | null | undefined;
+  const savedTransport = (saved?.transport as 'smtp' | 'forwardemail' | undefined) ?? 'smtp';
   const form = useForm({
     defaultValues: {
-      transport: 'smtp',
-      host: '',
-      port: 587,
-      username: '',
+      transport: savedTransport,
+      host: (saved?.host as string | undefined) ?? '',
+      port: (saved?.port as number | undefined) ?? 587,
+      username: (saved?.username as string | undefined) ?? '',
       password_value: '',
-      use_tls: true,
-      from_addr: '',
-      to_addrs: '',
+      use_tls: (saved?.use_tls as boolean | undefined) ?? true,
+      from_addr: (saved?.from_addr as string | undefined) ?? '',
+      to_addrs: Array.isArray(saved?.to_addrs) ? (saved!.to_addrs as string[]).join(', ') : '',
       api_token_value: '',
     },
     validators: { onChange: schema, onMount: schema },

@@ -45,12 +45,18 @@ async def test_unknown_channel_returns_404(client):
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_channel_returns_503(client):
+async def test_unconfigured_email_returns_ok_false_with_save_hint(client):
+    """Email needs structural form fields (transport, host, from_addr, ...)
+    that can't come from env. With null config_json, the test endpoint
+    returns ok=false with a helpful message rather than 503 — matches
+    how the UI renders the result."""
     c, engine = client
-    await _seed_household(engine)  # all *_config_json default null
+    await _seed_household(engine)
     r = await c.post("/api/notifiers/email/test")
-    assert r.status_code == 503
-    assert "not configured" in r.json()["detail"].lower()
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "save" in body["detail"].lower()
 
 
 @pytest.mark.asyncio

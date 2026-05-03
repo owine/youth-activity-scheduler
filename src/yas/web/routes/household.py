@@ -36,6 +36,27 @@ async def _load_or_create(session: AsyncSession) -> HouseholdSettings:
     return hh
 
 
+_SECRET_KEYS = {
+    "password_value",
+    "api_token_value",
+    "auth_token_value",
+    "user_key_value",
+    "app_token_value",
+}
+
+
+def _redact_config(cfg: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a copy of the channel config with secret-bearing keys stripped.
+
+    Non-secret fields (transport, host, port, from_addr, to_addrs,
+    devices, base_url, topic, emergency_*) are preserved so the form
+    can pre-populate them. Secret values stay server-side.
+    """
+    if cfg is None:
+        return None
+    return {k: v for k, v in cfg.items() if k not in _SECRET_KEYS}
+
+
 def _credential_status(
     cfg: dict[str, Any] | None,
     *,
@@ -120,6 +141,9 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings, settings: Settings) ->
         ntfy_configured=hh.ntfy_config_json is not None,
         pushover_configured=hh.pushover_config_json is not None,
         credential_status=cred_status,
+        smtp_config_json=_redact_config(hh.smtp_config_json),
+        ntfy_config_json=_redact_config(hh.ntfy_config_json),
+        pushover_config_json=_redact_config(hh.pushover_config_json),
     )
 
 

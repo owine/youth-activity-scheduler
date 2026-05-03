@@ -38,6 +38,14 @@ class HouseholdOut(BaseModel):
     # from a form-stored override, an env var, or is unset. Empty when
     # the corresponding *_config_json is null (channel not configured).
     credential_status: dict[str, CredentialStatus] = {}
+    # Redacted channel configs — secret *_value keys are stripped so
+    # the UI can pre-populate non-secret fields (transport, host,
+    # from_addr, to_addrs, devices, etc.) on edit. Credentials are
+    # never returned; the form leaves those fields blank and the
+    # credential_status badge tells the user where the secret resolves.
+    smtp_config_json: dict[str, Any] | None = None
+    ntfy_config_json: dict[str, Any] | None = None
+    pushover_config_json: dict[str, Any] | None = None
 
 
 class HouseholdPatch(BaseModel):
