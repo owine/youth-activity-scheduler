@@ -31,6 +31,7 @@ async def test_healthz_returns_ok(app_with_db):
     body = r.json()
     assert body["status"] == "ok"
     assert "git_sha" in body  # default "unknown" outside CI; SHA in CI builds
+    assert body["version"] == "0.1.0"
 
 
 @pytest.mark.asyncio

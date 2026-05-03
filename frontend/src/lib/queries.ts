@@ -46,6 +46,23 @@ export function useKids() {
   });
 }
 
+interface HealthzResponse {
+  status: string;
+  git_sha: string;
+  version: string;
+}
+
+export function useHealthz() {
+  return useQuery({
+    queryKey: ['healthz'],
+    queryFn: () => api.get<HealthzResponse>('/healthz'),
+    // git_sha doesn't change while a container is up. Skip refetch on
+    // focus/window events to avoid pointless requests.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useKid(id: number) {
   return useQuery({
     queryKey: ['kids', id],
