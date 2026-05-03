@@ -21,6 +21,11 @@ class Kid(Base):
     interests: Mapped[list[str]] = mapped_column(JSON, default=list)
     availability: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     max_distance_mi: Mapped[float | None] = mapped_column(nullable=True)
+    # Drive-time cap (minutes). When set AND the household has
+    # YAS_DRIVE_TIME_ENABLED=true, the matcher uses this cap instead of
+    # max_distance_mi. Nullable so existing kids (great-circle only)
+    # keep working.
+    max_drive_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     alert_score_threshold: Mapped[float] = mapped_column(default=0.6)
     alert_on: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     # School schedule — source of truth; unavailability_blocks with source=school
