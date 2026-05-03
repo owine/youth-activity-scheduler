@@ -35,7 +35,14 @@ function KidCalendarPage() {
     <div>
       <h1 className="text-xl font-semibold mb-2">{kid.data.name}'s calendar</h1>
       <KidTabs kidId={kidId} />
-      <div className="my-2 flex justify-end">
+      <div className="my-2 flex items-center justify-end gap-4">
+        <a
+          href={`/api/kids/${kidId}/calendar.ics`}
+          className="text-xs text-muted-foreground underline hover:text-foreground"
+          title="iCalendar feed — subscribe in Apple Calendar / Google Calendar"
+        >
+          Subscribe (.ics)
+        </a>
         <label className="flex items-center gap-1 text-xs text-muted-foreground">
           <input
             type="checkbox"

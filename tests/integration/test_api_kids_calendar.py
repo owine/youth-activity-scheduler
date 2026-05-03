@@ -759,3 +759,77 @@ async def test_match_watchlist_hit_flag_false_for_score_only_match(client):
     matches = [e for e in body["events"] if e["kind"] == "match"]
     assert len(matches) == 1
     assert matches[0]["watchlist_hit"] is False
+
+
+# ICS export endpoint
+
+
+@pytest.mark.asyncio
+async def test_ics_export_returns_text_calendar_with_enrollment(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+
+    r = await c.get("/api/kids/1/calendar.ics?from=2026-04-27&to=2026-05-04")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/calendar")
+    body = r.text
+    assert "BEGIN:VCALENDAR" in body
+    assert "PRODID:-//Youth Activity Scheduler//yas//EN" in body
+    assert "NAME:Sam — YAS" in body
+    assert "SUMMARY:T-Ball" in body
+    assert body.rstrip("\r\n").endswith("END:VCALENDAR")
+
+
+@pytest.mark.asyncio
+async def test_ics_export_excludes_match_events(client):
+    """Match suggestions are NOT exported (would clutter personal calendar)."""
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Soccer Suggestion",
+                normalized_name="soccer-suggestion",
+                days_of_week=["wed"],
+                time_start=time(17, 0),
+                time_end=time(18, 0),
+                start_date=date(2026, 4, 1),
+                end_date=date(2026, 6, 30),
+                status=OfferingStatus.active.value,
+            )
+        )
+    await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
+
+    r = await c.get("/api/kids/1/calendar.ics?from=2026-04-27&to=2026-05-04")
+    body = r.text
+    assert "T-Ball" in body
+    assert "Soccer Suggestion" not in body
+
+
+@pytest.mark.asyncio
+async def test_ics_export_404_for_unknown_kid(client):
+    c, _ = client
+    r = await c.get("/api/kids/999/calendar.ics")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ics_export_uses_default_window_when_no_range(client):
+    """No from/to → -7d to +90d sliding window, doesn't 422."""
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    r = await c.get("/api/kids/1/calendar.ics")
+    assert r.status_code == 200
+    assert "BEGIN:VCALENDAR" in r.text
+
+
+@pytest.mark.asyncio
+async def test_ics_export_400_day_cap_enforced(client):
+    c, engine = client
+    await _seed_kid_with_enrollment(engine, kid_id=1, offering_id=1)
+    r = await c.get("/api/kids/1/calendar.ics?from=2024-01-01&to=2026-01-01")
+    assert r.status_code == 422
+    assert "400-day" in r.json()["detail"]
