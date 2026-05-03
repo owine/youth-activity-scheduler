@@ -26,10 +26,11 @@ export function NtfyChannelSection() {
 
   const authStatus = household.data?.credential_status?.['ntfy_auth_token'];
 
+  const saved = household.data?.ntfy_config_json as Record<string, unknown> | null | undefined;
   const form = useForm({
     defaultValues: {
-      base_url: 'https://ntfy.sh',
-      topic: '',
+      base_url: (saved?.base_url as string | undefined) ?? 'https://ntfy.sh',
+      topic: (saved?.topic as string | undefined) ?? '',
       auth_token_value: '',
     },
     validators: { onChange: ntfySchema, onMount: ntfySchema },

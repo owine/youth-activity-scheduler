@@ -263,6 +263,12 @@ export interface Household {
    *  pushover_app_token. Empty when the channel is unconfigured. May be
    *  missing on older API responses; consumers default to {}. */
   credential_status?: Record<string, CredentialStatus>;
+  /** Saved channel configs with secret *_value keys redacted out so the
+   *  Settings form can pre-populate non-secret fields (transport, host,
+   *  from_addr, etc.) on edit. */
+  smtp_config_json?: Record<string, unknown> | null;
+  ntfy_config_json?: Record<string, unknown> | null;
+  pushover_config_json?: Record<string, unknown> | null;
 }
 
 // Channel configuration types for Phase 7-1 Settings

@@ -30,6 +30,11 @@ export function TestSendButton({ channel, label, dirty }: Props) {
         variant="outline"
         onClick={handleClick}
         disabled={dirty || test.isPending}
+        title={
+          dirty
+            ? 'Save your changes first — test sends use the saved config, not the unsaved form values.'
+            : undefined
+        }
       >
         {test.isPending ? 'Sending…' : label}
       </Button>

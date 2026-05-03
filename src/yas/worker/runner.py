@@ -5,15 +5,10 @@ one TaskGroup."""
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.alerts.channels.base import Notifier
-from yas.alerts.channels.email import EmailChannel
-from yas.alerts.channels.ntfy import NtfyChannel
-from yas.alerts.channels.pushover import PushoverChannel
 from yas.alerts.routing import seed_default_routing
 from yas.config import Settings
 from yas.crawl.fetcher import DefaultFetcher, Fetcher
@@ -37,41 +32,18 @@ def _build_notifiers(
     household: HouseholdSettings | None,
     settings: Settings,
 ) -> dict[str, Notifier]:
-    """Construct channel notifiers from household config JSON + env secrets.
+    """Backwards-compat shim that delegates to the shared builder.
 
-    For each channel config present in ``household``, attempt to construct
-    the corresponding channel object.  If the config is absent (None) the
-    channel is skipped.  If the constructor raises ``ValueError`` (e.g.
-    a required env-var secret is missing) the channel is logged as disabled
-    and skipped.
-
-    The api-only worker path does NOT call this helper; it is only invoked
-    when ``settings.alerts_enabled`` is True and a worker is starting.
+    Kept so external callers don't break; new code should import from
+    ``yas.alerts.notifier_builder`` directly. The delivery loop now
+    rebuilds notifiers per tick rather than relying on a startup-time
+    snapshot, so saving config in Settings takes effect within ~60s
+    without a worker restart.
     """
-    notifiers: dict[str, Notifier] = {}
+    from yas.alerts.notifier_builder import build_notifiers, log_constructed
 
-    if household is None:
-        return notifiers
-
-    channel_specs: list[tuple[str, dict[str, Any] | None, type[Any]]] = [
-        ("email", household.smtp_config_json, EmailChannel),
-        ("ntfy", household.ntfy_config_json, NtfyChannel),
-        ("pushover", household.pushover_config_json, PushoverChannel),
-    ]
-
-    for channel_name, config, channel_cls in channel_specs:
-        if config is None:
-            continue
-        try:
-            notifiers[channel_name] = channel_cls(config, settings)
-        except ValueError as exc:
-            log.warning("channel.disabled", channel=channel_name, reason=str(exc))
-
-    if notifiers:
-        log.info("channels.constructed", channels=sorted(notifiers.keys()))
-    else:
-        log.warning("channels.none_constructed", note="all channels disabled or unconfigured")
-
+    notifiers = build_notifiers(household, settings)
+    log_constructed(notifiers)
     return notifiers
 
 
@@ -107,13 +79,13 @@ async def run_worker(
         min_interval_s=settings.geocode_nominatim_min_interval_s,
     )
 
-    # Build notifiers from household config unless the caller already injected them.
-    own_notifiers = notifiers is None
-    if settings.alerts_enabled and notifiers is None:
+    # Seed alert routing once at startup; notifiers are now built per
+    # tick inside alert_delivery_loop so config changes take effect
+    # without requiring a worker restart.
+    if settings.alerts_enabled:
         async with session_scope(engine) as s:
             await seed_default_routing(s)
-            household = (await s.execute(select(HouseholdSettings).limit(1))).scalar_one_or_none()
-        notifiers = _build_notifiers(household, settings)
+    own_notifiers = notifiers is None
 
     log.info("worker.start")
     try:
@@ -130,8 +102,7 @@ async def run_worker(
                     geocode_enricher_loop(engine=engine, settings=settings, geocoder=geocoder)
                 )
             if settings.alerts_enabled:
-                assert notifiers is not None  # guaranteed by the block above
-                tg.create_task(alert_delivery_loop(engine, settings, notifiers))
+                tg.create_task(alert_delivery_loop(engine, settings))
                 tg.create_task(daily_digest_loop(engine, settings, llm))
                 tg.create_task(daily_detector_loop(engine, settings))
     finally:

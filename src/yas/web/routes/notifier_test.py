@@ -48,8 +48,19 @@ async def test_notifier(channel: str, request: Request) -> TestSendOut:
     async with session_scope(_engine(request)) as s:
         hh = (await s.execute(select(HouseholdSettings))).scalars().first()
         config = getattr(hh, field, None) if hh else None
+    # Pushover can construct from env-only credentials, so missing
+    # config_json is fine — fall through with `{}`. Email and Ntfy
+    # require structural config the user must save first; surface that
+    # as a clear error rather than letting the constructor's ValueError
+    # bubble up.
     if config is None:
-        raise HTTPException(status_code=503, detail=f"{channel} not configured")
+        if channel == "pushover":
+            config = {}
+        else:
+            return TestSendOut(
+                ok=False,
+                detail=f"{channel} not configured — fill in the form and click Save first",
+            )
     # Channel constructors raise ValueError if a credential is missing in
     # both the form-stored value and the conventional env var. Surface as
     # ok=false rather than 500.
