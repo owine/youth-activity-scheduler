@@ -162,7 +162,7 @@ These remain open from each shipped phase's "Out of scope":
 - **Pushover channel** (master § 9) — ✅ already shipped during Phase 7-1 Settings work (`PushoverChannel` + Settings UI + routing matrix + test-send all wired). The roadmap line was a pre-Phase-7 carry-over.
 - **Gotify channel** (master § 9) — ❌ not implemented. Small slice when actually needed (mirror PushoverChannel against Gotify's HTTP API).
 - **`.ics` calendar export** (master § 9) — ✅ shipped 2026-05-03. Per-kid feed at `GET /api/kids/{id}/calendar.ics`; default −7d/+90d window, 400-day cap. Match suggestions excluded; enrollment/unavailability/holiday included. Subscribe link on per-kid calendar page. (.ics *import* still deferred.)
-- **Driving-time vs great-circle distance** (master § 9) — only if real usage shows great-circle is misleading
+- **Driving-time vs great-circle distance** (master § 9) — ✅ shipped 2026-05-03 across PRs #45/#46/#47. New `drive_time_cache` table + `OsrmClient` (open-source, no API key); `kid.max_drive_minutes` column + form field; matcher's distance gate prefers drive-time when both `kid.max_drive_minutes` is set AND drive_minutes is computable, falls back to great-circle miles otherwise. Off by default (`YAS_DRIVE_TIME_ENABLED=false`).
 - **Soft conflicts as warnings** (master § 9) — ✅ shipped 2026-05-03. Matcher computes near-misses against unavailability blocks (default 15-min buffer); stored in `Match.reasons.soft_conflicts`; surfaced as a "⚠ Tight" chip on offering rows.
 - **Mute reasons / per-channel mute** (5d-1 §1.2) — only if mute volume justifies it
 - **User-controllable match score threshold** (5c-2 §1.2) — only if 0.6 fixed feels wrong

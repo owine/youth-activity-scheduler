@@ -204,7 +204,20 @@ export function chipsForOffering(
       className: 'bg-purple-100 text-purple-900 dark:bg-purple-900/30 dark:text-purple-200',
     });
   }
-  // 6. Tight (soft conflict — matcher flagged a near-miss against an
+  // 6. Drive time (matcher computed routed driving minutes; surface them
+  // when present so the user sees "21 min drive" alongside the other chips)
+  const driveMinutesValues = row.matches
+    .map((m) => (m.reasons as { drive_minutes?: unknown }).drive_minutes)
+    .filter((v): v is number => typeof v === 'number');
+  if (driveMinutesValues.length > 0) {
+    const min = Math.round(Math.min(...driveMinutesValues));
+    chips.push({
+      kind: 'drive_time',
+      label: `🚗 ${min} min drive`,
+      className: 'bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200',
+    });
+  }
+  // 7. Tight (soft conflict — matcher flagged a near-miss against an
   // unavailability block, e.g., school ends 3pm and offering starts 3:10pm)
   const tight = row.matches.some(
     (m) =>

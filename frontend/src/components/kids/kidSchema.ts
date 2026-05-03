@@ -16,6 +16,7 @@ export const kidSchema = z
     school_year_ranges: z.array(z.object({ start: z.string(), end: z.string() })),
     school_holidays: z.array(z.string()),
     max_distance_mi: z.number().min(1).max(50).nullable(),
+    max_drive_minutes: z.number().int().min(1).max(180).nullable(),
     alert_score_threshold: z.number().min(0).max(1),
     alert_on: z.record(z.string(), z.boolean()),
     notes: z.string().max(2000).nullable(),

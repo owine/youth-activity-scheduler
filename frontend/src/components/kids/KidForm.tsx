@@ -31,6 +31,7 @@ function kidToFormValues(k: KidDetail): KidFormValues {
     school_year_ranges: k.school_year_ranges,
     school_holidays: k.school_holidays,
     max_distance_mi: k.max_distance_mi,
+    max_drive_minutes: k.max_drive_minutes,
     alert_score_threshold: k.alert_score_threshold,
     alert_on: k.alert_on,
     notes: k.notes,
@@ -48,6 +49,7 @@ const DEFAULT_CREATE_VALUES: KidFormValues = {
   school_year_ranges: [],
   school_holidays: [],
   max_distance_mi: null,
+  max_drive_minutes: null,
   alert_score_threshold: 0.6,
   alert_on: {},
   notes: null,
@@ -311,6 +313,52 @@ export function KidForm({ mode, id }: KidFormProps) {
                   }}
                 />
                 No limit
+              </label>
+            </div>
+            {field.state.meta.errors.map((err, i) => (
+              <p key={i} className="mt-1 text-xs text-destructive">
+                {String(err)}
+              </p>
+            ))}
+          </div>
+        )}
+      />
+
+      <form.Field
+        name="max_drive_minutes"
+        children={(field) => (
+          <div>
+            <label htmlFor="max_drive_minutes" className="block text-sm font-medium">
+              Max Drive Time (minutes)
+            </label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Routed driving minutes via OSRM. Takes precedence over Max Distance when set, but only
+              if <code>YAS_DRIVE_TIME_ENABLED=true</code> on the server.
+            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <input
+                id="max_drive_minutes"
+                type="number"
+                min="1"
+                max="180"
+                step="1"
+                disabled={field.state.value === null}
+                value={field.state.value ?? ''}
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                  field.handleChange(val);
+                }}
+                className="block flex-1 rounded border border-input px-3 py-2 disabled:opacity-50"
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={field.state.value === null}
+                  onChange={(e) => {
+                    field.handleChange(e.target.checked ? null : 30);
+                  }}
+                />
+                Use distance instead
               </label>
             </div>
             {field.state.meta.errors.map((err, i) => (
