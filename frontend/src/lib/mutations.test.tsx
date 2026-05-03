@@ -539,6 +539,7 @@ const seedKid = (overrides: Partial<KidDetail> = {}): KidDetail => ({
   active: true,
   availability: {},
   max_distance_mi: null,
+  max_drive_minutes: null,
   alert_score_threshold: 0.6,
   alert_on: {},
   school_weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],

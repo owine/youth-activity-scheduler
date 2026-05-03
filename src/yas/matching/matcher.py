@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.enqueuer import enqueue_new_match, enqueue_watchlist_hit
+from yas.config import get_settings
 from yas.db.models import (
     Enrollment,
     HouseholdSettings,
@@ -22,6 +23,7 @@ from yas.db.models import (
 )
 from yas.db.models._types import OfferingStatus
 from yas.geo.distance import great_circle_miles
+from yas.geo.drive_time import DriveTimeProvider, OsrmClient, compute_drive_time
 from yas.logging import get_logger
 from yas.matching.aliases import INTEREST_ALIASES
 from yas.matching.gates import (
@@ -88,6 +90,45 @@ async def _compute_distance_mi(
     if coords is None:
         return None
     return great_circle_miles(home[0], home[1], coords[0], coords[1])
+
+
+# Module-level OSRM client. Lazily constructed on first use (and only
+# when YAS_DRIVE_TIME_ENABLED=true) so the default opt-out path costs
+# nothing. Re-used across rematch calls so we don't churn HTTP clients.
+_drive_time_provider: DriveTimeProvider | None = None
+
+
+def _get_drive_time_provider() -> DriveTimeProvider | None:
+    global _drive_time_provider
+    settings = get_settings()
+    if not settings.drive_time_enabled:
+        return None
+    if _drive_time_provider is None:
+        _drive_time_provider = OsrmClient(base_url=settings.osrm_base_url)
+    return _drive_time_provider
+
+
+def _reset_drive_time_provider() -> None:
+    """Test-only: clear the module-level provider singleton."""
+    global _drive_time_provider
+    _drive_time_provider = None
+
+
+async def _compute_drive_minutes(
+    session: AsyncSession,
+    home: tuple[float, float] | None,
+    offering: Offering,
+) -> float | None:
+    """Cache-first drive-time lookup. Returns None when feature disabled,
+    when no home/offering coords, or when the OSRM provider fails."""
+    provider = _get_drive_time_provider()
+    if provider is None or home is None:
+        return None
+    coords = await _offering_coords(session, offering)
+    if coords is None:
+        return None
+    result = await compute_drive_time(session, provider, home, coords)
+    return result.drive_minutes if result is not None else None
 
 
 async def _kid_blocks(session: AsyncSession, kid_id: int) -> list[UnavailabilityBlock]:
@@ -194,6 +235,7 @@ async def _evaluate_pair(
     enrollment_offering_map: dict[int, int] | None = None,
 ) -> tuple[bool, float, dict[str, Any]]:
     distance_mi = await _compute_distance_mi(session, home, offering)
+    drive_minutes = await _compute_drive_minutes(session, home, offering)
     if blocks is None:
         blocks = await _kid_blocks(session, kid.id)
     if watchlist_entries is None:
@@ -216,7 +258,11 @@ async def _evaluate_pair(
     gates = [
         age_fits(kid, offering, today=today),
         distance_fits(
-            kid, offering, distance_mi=distance_mi, household_default=default_max_distance
+            kid,
+            offering,
+            distance_mi=distance_mi,
+            household_default=default_max_distance,
+            drive_minutes=drive_minutes,
         ),
         interests_overlap(kid, offering, INTEREST_ALIASES),
         offering_active_and_not_ended(offering, today=today),
@@ -231,6 +277,11 @@ async def _evaluate_pair(
     )
     include = watchlist is not None or _gates_passed(gates)
     reasons = _reasons_payload(gates, breakdown, watchlist)
+    # Stash drive-time minutes in reasons so the UI can render an
+    # "X min drive" chip when present. Float | None — None means
+    # either the feature is off or computation failed.
+    if drive_minutes is not None:
+        reasons["drive_minutes"] = round(drive_minutes, 1)
     # Surface soft (tight) conflicts on included matches so the UI can
     # warn about near-misses the hard gate let through. Computed only
     # for matches we'd surface anyway — pure waste otherwise.

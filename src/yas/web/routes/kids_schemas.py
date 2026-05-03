@@ -45,6 +45,7 @@ class KidCreate(BaseModel):
     interests: list[str] = Field(default_factory=list)
     availability: dict[str, Any] = Field(default_factory=dict)
     max_distance_mi: float | None = None
+    max_drive_minutes: int | None = None
     alert_score_threshold: float = 0.6
     alert_on: dict[str, Any] = Field(default_factory=dict)
     school_weekdays: list[str] = Field(default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"])
@@ -66,6 +67,7 @@ class KidUpdate(BaseModel):
     interests: list[str] | None = None
     availability: dict[str, Any] | None = None
     max_distance_mi: float | None = None
+    max_drive_minutes: int | None = None
     alert_score_threshold: float | None = None
     alert_on: dict[str, Any] | None = None
     school_weekdays: list[str] | None = None
@@ -142,6 +144,7 @@ class KidDetailOut(BaseModel):
     interests: list[str]
     availability: dict[str, Any]
     max_distance_mi: float | None
+    max_drive_minutes: int | None = None
     alert_score_threshold: float
     alert_on: dict[str, Any]
     school_weekdays: list[str]

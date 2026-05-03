@@ -18,6 +18,7 @@ class _Kid:
     dob: date = date(2019, 5, 1)
     interests: list[str] = None
     max_distance_mi: float | None = None
+    max_drive_minutes: int | None = None
     school_holidays: list[str] = None
 
     def __post_init__(self):
@@ -169,6 +170,53 @@ def test_distance_no_cap_set_passes():
     r = distance_fits(kid, offering, distance_mi=100.0, household_default=None)
     assert r.passed
     assert r.code == "distance_unlimited"
+
+
+# --- drive-time gate (preferred over miles when set) -------------------------
+
+
+def test_drive_time_under_cap_passes_and_overrides_miles():
+    """When max_drive_minutes is set AND drive_minutes provided, miles cap ignored."""
+    kid = _Kid(max_drive_minutes=20, max_distance_mi=5.0)  # tight miles cap
+    offering = _Offering(location_id=7)
+    # Offering is 50 miles by great-circle but only 15 min by car (e.g., highway).
+    r = distance_fits(kid, offering, distance_mi=50.0, household_default=None, drive_minutes=15.0)
+    assert r.passed
+    assert r.code == "drive_time_ok"
+
+
+def test_drive_time_over_cap_fails():
+    kid = _Kid(max_drive_minutes=20)
+    offering = _Offering(location_id=7)
+    r = distance_fits(kid, offering, distance_mi=5.0, household_default=None, drive_minutes=30.0)
+    assert not r.passed
+    assert r.code == "too_far_drive"
+
+
+def test_drive_time_falls_back_to_miles_when_drive_minutes_unavailable():
+    """Provider failed to compute drive time → fall through to miles gate."""
+    kid = _Kid(max_drive_minutes=20, max_distance_mi=15.0)
+    offering = _Offering(location_id=7)
+    r = distance_fits(kid, offering, distance_mi=5.0, household_default=None, drive_minutes=None)
+    assert r.passed
+    assert r.code == "distance_ok"
+
+
+def test_no_drive_cap_uses_miles_even_when_drive_minutes_provided():
+    """Without max_drive_minutes, drive_minutes value is ignored."""
+    kid = _Kid(max_drive_minutes=None, max_distance_mi=10.0)
+    offering = _Offering(location_id=7)
+    r = distance_fits(kid, offering, distance_mi=5.0, household_default=None, drive_minutes=30.0)
+    assert r.passed
+    assert r.code == "distance_ok"
+
+
+def test_drive_time_unknown_when_location_missing():
+    kid = _Kid(max_drive_minutes=20)
+    offering = _Offering(location_id=None)
+    r = distance_fits(kid, offering, distance_mi=None, household_default=None, drive_minutes=15.0)
+    assert r.passed
+    assert r.code == "drive_time_unknown"
 
 
 # --- interests gate -----------------------------------------------------------

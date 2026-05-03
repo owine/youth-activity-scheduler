@@ -59,7 +59,35 @@ def distance_fits(
     *,
     distance_mi: float | None,
     household_default: float | None,
+    drive_minutes: float | None = None,
 ) -> GateResult:
+    """Distance gate.
+
+    Two modes, in order of preference:
+    1. **Drive-time gate** — used when `kid.max_drive_minutes` is set
+       AND `drive_minutes` is provided. The drive_minutes value is
+       computed by the matcher's drive-time helper (which respects
+       the `YAS_DRIVE_TIME_ENABLED` setting and falls back to None
+       on provider failure).
+    2. **Great-circle miles gate** — original behavior. Used when
+       drive-time isn't available, when no drive-time cap is set, or
+       when drive-time is misconfigured. Compares `distance_mi`
+       against `kid.max_distance_mi` or `household_default`.
+
+    A None on whichever side we'd consult means we let the offering
+    through with a `*_unknown` reason so it's surfaced rather than
+    silently dropped.
+    """
+    drive_cap = getattr(kid, "max_drive_minutes", None)
+    if drive_cap is not None and drive_minutes is not None:
+        if offering.location_id is None:
+            return GateResult(True, "drive_time_unknown", "location not geocoded")
+        if drive_minutes <= drive_cap:
+            return GateResult(
+                True, "drive_time_ok", f"{drive_minutes:.0f}min of {drive_cap}min max"
+            )
+        return GateResult(False, "too_far_drive", f"{drive_minutes:.0f}min > {drive_cap}min max")
+
     cap = kid.max_distance_mi if kid.max_distance_mi is not None else household_default
     if cap is None:
         return GateResult(True, "distance_unlimited", "no distance cap configured")

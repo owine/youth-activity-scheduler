@@ -157,6 +157,7 @@ export interface WatchlistEntry {
 export interface KidDetail extends KidBrief {
   availability: Record<string, unknown>;
   max_distance_mi: number | null;
+  max_drive_minutes: number | null;
   alert_score_threshold: number;
   alert_on: Record<string, boolean>;
   school_weekdays: string[];
