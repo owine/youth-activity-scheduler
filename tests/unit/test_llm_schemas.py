@@ -26,9 +26,26 @@ def test_offering_rejects_unknown_fields():
         ExtractedOffering(**_minimal(unknown="x"))
 
 
-def test_offering_rejects_unknown_program_type():
-    with pytest.raises(ValidationError):
-        ExtractedOffering(**_minimal(program_type="rhetoric"))
+def test_offering_coerces_unknown_program_type_to_unknown():
+    """A novel sport from the LLM (e.g., a typo or a sport we haven't
+    enumerated yet) shouldn't kill the entire batch. Coerce to
+    ProgramType.unknown so the offering still lands and the matcher
+    can fall through to interest-text matching."""
+    o = ExtractedOffering(**_minimal(program_type="rhetoric"))
+    assert o.program_type == ProgramType.unknown
+
+
+def test_offering_drops_unknown_days_of_week():
+    """An unknown day string from the LLM shouldn't fail the whole row."""
+    o = ExtractedOffering(**_minimal(days_of_week=["mon", "funday", "wed"]))
+    assert o.days_of_week == ["mon", "wed"]
+
+
+def test_offering_accepts_tennis_program_type():
+    """Regression: 'tennis' was the originally-missing sport that surfaced
+    the resilience gap; verify it's now a first-class enum member."""
+    o = ExtractedOffering(**_minimal(program_type="tennis"))
+    assert o.program_type == ProgramType.tennis
 
 
 def test_offering_accepts_dates_and_times():

@@ -36,20 +36,38 @@ class ProgramType(StrEnum):
     basketball = "basketball"
     hockey = "hockey"
     football = "football"
+    volleyball = "volleyball"
+    lacrosse = "lacrosse"
+    rugby = "rugby"
     # Individual / racquet / other sports
     swim = "swim"
+    tennis = "tennis"
+    racquet = "racquet"  # umbrella for racquet sports not otherwise enumerated
+    golf = "golf"
+    track = "track"
+    cycling = "cycling"
+    climbing = "climbing"
+    skating = "skating"
+    skiing = "skiing"
     martial_arts = "martial_arts"
     gymnastics = "gymnastics"
+    cheerleading = "cheerleading"
     dance = "dance"
+    yoga = "yoga"
     gym = "gym"  # general fitness / tumbling — retained for historical cache entries
     # Enrichment
     art = "art"
     music = "music"
+    theater = "theater"
     stem = "stem"
+    coding = "coding"
+    chess = "chess"
     academic = "academic"
+    cooking = "cooking"
     # Umbrella / other
     multisport = "multisport"
     outdoor = "outdoor"
+    nature = "nature"
     camp_general = "camp_general"
     unknown = "unknown"
 
