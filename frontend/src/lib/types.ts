@@ -236,6 +236,13 @@ export interface AlertRouting {
   enabled: boolean;
 }
 
+export interface CredentialStatus {
+  /** "form" = user pasted a value into Settings (DB); "env" = conventional
+   *  YAS_* env var is set; null = unconfigured. */
+  via: 'form' | 'env' | null;
+  env_var: string;
+}
+
 export interface Household {
   id: number;
   home_location_id: number | null;
@@ -251,6 +258,11 @@ export interface Household {
   email_configured: boolean;
   ntfy_configured: boolean;
   pushover_configured: boolean;
+  /** Per-credential status keyed by Settings field name: smtp_password,
+   *  forwardemail_api_token, ntfy_auth_token, pushover_user_key,
+   *  pushover_app_token. Empty when the channel is unconfigured. May be
+   *  missing on older API responses; consumers default to {}. */
+  credential_status?: Record<string, CredentialStatus>;
 }
 
 // Channel configuration types for Phase 7-1 Settings
@@ -260,14 +272,18 @@ export interface SmtpConfig {
   port: number;
   use_tls: boolean;
   username?: string;
-  password_env?: string;
+  /** Optional password override. When unset/empty, channel falls back
+   *  to the YAS_SMTP_PASSWORD env var. */
+  password_value?: string;
   from_addr: string;
   to_addrs: string[];
 }
 
 export interface ForwardEmailConfig {
   transport: 'forwardemail';
-  api_token_env: string;
+  /** Optional token override. When unset/empty, channel falls back to
+   *  the YAS_FORWARDEMAIL_API_TOKEN env var. */
+  api_token_value?: string;
   from_addr: string;
   to_addrs: string[];
 }
@@ -277,12 +293,15 @@ export type EmailConfig = SmtpConfig | ForwardEmailConfig;
 export interface NtfyConfig {
   base_url: string;
   topic: string;
-  auth_token_env?: string;
+  /** Optional override; falls back to YAS_NTFY_AUTH_TOKEN. */
+  auth_token_value?: string;
 }
 
 export interface PushoverConfig {
-  user_key_env: string;
-  app_token_env: string;
+  /** Optional override; falls back to YAS_PUSHOVER_USER_KEY. */
+  user_key_value?: string;
+  /** Optional override; falls back to YAS_PUSHOVER_APP_TOKEN. */
+  app_token_value?: string;
   devices?: string[];
   emergency_retry_s?: number;
   emergency_expire_s?: number;

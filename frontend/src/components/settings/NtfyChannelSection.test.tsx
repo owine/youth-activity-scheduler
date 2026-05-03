@@ -44,11 +44,11 @@ describe('NtfyChannelSection', () => {
     expect(topicInput.value).toBe('');
 
     // Verify other fields are present
-    expect(screen.getByLabelText(/Auth Token Env/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Auth Token/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /send test ntfy/i })).toBeInTheDocument();
   });
 
-  it('save POSTs PATCH with {ntfy_config_json: {base_url, topic}} and auth_token_env absent when blank', async () => {
+  it('save POSTs PATCH with {ntfy_config_json: {base_url, topic}} and auth_token_value absent when blank', async () => {
     const user = userEvent.setup();
     let captured: Record<string, unknown> | null = null;
     server.use(
@@ -72,7 +72,7 @@ describe('NtfyChannelSection', () => {
       const config = (captured?.ntfy_config_json as Record<string, unknown>) || {};
       expect(config.base_url).toBe('https://ntfy.sh');
       expect(config.topic).toBe('yas-test');
-      expect(config.auth_token_env).toBeUndefined(); // omitted when blank
+      expect(config.auth_token_value).toBeUndefined(); // omitted when blank
     });
   });
 

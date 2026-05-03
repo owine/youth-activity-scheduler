@@ -51,7 +51,7 @@ describe('EmailChannelSection', () => {
     expect(screen.getByRole('button', { name: /send test email/i })).toBeInTheDocument();
   });
 
-  it('switching to forwardemail hides smtp fields, shows api_token_env', async () => {
+  it('switching to forwardemail hides smtp fields, shows api_token_value', async () => {
     const user = userEvent.setup();
     render(<EmailChannelSection />, { wrapper: wrap(makeQc(), baseHh) });
 
@@ -123,7 +123,7 @@ describe('EmailChannelSection', () => {
     await user.selectOptions(transportSelect, 'forwardemail');
 
     // Fill forwardemail form
-    await user.type(screen.getByLabelText(/ForwardEmail API Token/i), 'YAS_FWD_EMAIL_TOKEN');
+    await user.type(screen.getByLabelText(/ForwardEmail API Token/i), 'secret-api-token');
     await user.type(screen.getByLabelText(/From Address/i), 'noreply@forwardemail.example.com');
     await user.type(screen.getByLabelText(/To Addresses/i), 'admin@example.com');
 
@@ -134,7 +134,38 @@ describe('EmailChannelSection', () => {
       expect(captured).not.toBeNull();
       const config = (captured?.smtp_config_json as Record<string, unknown>) || {};
       expect(config.transport).toBe('forwardemail');
-      expect(config.api_token_env).toBe('YAS_FWD_EMAIL_TOKEN');
+      expect(config.api_token_value).toBe('secret-api-token');
+      expect(config.from_addr).toBe('noreply@forwardemail.example.com');
+      expect(config.to_addrs).toEqual(['admin@example.com']);
+    });
+  });
+
+  it('forwardemail save with no api_token_value succeeds and omits the key', async () => {
+    const user = userEvent.setup();
+    let captured: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/household', async ({ request }) => {
+        captured = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(baseHh);
+      }),
+    );
+
+    render(<EmailChannelSection />, { wrapper: wrap(makeQc(), baseHh) });
+
+    const transportSelect = screen.getByLabelText(/Transport/i) as HTMLSelectElement;
+    await user.selectOptions(transportSelect, 'forwardemail');
+
+    // Leave api_token_value blank — server falls back to YAS_FORWARDEMAIL_API_TOKEN env var.
+    await user.type(screen.getByLabelText(/From Address/i), 'noreply@forwardemail.example.com');
+    await user.type(screen.getByLabelText(/To Addresses/i), 'admin@example.com');
+
+    await user.click(screen.getByRole('button', { name: /^Save/i }));
+
+    await waitFor(() => {
+      expect(captured).not.toBeNull();
+      const config = (captured?.smtp_config_json as Record<string, unknown>) || {};
+      expect(config.transport).toBe('forwardemail');
+      expect(config.api_token_value).toBeUndefined();
       expect(config.from_addr).toBe('noreply@forwardemail.example.com');
       expect(config.to_addrs).toEqual(['admin@example.com']);
     });
