@@ -115,12 +115,12 @@ Estimated size: 4 PRs.
 
 **Why third:** quality-of-life. None block v1 terminal state.
 
-- Phase 8-1: Multi-kid combined calendar (deferred from 5c-1)
+- Phase 8-1: ✅ shipped 2026-05-02. Multi-kid combined calendar (deferred from 5c-1) — new top-level `/calendar` route, color-by-kid, kid + event-type filters in URL search params.
 - Phase 8-2: ✅ shipped 2026-05-02. Calendar respects `kid.school_holidays` (school blocks skip holiday dates) and emits explicit `holiday` events for in-range, in-school-year holidays.
 - Phase 8-3: ✅ shipped 2026-05-02. Match events now carry a `watchlist_hit: bool` flag (set from `Match.reasons.watchlist_hit`); frontend renders watchlist-driven matches with a solid gold ring vs the default dashed border.
 - Phase 8-4: ✅ shipped 2026-05-02 (close-many alerts only — mute-many and enroll-many deferred until usage signals justify them). New `POST /api/alerts/bulk/close` + multi-select on Outbox.
-- Phase 8-5: E2E test automation in CI (`scripts/e2e_phase5a.sh` is a manual gate today)
-- Phase 8-6: Address pre-existing `format:check` failures (~28 files)
+- Phase 8-5: ✅ shipped 2026-05-02. E2E tests automated in CI as a new `e2e` job. Plain processes (no docker-in-CI), reuses `python -m yas api` + `YAS_STATIC_DIR` to serve the SPA. `scripts/e2e_phase5a.sh` preserved for local docker-compose dogfooding.
+- Phase 8-6: ✅ shipped 2026-05-02. Fixed 26 pre-existing prettier failures + wired `frontend-check` CI job (typecheck/lint/format/test). Audit revealed the deeper gap: no frontend gates ran in CI at all — fixed in the same PR.
 
 Estimated size: 5-6 small PRs.
 
@@ -159,7 +159,8 @@ The deviation root cause was **no re-audit step**. Each phase's spec referenced 
 
 These remain open from each shipped phase's "Out of scope":
 
-- **Pushover/Gotify channels** (master § 9) — small slice when needed
+- **Pushover channel** (master § 9) — ✅ already shipped during Phase 7-1 Settings work (`PushoverChannel` + Settings UI + routing matrix + test-send all wired). The roadmap line was a pre-Phase-7 carry-over.
+- **Gotify channel** (master § 9) — ❌ not implemented. Small slice when actually needed (mirror PushoverChannel against Gotify's HTTP API).
 - **`.ics` calendar export** (master § 9) — ✅ shipped 2026-05-03. Per-kid feed at `GET /api/kids/{id}/calendar.ics`; default −7d/+90d window, 400-day cap. Match suggestions excluded; enrollment/unavailability/holiday included. Subscribe link on per-kid calendar page. (.ics *import* still deferred.)
 - **Driving-time vs great-circle distance** (master § 9) — only if real usage shows great-circle is misleading
 - **Soft conflicts as warnings** (master § 9) — e.g., "offering ends at 3:15pm but school ends at 3:00pm — too tight?"
