@@ -204,5 +204,19 @@ export function chipsForOffering(
       className: 'bg-purple-100 text-purple-900 dark:bg-purple-900/30 dark:text-purple-200',
     });
   }
+  // 6. Tight (soft conflict — matcher flagged a near-miss against an
+  // unavailability block, e.g., school ends 3pm and offering starts 3:10pm)
+  const tight = row.matches.some(
+    (m) =>
+      Array.isArray((m.reasons as { soft_conflicts?: unknown }).soft_conflicts) &&
+      ((m.reasons as { soft_conflicts: unknown[] }).soft_conflicts?.length ?? 0) > 0,
+  );
+  if (tight) {
+    chips.push({
+      kind: 'tight',
+      label: '⚠ Tight',
+      className: 'bg-yellow-100 text-yellow-900 dark:bg-yellow-900/30 dark:text-yellow-200',
+    });
+  }
   return chips.slice(0, 3);
 }
