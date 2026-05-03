@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { formErrorMessage } from '@/lib/formError';
+import { uniqueFormErrors } from '@/lib/formError';
 import { useState } from 'react';
 import { z } from 'zod';
 import { useCreateWatchlistEntry, useUpdateWatchlistEntry } from '@/lib/mutations';
@@ -152,9 +152,9 @@ export function WatchlistEntrySheet({
                     aria-invalid={field.state.meta.errors.length > 0}
                     className="mt-1 block w-full rounded border border-input px-3 py-2"
                   />
-                  {field.state.meta.errors.map((err, i) => (
+                  {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
                     <p key={i} className="mt-1 text-xs text-destructive">
-                      {formErrorMessage(err)}
+                      {m}
                     </p>
                   ))}
                 </div>

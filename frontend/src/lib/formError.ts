@@ -1,4 +1,23 @@
 /**
+ * Dedupe a list of TanStack Form errors by their rendered message.
+ * onMount + onChange validators on the same schema both populate
+ * `meta.errors`, producing visually-identical duplicates. We collapse
+ * by message string so the user sees each problem once.
+ */
+export function uniqueFormErrors(errors: readonly unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const err of errors) {
+    const m = formErrorMessage(err);
+    if (m && !seen.has(m)) {
+      seen.add(m);
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+/**
  * Extract a renderable string from a TanStack Form error entry.
  *
  * `field.state.meta.errors` is `Array<unknown>` — what's in there depends

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formErrorMessage } from '@/lib/formError';
+import { uniqueFormErrors } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -166,9 +166,9 @@ export function EmailChannelSection() {
                           className="mt-1 block w-full rounded border border-input px-3 py-2"
                           placeholder="smtp.example.com"
                         />
-                        {field.state.meta.errors.map((err, i) => (
+                        {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
                           <p key={i} className="mt-1 text-xs text-destructive">
-                            {formErrorMessage(err)}
+                            {m}
                           </p>
                         ))}
                       </div>
@@ -193,9 +193,9 @@ export function EmailChannelSection() {
                           min="1"
                           max="65535"
                         />
-                        {field.state.meta.errors.map((err, i) => (
+                        {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
                           <p key={i} className="mt-1 text-xs text-destructive">
-                            {formErrorMessage(err)}
+                            {m}
                           </p>
                         ))}
                       </div>
@@ -233,7 +233,7 @@ export function EmailChannelSection() {
                         onChange={field.handleChange}
                         onBlur={field.handleBlur}
                         status={smtpStatus}
-                        errors={field.state.meta.errors.map(formErrorMessage)}
+                        errors={uniqueFormErrors(field.state.meta.errors)}
                       />
                     )}
                   />
@@ -264,7 +264,7 @@ export function EmailChannelSection() {
                       onChange={field.handleChange}
                       onBlur={field.handleBlur}
                       status={fwdStatus}
-                      errors={field.state.meta.errors.map(formErrorMessage)}
+                      errors={uniqueFormErrors(field.state.meta.errors)}
                     />
                   )}
                 />
@@ -291,9 +291,9 @@ export function EmailChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="noreply@example.com"
               />
-              {field.state.meta.errors.map((err, i) => (
+              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
-                  {formErrorMessage(err)}
+                  {m}
                 </p>
               ))}
             </div>
@@ -317,9 +317,9 @@ export function EmailChannelSection() {
                 className="mt-1 block w-full rounded border border-input px-3 py-2"
                 placeholder="admin@example.com, support@example.com"
               />
-              {field.state.meta.errors.map((err, i) => (
+              {uniqueFormErrors(field.state.meta.errors).map((m, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
-                  {formErrorMessage(err)}
+                  {m}
                 </p>
               ))}
             </div>

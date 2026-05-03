@@ -50,15 +50,13 @@ export function AlertRoutingSection() {
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Alert Routing</h2>
       <div className="overflow-x-auto">
-        <table className="border-collapse border border-gray-200 w-full">
+        <table className="border-collapse border border-border w-full">
           <thead>
-            <tr className="bg-gray-50">
-              <th className="border border-gray-200 px-4 py-2 text-left font-semibold">
-                Alert Type
-              </th>
-              <th className="border border-gray-200 px-4 py-2 text-left font-semibold">Enabled</th>
+            <tr className="bg-muted">
+              <th className="border border-border px-4 py-2 text-left font-semibold">Alert Type</th>
+              <th className="border border-border px-4 py-2 text-left font-semibold">Enabled</th>
               {channels.map((ch) => (
-                <th key={ch} className="border border-gray-200 px-4 py-2 text-left font-semibold">
+                <th key={ch} className="border border-border px-4 py-2 text-left font-semibold">
                   {ch}
                 </th>
               ))}
@@ -66,9 +64,9 @@ export function AlertRoutingSection() {
           </thead>
           <tbody>
             {routing.data.map((row) => (
-              <tr key={row.type} className="hover:bg-gray-50">
-                <td className="border border-gray-200 px-4 py-2">{row.type}</td>
-                <td className="border border-gray-200 px-4 py-2">
+              <tr key={row.type} className="hover:bg-muted">
+                <td className="border border-border px-4 py-2">{row.type}</td>
+                <td className="border border-border px-4 py-2">
                   <input
                     type="checkbox"
                     aria-label={`${row.type} enabled`}
@@ -83,7 +81,7 @@ export function AlertRoutingSection() {
                   const isLastChannel = row.enabled && row.channels.length === 1 && isChecked;
 
                   return (
-                    <td key={`${row.type}-${ch}`} className="border border-gray-200 px-4 py-2">
+                    <td key={`${row.type}-${ch}`} className="border border-border px-4 py-2">
                       <input
                         type="checkbox"
                         aria-label={`${row.type} ${ch}`}
