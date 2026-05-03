@@ -10,6 +10,7 @@ import respx
 
 from yas.alerts.channels.base import NotifierCapability, NotifierMessage
 from yas.alerts.channels.pushover import PushoverChannel
+from yas.config import Settings
 from yas.db.models._types import AlertType
 
 _PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
@@ -20,10 +21,19 @@ _PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 # ---------------------------------------------------------------------------
 
 
+def _settings(**overrides: object) -> Settings:
+    """Build a Settings with credentials stubbed. Pass kwargs to override
+    specific credential fields; otherwise they default to None so tests
+    fully control resolution via the config dict."""
+    defaults: dict = {"anthropic_api_key": "sk-test"}
+    defaults.update(overrides)
+    return Settings(**defaults)
+
+
 def _cfg(**kwargs: object) -> dict:
     base: dict = {
-        "user_key_env": "YAS_PO_USER",
-        "app_token_env": "YAS_PO_TOKEN",
+        "user_key_value": "user123",
+        "app_token_value": "tok123",
         "emergency_retry_s": 30,
         "emergency_expire_s": 600,
     }
@@ -58,10 +68,8 @@ def _parse_form(request: httpx.Request) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def test_pushover_capabilities(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-    ch = PushoverChannel(_cfg())
+def test_pushover_capabilities():
+    ch = PushoverChannel(_cfg(), _settings())
     assert ch.capabilities == {NotifierCapability.push, NotifierCapability.push_emergency}
     assert ch.name == "pushover"
 
@@ -72,15 +80,12 @@ def test_pushover_capabilities(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_posts_to_api_url(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_posts_to_api_url():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -89,15 +94,12 @@ async def test_pushover_posts_to_api_url(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_form_fields_token_user_title_message(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_form_fields_token_user_title_message():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         await ch.send(_msg(subject="My Subject", body_plain="My body"))
         await ch.aclose()
 
@@ -114,15 +116,12 @@ async def test_pushover_form_fields_token_user_title_message(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_url_and_url_title_set_when_url_given(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_url_and_url_title_set_when_url_given():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         await ch.send(_msg(subject="Sign Up", url="https://example.com/reg"))
         await ch.aclose()
 
@@ -132,15 +131,12 @@ async def test_pushover_url_and_url_title_set_when_url_given(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_url_fields_absent_when_no_url(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_url_fields_absent_when_no_url():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         await ch.send(_msg(url=None))
         await ch.aclose()
 
@@ -155,16 +151,13 @@ async def test_pushover_url_fields_absent_when_no_url(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_priority_2_for_reg_opens_now(monkeypatch):
+async def test_pushover_priority_2_for_reg_opens_now():
     """reg_opens_now → form contains priority=2 plus retry/expire from config."""
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg(emergency_retry_s=30, emergency_expire_s=600))
+        ch = PushoverChannel(_cfg(emergency_retry_s=30, emergency_expire_s=600), _settings())
         await ch.send(_msg(alert_type=AlertType.reg_opens_now))
         await ch.aclose()
 
@@ -175,16 +168,13 @@ async def test_pushover_priority_2_for_reg_opens_now(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_priority_0_for_non_emergency(monkeypatch):
+async def test_pushover_priority_0_for_non_emergency():
     """Non-emergency alert types → priority=0, no retry/expire."""
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         await ch.send(_msg(alert_type=AlertType.reg_opens_24h))
         await ch.aclose()
 
@@ -200,15 +190,12 @@ async def test_pushover_priority_0_for_non_emergency(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_devices_comma_joined_when_list_nonempty(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_devices_comma_joined_when_list_nonempty():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg(devices=["iphone", "ipad"]))
+        ch = PushoverChannel(_cfg(devices=["iphone", "ipad"]), _settings())
         await ch.send(_msg())
         await ch.aclose()
 
@@ -217,15 +204,12 @@ async def test_pushover_devices_comma_joined_when_list_nonempty(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_device_field_absent_when_no_devices(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_device_field_absent_when_no_devices():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())  # no devices key
+        ch = PushoverChannel(_cfg(), _settings())  # no devices key
         await ch.send(_msg())
         await ch.aclose()
 
@@ -234,15 +218,12 @@ async def test_pushover_device_field_absent_when_no_devices(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_device_field_absent_when_empty_list(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_device_field_absent_when_empty_list():
     with respx.mock() as m:
         route = m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg(devices=[]))
+        ch = PushoverChannel(_cfg(devices=[]), _settings())
         await ch.send(_msg())
         await ch.aclose()
 
@@ -256,15 +237,12 @@ async def test_pushover_device_field_absent_when_empty_list(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_status_1_ok(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_status_1_ok():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(200, json={"status": 1, "request": "abc"})
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -273,11 +251,8 @@ async def test_pushover_status_1_ok(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_status_0_non_transient(monkeypatch):
+async def test_pushover_status_0_non_transient():
     """HTTP 200 with JSON status:0 → ok=False, transient_failure=False, detail contains errors."""
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(
@@ -285,7 +260,7 @@ async def test_pushover_status_0_non_transient(monkeypatch):
                 json={"status": 0, "errors": ["user key is invalid"]},
             )
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -295,13 +270,10 @@ async def test_pushover_status_0_non_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_http_429_transient(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_http_429_transient():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(return_value=httpx.Response(429, json={}))
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -310,13 +282,10 @@ async def test_pushover_http_429_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_http_5xx_transient(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_http_5xx_transient():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(return_value=httpx.Response(503, json={}))
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -325,10 +294,7 @@ async def test_pushover_http_5xx_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_http_4xx_status_0_non_transient(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_http_4xx_status_0_non_transient():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(
             return_value=httpx.Response(
@@ -336,7 +302,7 @@ async def test_pushover_http_4xx_status_0_non_transient(monkeypatch):
                 json={"status": 0, "errors": ["token is invalid"]},
             )
         )
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -350,13 +316,10 @@ async def test_pushover_http_4xx_status_0_non_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_timeout_is_transient(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_timeout_is_transient():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(side_effect=httpx.TimeoutException("timed out"))
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -366,13 +329,10 @@ async def test_pushover_timeout_is_transient(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pushover_connect_error_is_transient(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
+async def test_pushover_connect_error_is_transient():
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(side_effect=httpx.ConnectError("dns failure"))
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 
@@ -382,51 +342,45 @@ async def test_pushover_connect_error_is_transient(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Missing env vars
+# Missing credentials
 # ---------------------------------------------------------------------------
 
 
-def test_pushover_missing_user_key_env_raises(monkeypatch):
-    monkeypatch.delenv("YAS_PO_USER", raising=False)
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
-    with pytest.raises(ValueError, match="YAS_PO_USER"):
-        PushoverChannel(_cfg())
+def test_pushover_missing_user_key_raises():
+    with pytest.raises(ValueError, match="not set"):
+        PushoverChannel(_cfg(user_key_value=None), _settings())
 
 
-def test_pushover_missing_app_token_env_raises(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.delenv("YAS_PO_TOKEN", raising=False)
-
-    with pytest.raises(ValueError, match="YAS_PO_TOKEN"):
-        PushoverChannel(_cfg())
+def test_pushover_missing_app_token_raises():
+    with pytest.raises(ValueError, match="not set"):
+        PushoverChannel(_cfg(app_token_value=None), _settings())
 
 
-def test_pushover_blank_user_key_env_raises(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
-    with pytest.raises(ValueError, match="set but empty"):
-        PushoverChannel(_cfg())
+def test_pushover_blank_user_key_raises():
+    with pytest.raises(ValueError, match="not set"):
+        PushoverChannel(_cfg(user_key_value=""), _settings())
 
 
-def test_pushover_blank_app_token_env_raises(monkeypatch):
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "")
+def test_pushover_blank_app_token_raises():
+    with pytest.raises(ValueError, match="not set"):
+        PushoverChannel(_cfg(app_token_value=""), _settings())
 
-    with pytest.raises(ValueError, match="set but empty"):
-        PushoverChannel(_cfg())
+
+def test_pushover_falls_back_to_settings_env():
+    """When form value is unset, channel uses Settings (env-loaded) credentials."""
+    cfg = _cfg(user_key_value=None, app_token_value=None)
+    settings = _settings(pushover_user_key="env-user", pushover_app_token="env-tok")
+    ch = PushoverChannel(cfg, settings)
+    assert ch._user_key == "env-user"
+    assert ch._app_token == "env-tok"
 
 
 @pytest.mark.asyncio
-async def test_pushover_malformed_json_response(monkeypatch):
+async def test_pushover_malformed_json_response():
     """Non-JSON body (e.g. HTML error page) → body={}, status defaults to 0, non-transient."""
-    monkeypatch.setenv("YAS_PO_USER", "user123")
-    monkeypatch.setenv("YAS_PO_TOKEN", "tok123")
-
     with respx.mock() as m:
         m.post(_PUSHOVER_URL).mock(return_value=httpx.Response(200, text="<html>error</html>"))
-        ch = PushoverChannel(_cfg())
+        ch = PushoverChannel(_cfg(), _settings())
         result = await ch.send(_msg())
         await ch.aclose()
 

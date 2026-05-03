@@ -9,11 +9,12 @@ from fastapi import APIRouter, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from yas.config import Settings
 from yas.crawl.normalize import normalize_name
 from yas.db.models import GeocodeAttempt, HouseholdSettings, Location
 from yas.db.session import session_scope
 from yas.geo.client import Geocoder
-from yas.web.routes.household_schemas import HouseholdOut, HouseholdPatch
+from yas.web.routes.household_schemas import CredentialStatus, HouseholdOut, HouseholdPatch
 
 router = APIRouter(prefix="/api/household", tags=["household"])
 
@@ -35,12 +36,73 @@ async def _load_or_create(session: AsyncSession) -> HouseholdSettings:
     return hh
 
 
-async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
+def _credential_status(
+    cfg: dict[str, Any] | None,
+    *,
+    value_key: str,
+    env_var_name: str,
+    settings_value: str | None,
+) -> CredentialStatus:
+    """Resolve where a single credential comes from.
+
+    Form value wins over env. Returns via=None when neither is set so
+    the UI can render an "unconfigured" state without guessing.
+    """
+    form_value = cfg.get(value_key) if cfg else None
+    if form_value:
+        return CredentialStatus(via="form", env_var=env_var_name)
+    if settings_value:
+        return CredentialStatus(via="env", env_var=env_var_name)
+    return CredentialStatus(via=None, env_var=env_var_name)
+
+
+def _settings(req: Request) -> Settings:
+    return req.app.state.yas.settings  # type: ignore[no-any-return]
+
+
+async def _to_out(s: AsyncSession, hh: HouseholdSettings, settings: Settings) -> HouseholdOut:
     loc = None
     if hh.home_location_id is not None:
         loc = (
             await s.execute(select(Location).where(Location.id == hh.home_location_id))
         ).scalar_one_or_none()
+    cred_status: dict[str, CredentialStatus] = {}
+    smtp = hh.smtp_config_json
+    if smtp is not None and smtp.get("transport") == "smtp":
+        cred_status["smtp_password"] = _credential_status(
+            smtp,
+            value_key="password_value",
+            env_var_name="YAS_SMTP_PASSWORD",
+            settings_value=settings.smtp_password,
+        )
+    if smtp is not None and smtp.get("transport") == "forwardemail":
+        cred_status["forwardemail_api_token"] = _credential_status(
+            smtp,
+            value_key="api_token_value",
+            env_var_name="YAS_FORWARDEMAIL_API_TOKEN",
+            settings_value=settings.forwardemail_api_token,
+        )
+    if hh.ntfy_config_json is not None:
+        cred_status["ntfy_auth_token"] = _credential_status(
+            hh.ntfy_config_json,
+            value_key="auth_token_value",
+            env_var_name="YAS_NTFY_AUTH_TOKEN",
+            settings_value=settings.ntfy_auth_token,
+        )
+    if hh.pushover_config_json is not None:
+        cred_status["pushover_user_key"] = _credential_status(
+            hh.pushover_config_json,
+            value_key="user_key_value",
+            env_var_name="YAS_PUSHOVER_USER_KEY",
+            settings_value=settings.pushover_user_key,
+        )
+        cred_status["pushover_app_token"] = _credential_status(
+            hh.pushover_config_json,
+            value_key="app_token_value",
+            env_var_name="YAS_PUSHOVER_APP_TOKEN",
+            settings_value=settings.pushover_app_token,
+        )
+
     return HouseholdOut(
         id=hh.id,
         home_location_id=hh.home_location_id,
@@ -56,6 +118,7 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
         email_configured=hh.smtp_config_json is not None,
         ntfy_configured=hh.ntfy_config_json is not None,
         pushover_configured=hh.pushover_config_json is not None,
+        credential_status=cred_status,
     )
 
 
@@ -63,7 +126,7 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
 async def get_household(request: Request) -> HouseholdOut:
     async with session_scope(_engine(request)) as s:
         hh = await _load_or_create(s)
-        return await _to_out(s, hh)
+        return await _to_out(s, hh, _settings(request))
 
 
 @router.patch("", response_model=HouseholdOut)
@@ -129,4 +192,4 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
             setattr(hh, key, value)
 
         await s.flush()
-        return await _to_out(s, hh)
+        return await _to_out(s, hh, _settings(request))

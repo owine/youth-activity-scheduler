@@ -63,9 +63,14 @@ def _build_notifiers(
         if config is None:
             continue
         try:
-            notifiers[channel_name] = channel_cls(config)
+            notifiers[channel_name] = channel_cls(config, settings)
         except ValueError as exc:
             log.warning("channel.disabled", channel=channel_name, reason=str(exc))
+
+    if notifiers:
+        log.info("channels.constructed", channels=sorted(notifiers.keys()))
+    else:
+        log.warning("channels.none_constructed", note="all channels disabled or unconfigured")
 
     return notifiers
 

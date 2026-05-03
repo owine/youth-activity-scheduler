@@ -5,6 +5,19 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
+class CredentialStatus(BaseModel):
+    """Per-credential status: where the value resolves from, if anywhere.
+
+    via:
+      - "form" — user pasted a value into the Settings UI (stored in DB)
+      - "env"  — conventional env var is set (e.g. YAS_PUSHOVER_USER_KEY)
+      - null   — neither; channel can't construct
+    """
+
+    via: str | None
+    env_var: str
+
+
 class HouseholdOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -21,6 +34,10 @@ class HouseholdOut(BaseModel):
     email_configured: bool
     ntfy_configured: bool
     pushover_configured: bool
+    # Per-credential status: tells the UI whether each secret resolves
+    # from a form-stored override, an env var, or is unset. Empty when
+    # the corresponding *_config_json is null (channel not configured).
+    credential_status: dict[str, CredentialStatus] = {}
 
 
 class HouseholdPatch(BaseModel):

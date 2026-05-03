@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from email.message import EmailMessage
 from typing import Any, ClassVar, Protocol
 
@@ -14,6 +13,7 @@ from yas.alerts.channels.base import (
     NotifierMessage,
     SendResult,
 )
+from yas.config import Settings
 
 _FORWARDEMAIL_API_URL = "https://api.forwardemail.net/v1/emails"
 
@@ -66,7 +66,6 @@ class _SMTPTransport:
         to_addrs: list[str],
         username: str | None = None,
         password: str | None = None,
-        password_env: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -76,16 +75,7 @@ class _SMTPTransport:
         if username is not None and username == "":
             raise ValueError("smtp username must be non-empty if provided")
         self._username = username
-
-        if password is not None:
-            self._password: str | None = password
-        elif password_env is not None:
-            resolved = os.environ.get(password_env)
-            if resolved is None:
-                raise ValueError(f"channel disabled: missing env var {password_env}")
-            self._password = resolved
-        else:
-            self._password = None
+        self._password = password if password else None
 
     async def send(self, msg: NotifierMessage) -> SendResult:
         email = _build_email(
@@ -151,14 +141,16 @@ class _SMTPTransport:
 class _ForwardEmailTransport:
     def __init__(
         self,
-        api_token_env: str,
+        api_token: str,
         from_addr: str,
         to_addrs: list[str],
     ) -> None:
-        token = os.environ.get(api_token_env)
-        if token is None:
-            raise ValueError(f"channel disabled: missing env var {api_token_env}")
-        self._token = token
+        if not api_token:
+            raise ValueError(
+                "channel disabled: forwardemail api token not set "
+                "(form override or YAS_FORWARDEMAIL_API_TOKEN env var)"
+            )
+        self._token = api_token
         self._from_addr = from_addr
         self._to_addrs = to_addrs
         self._client = httpx.AsyncClient()
@@ -216,13 +208,15 @@ class EmailChannel:
     name: str = "email"
     capabilities: ClassVar[set[NotifierCapability]] = {NotifierCapability.email}
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], settings: Settings) -> None:
         transport_name = config.get("transport")
         from_addr = str(config["from_addr"])
         to_addrs = [str(a) for a in config["to_addrs"]]
 
         if transport_name == "smtp":
-            password_env = config.get("password_env")
+            # Resolution: form-stored value → conventional env var. SMTP
+            # password is optional (some servers use IP-based auth).
+            password = config.get("password_value") or settings.smtp_password
             self._transport: _EmailTransport = _SMTPTransport(
                 host=str(config["host"]),
                 port=int(config["port"]),
@@ -230,11 +224,12 @@ class EmailChannel:
                 from_addr=from_addr,
                 to_addrs=to_addrs,
                 username=str(config["username"]) if "username" in config else None,
-                password_env=str(password_env) if password_env is not None else None,
+                password=password if password else None,
             )
         elif transport_name == "forwardemail":
+            api_token = config.get("api_token_value") or settings.forwardemail_api_token or ""
             self._transport = _ForwardEmailTransport(
-                api_token_env=str(config["api_token_env"]),
+                api_token=api_token,
                 from_addr=from_addr,
                 to_addrs=to_addrs,
             )
