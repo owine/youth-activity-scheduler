@@ -37,6 +37,13 @@ export function CredentialField({
   errors,
   hint,
 }: Props) {
+  // Three states:
+  //   - status === undefined → backend didn't return credential_status (older
+  //     API or channel not yet saved). We don't actually know if it's set;
+  //     render no badge rather than claiming "not set."
+  //   - status.via === 'env' / 'form' → credential resolves; green/blue badge.
+  //   - status.via === null → backend confirmed no env, no form value. Amber.
+  const known = status !== undefined;
   const via = status?.via ?? null;
   const envVar = status?.env_var;
 
@@ -49,29 +56,28 @@ export function CredentialField({
           ? `Paste value, or set ${envVar} env var`
           : 'Paste value';
 
-  const badge =
-    via === 'env' ? (
-      <span
-        className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
-        title={`Resolves from ${envVar}`}
-      >
-        ✓ env
-      </span>
-    ) : via === 'form' ? (
-      <span
-        className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-900 dark:bg-blue-900/30 dark:text-blue-200"
-        title="Stored in DB; overrides any env var"
-      >
-        ✓ form
-      </span>
-    ) : (
-      <span
-        className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
-        title={envVar ? `Set ${envVar} or paste a value above` : 'Unconfigured'}
-      >
-        ✗ not set
-      </span>
-    );
+  const badge = !known ? null : via === 'env' ? (
+    <span
+      className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200"
+      title={`Resolves from ${envVar}`}
+    >
+      ✓ env
+    </span>
+  ) : via === 'form' ? (
+    <span
+      className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs text-blue-900 dark:bg-blue-900/30 dark:text-blue-200"
+      title="Stored in DB; overrides any env var"
+    >
+      ✓ form
+    </span>
+  ) : (
+    <span
+      className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
+      title={envVar ? `Set ${envVar} or paste a value above` : 'Unconfigured'}
+    >
+      ✗ not set
+    </span>
+  );
 
   return (
     <div>
