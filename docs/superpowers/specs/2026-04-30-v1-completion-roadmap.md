@@ -163,7 +163,7 @@ These remain open from each shipped phase's "Out of scope":
 - **Gotify channel** (master § 9) — ❌ not implemented. Small slice when actually needed (mirror PushoverChannel against Gotify's HTTP API).
 - **`.ics` calendar export** (master § 9) — ✅ shipped 2026-05-03. Per-kid feed at `GET /api/kids/{id}/calendar.ics`; default −7d/+90d window, 400-day cap. Match suggestions excluded; enrollment/unavailability/holiday included. Subscribe link on per-kid calendar page. (.ics *import* still deferred.)
 - **Driving-time vs great-circle distance** (master § 9) — only if real usage shows great-circle is misleading
-- **Soft conflicts as warnings** (master § 9) — e.g., "offering ends at 3:15pm but school ends at 3:00pm — too tight?"
+- **Soft conflicts as warnings** (master § 9) — ✅ shipped 2026-05-03. Matcher computes near-misses against unavailability blocks (default 15-min buffer); stored in `Match.reasons.soft_conflicts`; surfaced as a "⚠ Tight" chip on offering rows.
 - **Mute reasons / per-channel mute** (5d-1 §1.2) — only if mute volume justifies it
 - **User-controllable match score threshold** (5c-2 §1.2) — only if 0.6 fixed feels wrong
 - **Watchlist on calendar** (5c-1 §1.2) — ✅ shipped 2026-05-02 as Phase 8-3

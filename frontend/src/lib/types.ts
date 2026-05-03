@@ -45,7 +45,13 @@ export interface OfferingSummary {
 // Phase 7-2 types
 export type SortKey = 'best_score' | 'soonest_start' | 'soonest_reg';
 
-export type ChipKind = 'watchlist' | 'top_match' | 'opens_this_week' | 'near_home' | 'in_interests';
+export type ChipKind =
+  | 'watchlist'
+  | 'top_match'
+  | 'opens_this_week'
+  | 'near_home'
+  | 'in_interests'
+  | 'tight';
 
 export interface Chip {
   kind: ChipKind;

@@ -33,6 +33,7 @@ from yas.matching.gates import (
     offering_active_and_not_ended,
 )
 from yas.matching.scoring import compute_score
+from yas.matching.soft_conflicts import find_soft_conflicts
 from yas.matching.watchlist import matches_watchlist
 
 log = get_logger("yas.matching.matcher")
@@ -230,6 +231,13 @@ async def _evaluate_pair(
     )
     include = watchlist is not None or _gates_passed(gates)
     reasons = _reasons_payload(gates, breakdown, watchlist)
+    # Surface soft (tight) conflicts on included matches so the UI can
+    # warn about near-misses the hard gate let through. Computed only
+    # for matches we'd surface anyway — pure waste otherwise.
+    if include:
+        soft = find_soft_conflicts(offering, filtered_blocks, school_holidays, today=today)
+        if soft:
+            reasons["soft_conflicts"] = [sc.to_dict() for sc in soft]
     return include, score, reasons
 
 
