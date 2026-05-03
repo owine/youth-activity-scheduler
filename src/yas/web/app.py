@@ -33,16 +33,24 @@ def create_app(
     async def healthz() -> dict[str, str]:
         import os
 
-        return {"status": "ok", "git_sha": os.environ.get("YAS_GIT_SHA", "unknown")}
+        return {
+            "status": "ok",
+            "git_sha": os.environ.get("YAS_GIT_SHA", "unknown"),
+            "version": app.version,
+        }
 
     @app.get("/readyz")
     async def readyz(response: Response) -> dict[str, object]:
+        import os
+
         readiness = await check_readiness(state.engine, state.settings.worker_heartbeat_staleness_s)
         response.status_code = 200 if readiness.ready else 503
         return {
             "db_reachable": readiness.db_reachable,
             "heartbeat_fresh": readiness.heartbeat_fresh,
             "heartbeat_age_s": readiness.heartbeat_age_s,
+            "git_sha": os.environ.get("YAS_GIT_SHA", "unknown"),
+            "version": app.version,
         }
 
     from yas.web.routes import (
