@@ -1,4 +1,5 @@
 import { useForm } from '@tanstack/react-form';
+import { formErrorMessage } from '@/lib/formError';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { kidSchema, type KidFormValues } from './kidSchema';
@@ -147,7 +148,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             />
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -172,7 +173,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             />
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -216,7 +217,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             </div>
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -260,7 +261,7 @@ export function KidForm({ mode, id }: KidFormProps) {
               />
               {field.state.meta.errors.map((err, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
-                  {String(err)}
+                  {formErrorMessage(err)}
                 </p>
               ))}
             </div>
@@ -317,7 +318,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             </div>
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -363,7 +364,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             </div>
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -392,7 +393,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             />
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>
@@ -424,7 +425,7 @@ export function KidForm({ mode, id }: KidFormProps) {
             />
             {field.state.meta.errors.map((err, i) => (
               <p key={i} className="mt-1 text-xs text-destructive">
-                {String(err)}
+                {formErrorMessage(err)}
               </p>
             ))}
           </div>

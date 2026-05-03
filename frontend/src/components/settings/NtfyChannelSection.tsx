@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formErrorMessage } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -73,7 +74,7 @@ export function NtfyChannelSection() {
               />
               {field.state.meta.errors.map((err, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
-                  {String(err)}
+                  {formErrorMessage(err)}
                 </p>
               ))}
             </div>
@@ -99,7 +100,7 @@ export function NtfyChannelSection() {
               />
               {field.state.meta.errors.map((err, i) => (
                 <p key={i} className="mt-1 text-xs text-destructive">
-                  {String(err)}
+                  {formErrorMessage(err)}
                 </p>
               ))}
             </div>
