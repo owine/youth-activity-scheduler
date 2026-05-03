@@ -1,6 +1,7 @@
 from yas.db.models.alert import Alert
 from yas.db.models.alert_routing import AlertRouting
 from yas.db.models.crawl_run import CrawlRun
+from yas.db.models.drive_time_cache import DriveTimeCache
 from yas.db.models.enrollment import Enrollment
 from yas.db.models.extraction_cache import ExtractionCache
 from yas.db.models.geocode_attempt import GeocodeAttempt
@@ -19,6 +20,7 @@ __all__ = [
     "Alert",
     "AlertRouting",
     "CrawlRun",
+    "DriveTimeCache",
     "Enrollment",
     "ExtractionCache",
     "GeocodeAttempt",

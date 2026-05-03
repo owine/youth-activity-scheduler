@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     geocode_batch_size: int = 20
     geocode_nominatim_min_interval_s: float = 1.0
 
+    # Drive-time (OSRM-backed routed driving distance/duration). Off
+    # by default so existing great-circle behavior is unchanged. When
+    # enabled, the matcher uses drive minutes against
+    # `kid.max_drive_minutes` instead of haversine miles.
+    drive_time_enabled: bool = False
+    osrm_base_url: str = "https://router.project-osrm.org"
+
     # Daily sweep
     sweep_enabled: bool = True
     sweep_time_utc: str = "07:00"
