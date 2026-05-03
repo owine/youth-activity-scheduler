@@ -1,4 +1,5 @@
 import { useForm } from '@tanstack/react-form';
+import { formErrorMessage } from '@/lib/formError';
 import { useState } from 'react';
 import { z } from 'zod';
 import { useCreateWatchlistEntry, useUpdateWatchlistEntry } from '@/lib/mutations';
@@ -153,7 +154,7 @@ export function WatchlistEntrySheet({
                   />
                   {field.state.meta.errors.map((err, i) => (
                     <p key={i} className="mt-1 text-xs text-destructive">
-                      {String(err)}
+                      {formErrorMessage(err)}
                     </p>
                   ))}
                 </div>
