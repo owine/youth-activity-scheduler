@@ -51,7 +51,8 @@ export type ChipKind =
   | 'opens_this_week'
   | 'near_home'
   | 'in_interests'
-  | 'tight';
+  | 'tight'
+  | 'drive_time';
 
 export interface Chip {
   kind: ChipKind;
