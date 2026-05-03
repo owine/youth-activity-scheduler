@@ -5,27 +5,32 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
+import { useHousehold } from '@/lib/queries';
 import { ApiError } from '@/lib/api';
 import type { NtfyConfig } from '@/lib/types';
 
 const ntfySchema = z.object({
   base_url: z.string().url(),
   topic: z.string().min(1, 'Topic is required'),
-  auth_token_env: z.string(),
+  auth_token_value: z.string(),
 });
 
 export function NtfyChannelSection() {
   const update = useUpdateHousehold();
+  const household = useHousehold();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+
+  const authStatus = household.data?.credential_status?.['ntfy_auth_token'];
 
   const form = useForm({
     defaultValues: {
       base_url: 'https://ntfy.sh',
       topic: '',
-      auth_token_env: '',
+      auth_token_value: '',
     },
     validators: { onChange: ntfySchema, onMount: ntfySchema },
     onSubmit: async ({ value }) => {
@@ -34,9 +39,12 @@ export function NtfyChannelSection() {
         const config: NtfyConfig = {
           base_url: value.base_url,
           topic: value.topic,
-          ...(value.auth_token_env?.trim() ? { auth_token_env: value.auth_token_env.trim() } : {}),
+          ...(value.auth_token_value?.trim()
+            ? { auth_token_value: value.auth_token_value.trim() }
+            : {}),
         };
         await update.mutateAsync({ ntfy_config_json: config });
+        form.setFieldValue('auth_token_value', '');
       } catch (err) {
         const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
         setErrorMsg(detail ?? (err as Error).message);
@@ -108,25 +116,18 @@ export function NtfyChannelSection() {
         />
 
         <form.Field
-          name="auth_token_env"
+          name="auth_token_value"
           children={(field) => (
-            <div>
-              <label htmlFor="auth_token_env" className="block text-sm font-medium">
-                Auth Token Env (optional)
-              </label>
-              <input
-                id="auth_token_env"
-                type="text"
-                value={field.state.value}
-                onChange={(e) => field.handleChange(e.target.value)}
-                onBlur={field.handleBlur}
-                className="mt-1 block w-full rounded border border-input px-3 py-2"
-                placeholder="e.g. YAS_NTFY_AUTH_TOKEN"
-              />
-              <span className="text-xs text-muted-foreground">
-                e.g. YAS_NTFY_AUTH_TOKEN — set this env var in your .env
-              </span>
-            </div>
+            <CredentialField
+              id="auth_token_value"
+              label="Auth Token (optional)"
+              hint="Anonymous if blank and no env var set."
+              value={field.state.value}
+              onChange={field.handleChange}
+              onBlur={field.handleBlur}
+              status={authStatus}
+              errors={field.state.meta.errors.map(formErrorMessage)}
+            />
           )}
         />
 

@@ -1,18 +1,23 @@
 import { useState } from 'react';
-import { formErrorMessage } from '@/lib/formError';
 import { useForm } from '@tanstack/react-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
+import { useHousehold } from '@/lib/queries';
 import { ApiError } from '@/lib/api';
+import { formErrorMessage } from '@/lib/formError';
 import type { PushoverConfig } from '@/lib/types';
 
+// Both credential overrides are optional — empty string means "fall back
+// to the conventional env var on the server". We trust the user/UI to
+// keep them blank when env is sufficient.
 const pushoverSchema = z.object({
-  user_key_env: z.string().min(1, 'User key env var is required'),
-  app_token_env: z.string().min(1, 'App token env var is required'),
+  user_key_value: z.string(),
+  app_token_value: z.string(),
   devices: z.string(),
   emergency_retry_s: z.number().int().min(30),
   emergency_expire_s: z.number().int().min(60),
@@ -20,13 +25,17 @@ const pushoverSchema = z.object({
 
 export function PushoverChannelSection() {
   const update = useUpdateHousehold();
+  const household = useHousehold();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
 
+  const userKeyStatus = household.data?.credential_status?.['pushover_user_key'];
+  const appTokenStatus = household.data?.credential_status?.['pushover_app_token'];
+
   const form = useForm({
     defaultValues: {
-      user_key_env: '',
-      app_token_env: '',
+      user_key_value: '',
+      app_token_value: '',
       devices: '',
       emergency_retry_s: 60,
       emergency_expire_s: 3600,
@@ -41,13 +50,22 @@ export function PushoverChannelSection() {
             .map((s) => s.trim())
             .filter(Boolean) ?? [];
         const config: PushoverConfig = {
-          user_key_env: value.user_key_env,
-          app_token_env: value.app_token_env,
+          // Only send *_value when the user actually typed something —
+          // empty string keeps existing DB value cleared and falls back
+          // to env. Sending undefined (omitted) leaves any prior DB
+          // value alone since the patch endpoint replaces the whole
+          // config blob; we're explicit to avoid that footgun.
+          ...(value.user_key_value ? { user_key_value: value.user_key_value } : {}),
+          ...(value.app_token_value ? { app_token_value: value.app_token_value } : {}),
           ...(devices.length > 0 ? { devices } : {}),
           emergency_retry_s: value.emergency_retry_s,
           emergency_expire_s: value.emergency_expire_s,
         };
         await update.mutateAsync({ pushover_config_json: config });
+        // Reset secret inputs so they don't stay displayed in the DOM
+        // after save. The status badge will refresh from the next query.
+        form.setFieldValue('user_key_value', '');
+        form.setFieldValue('app_token_value', '');
       } catch (err) {
         const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
         setErrorMsg(detail ?? (err as Error).message);
@@ -67,60 +85,32 @@ export function PushoverChannelSection() {
         className="space-y-3 max-w-xl"
       >
         <form.Field
-          name="user_key_env"
+          name="user_key_value"
           children={(field) => (
-            <div>
-              <label htmlFor="user_key_env" className="block text-sm font-medium">
-                User Key Env
-              </label>
-              <input
-                id="user_key_env"
-                type="text"
-                value={field.state.value}
-                onChange={(e) => field.handleChange(e.target.value)}
-                onBlur={field.handleBlur}
-                aria-invalid={field.state.meta.errors.length > 0}
-                className="mt-1 block w-full rounded border border-input px-3 py-2"
-                placeholder="e.g. YAS_PUSHOVER_USER_KEY"
-              />
-              {field.state.meta.errors.map((err, i) => (
-                <p key={i} className="mt-1 text-xs text-destructive">
-                  {formErrorMessage(err)}
-                </p>
-              ))}
-              <span className="text-xs text-muted-foreground">
-                e.g. YAS_PUSHOVER_USER_KEY — set this env var in your .env
-              </span>
-            </div>
+            <CredentialField
+              id="user_key_value"
+              label="User Key"
+              value={field.state.value}
+              onChange={field.handleChange}
+              onBlur={field.handleBlur}
+              status={userKeyStatus}
+              errors={field.state.meta.errors.map(formErrorMessage)}
+            />
           )}
         />
 
         <form.Field
-          name="app_token_env"
+          name="app_token_value"
           children={(field) => (
-            <div>
-              <label htmlFor="app_token_env" className="block text-sm font-medium">
-                App Token Env
-              </label>
-              <input
-                id="app_token_env"
-                type="text"
-                value={field.state.value}
-                onChange={(e) => field.handleChange(e.target.value)}
-                onBlur={field.handleBlur}
-                aria-invalid={field.state.meta.errors.length > 0}
-                className="mt-1 block w-full rounded border border-input px-3 py-2"
-                placeholder="e.g. YAS_PUSHOVER_APP_TOKEN"
-              />
-              {field.state.meta.errors.map((err, i) => (
-                <p key={i} className="mt-1 text-xs text-destructive">
-                  {formErrorMessage(err)}
-                </p>
-              ))}
-              <span className="text-xs text-muted-foreground">
-                e.g. YAS_PUSHOVER_APP_TOKEN — set this env var in your .env
-              </span>
-            </div>
+            <CredentialField
+              id="app_token_value"
+              label="App Token"
+              value={field.state.value}
+              onChange={field.handleChange}
+              onBlur={field.handleBlur}
+              status={appTokenStatus}
+              errors={field.state.meta.errors.map(formErrorMessage)}
+            />
           )}
         />
 
@@ -200,7 +190,6 @@ export function PushoverChannelSection() {
           />
         </details>
 
-        {/* Action buttons */}
         <div className="flex items-center gap-3 pt-2">
           <form.Subscribe selector={(state) => state.canSubmit}>
             {(canSubmit) => (

@@ -5,22 +5,24 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
+import { useHousehold } from '@/lib/queries';
 import { ApiError } from '@/lib/api';
 import type { SmtpConfig, ForwardEmailConfig } from '@/lib/types';
 
-// Zod schemas for smtp and forwardemail transports
+// Schemas: credentials are optional values now. Empty → fall back to env.
 const smtpSchema = z.object({
   transport: z.literal('smtp'),
   host: z.string().min(1, 'Host is required'),
   port: z.number().int().min(1).max(65535),
   username: z.string(),
-  password_env: z.string(),
+  password_value: z.string(),
   use_tls: z.boolean(),
   from_addr: z.string().email('Valid email required'),
   to_addrs: z.string().min(1, 'At least one recipient required'),
-  api_token_env: z.string(),
+  api_token_value: z.string(),
 });
 
 const forwardEmailSchema = z.object({
@@ -28,9 +30,9 @@ const forwardEmailSchema = z.object({
   host: z.string(),
   port: z.number(),
   username: z.string(),
-  password_env: z.string(),
+  password_value: z.string(),
   use_tls: z.boolean(),
-  api_token_env: z.string().min(1, 'API token env var required'),
+  api_token_value: z.string(),
   from_addr: z.string().email('Valid email required'),
   to_addrs: z.string().min(1, 'At least one recipient required'),
 });
@@ -39,8 +41,12 @@ const schema = z.discriminatedUnion('transport', [smtpSchema, forwardEmailSchema
 
 export function EmailChannelSection() {
   const update = useUpdateHousehold();
+  const household = useHousehold();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+
+  const smtpStatus = household.data?.credential_status?.['smtp_password'];
+  const fwdStatus = household.data?.credential_status?.['forwardemail_api_token'];
 
   // Note: Household does NOT expose smtp_config_json (only HouseholdSettings row has it).
   // The backend makes *_config_json write-only. So we always start with empty form.
@@ -52,17 +58,16 @@ export function EmailChannelSection() {
       host: '',
       port: 587,
       username: '',
-      password_env: '',
+      password_value: '',
       use_tls: true,
       from_addr: '',
       to_addrs: '',
-      api_token_env: '',
+      api_token_value: '',
     },
     validators: { onChange: schema, onMount: schema },
     onSubmit: async ({ value }) => {
       setErrorMsg(null);
       try {
-        // Parse to_addrs from comma-separated string to array, trimming and filtering
         const to_addrs = value.to_addrs
           .split(',')
           .map((s) => s.trim())
@@ -78,21 +83,26 @@ export function EmailChannelSection() {
             use_tls: value.use_tls,
             from_addr: value.from_addr,
             to_addrs,
-            // Omit username when blank — never send empty string
             ...(value.username?.trim() ? { username: value.username.trim() } : {}),
-            // Omit password_env when blank
-            ...(value.password_env?.trim() ? { password_env: value.password_env.trim() } : {}),
+            ...(value.password_value?.trim()
+              ? { password_value: value.password_value.trim() }
+              : {}),
           };
         } else {
           config = {
             transport: 'forwardemail',
-            api_token_env: value.api_token_env,
             from_addr: value.from_addr,
             to_addrs,
+            ...(value.api_token_value?.trim()
+              ? { api_token_value: value.api_token_value.trim() }
+              : {}),
           };
         }
 
         await update.mutateAsync({ smtp_config_json: config });
+        // Wipe the secret inputs after save so they don't sit in the DOM.
+        form.setFieldValue('password_value', '');
+        form.setFieldValue('api_token_value', '');
       } catch (err) {
         const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
         setErrorMsg(detail ?? (err as Error).message);
@@ -213,25 +223,18 @@ export function EmailChannelSection() {
                   />
 
                   <form.Field
-                    name="password_env"
+                    name="password_value"
                     children={(field) => (
-                      <div>
-                        <label htmlFor="password_env" className="block text-sm font-medium">
-                          Password Env Var (optional)
-                        </label>
-                        <input
-                          id="password_env"
-                          type="text"
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          onBlur={field.handleBlur}
-                          className="mt-1 block w-full rounded border border-input px-3 py-2"
-                          placeholder="e.g. YAS_SMTP_PASSWORD"
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          e.g. YAS_SMTP_PASSWORD — set this env var in your .env
-                        </span>
-                      </div>
+                      <CredentialField
+                        id="password_value"
+                        label="Password (optional)"
+                        hint="Optional. Some SMTP servers use IP-based auth."
+                        value={field.state.value}
+                        onChange={field.handleChange}
+                        onBlur={field.handleBlur}
+                        status={smtpStatus}
+                        errors={field.state.meta.errors.map(formErrorMessage)}
+                      />
                     )}
                   />
 
@@ -252,31 +255,17 @@ export function EmailChannelSection() {
                 </>
               ) : (
                 <form.Field
-                  name="api_token_env"
+                  name="api_token_value"
                   children={(field) => (
-                    <div>
-                      <label htmlFor="api_token_env" className="block text-sm font-medium">
-                        ForwardEmail API Token
-                      </label>
-                      <input
-                        id="api_token_env"
-                        type="text"
-                        value={field.state.value}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                        onBlur={field.handleBlur}
-                        aria-invalid={field.state.meta.errors.length > 0}
-                        className="mt-1 block w-full rounded border border-input px-3 py-2"
-                        placeholder="e.g. YAS_FORWARDEMAIL_TOKEN"
-                      />
-                      {field.state.meta.errors.map((err, i) => (
-                        <p key={i} className="mt-1 text-xs text-destructive">
-                          {formErrorMessage(err)}
-                        </p>
-                      ))}
-                      <span className="text-xs text-muted-foreground">
-                        e.g. YAS_FORWARDEMAIL_TOKEN — set this env var in your .env
-                      </span>
-                    </div>
+                    <CredentialField
+                      id="api_token_value"
+                      label="ForwardEmail API Token"
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      onBlur={field.handleBlur}
+                      status={fwdStatus}
+                      errors={field.state.meta.errors.map(formErrorMessage)}
+                    />
                   )}
                 />
               )}
