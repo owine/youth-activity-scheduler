@@ -160,7 +160,7 @@ The deviation root cause was **no re-audit step**. Each phase's spec referenced 
 These remain open from each shipped phase's "Out of scope":
 
 - **Pushover/Gotify channels** (master § 9) — small slice when needed
-- **`.ics` calendar export/import** (master § 9) — easy add on top of blocks model
+- **`.ics` calendar export** (master § 9) — ✅ shipped 2026-05-03. Per-kid feed at `GET /api/kids/{id}/calendar.ics`; default −7d/+90d window, 400-day cap. Match suggestions excluded; enrollment/unavailability/holiday included. Subscribe link on per-kid calendar page. (.ics *import* still deferred.)
 - **Driving-time vs great-circle distance** (master § 9) — only if real usage shows great-circle is misleading
 - **Soft conflicts as warnings** (master § 9) — e.g., "offering ends at 3:15pm but school ends at 3:00pm — too tight?"
 - **Mute reasons / per-channel mute** (5d-1 §1.2) — only if mute volume justifies it
