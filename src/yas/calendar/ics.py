@@ -7,8 +7,8 @@ tests against the actual byte-for-byte structure.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, date, datetime
 
 from yas.web.routes.kid_calendar_schemas import CalendarEventOut
 
@@ -31,10 +31,7 @@ def _fmt_date(d: date) -> str:
 
 
 def _fmt_datetime_utc(d: datetime) -> str:
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=timezone.utc)
-    else:
-        d = d.astimezone(timezone.utc)
+    d = d.replace(tzinfo=UTC) if d.tzinfo is None else d.astimezone(UTC)
     return d.strftime("%Y%m%dT%H%M%SZ")
 
 
@@ -94,7 +91,7 @@ def render_calendar_ics(
     - `now` is the DTSTAMP value. Defaults to `datetime.now(UTC)`.
     """
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     dtstamp = _fmt_datetime_utc(now)
     out: list[str] = [
         "BEGIN:VCALENDAR",

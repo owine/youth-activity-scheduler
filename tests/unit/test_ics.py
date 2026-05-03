@@ -107,9 +107,7 @@ def test_dtstamp_is_utc_z_format():
 
 
 def test_calendar_name_with_special_chars_is_escaped():
-    out = render_calendar_ics(
-        calendar_name="Sam, the kid; cool", events=[], now=_NOW
-    )
+    out = render_calendar_ics(calendar_name="Sam, the kid; cool", events=[], now=_NOW)
     assert "NAME:Sam\\, the kid\\; cool\r\n" in out
 
 
