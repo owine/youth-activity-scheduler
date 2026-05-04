@@ -274,6 +274,7 @@ async def _evaluate_pair(
         distance_mi=distance_mi,
         household_max_distance_mi=default_max_distance,
         today=today,
+        drive_minutes=drive_minutes,
     )
     include = watchlist is not None or _gates_passed(gates)
     reasons = _reasons_payload(gates, breakdown, watchlist)

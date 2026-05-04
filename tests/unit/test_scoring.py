@@ -10,6 +10,7 @@ from yas.matching.scoring import ScoreBreakdown, compute_score
 class _Kid:
     availability: dict = field(default_factory=dict)
     max_distance_mi: float | None = None
+    max_drive_minutes: int | None = None
 
 
 @dataclass
@@ -100,6 +101,70 @@ def test_distance_zero_at_cap():
         household_max_distance_mi=None,
         today=TODAY,
     )
+    assert reasons["distance"] == pytest.approx(0.0)
+
+
+def test_distance_uses_drive_time_when_kid_has_drive_cap():
+    """When kid has max_drive_minutes set AND drive_minutes is provided,
+    the distance signal is computed from drive-time, not miles."""
+    kid = _Kid(max_distance_mi=5.0, max_drive_minutes=30)
+    offering = _Offering()
+    # 9 min drive: well under the 30% threshold (=9 min) → full credit
+    # despite distance_mi=50 (which would be 0.0 on miles path).
+    _score, reasons = compute_score(
+        kid,
+        offering,
+        distance_mi=50.0,
+        household_max_distance_mi=None,
+        today=TODAY,
+        drive_minutes=9.0,
+    )
+    assert reasons["distance"] == pytest.approx(1.0)
+
+
+def test_distance_drive_time_decays_to_zero_at_drive_cap():
+    kid = _Kid(max_drive_minutes=30)
+    offering = _Offering()
+    _score, reasons = compute_score(
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
+        drive_minutes=30.0,
+    )
+    assert reasons["distance"] == pytest.approx(0.0)
+
+
+def test_distance_falls_back_to_miles_when_drive_minutes_missing():
+    """Provider failed → drive_minutes=None → use miles path."""
+    kid = _Kid(max_distance_mi=10.0, max_drive_minutes=30)
+    offering = _Offering()
+    _score, reasons = compute_score(
+        kid,
+        offering,
+        distance_mi=2.0,
+        household_max_distance_mi=None,
+        today=TODAY,
+        drive_minutes=None,
+    )
+    # Falls through to miles signal: 2mi < 30% of 10 → 1.0
+    assert reasons["distance"] == pytest.approx(1.0)
+
+
+def test_distance_ignores_drive_minutes_when_no_drive_cap():
+    """drive_minutes provided but kid.max_drive_minutes is None → use miles."""
+    kid = _Kid(max_distance_mi=10.0, max_drive_minutes=None)
+    offering = _Offering()
+    _score, reasons = compute_score(
+        kid,
+        offering,
+        distance_mi=10.0,
+        household_max_distance_mi=None,
+        today=TODAY,
+        drive_minutes=5.0,
+    )
+    # Miles path: at cap → 0.0 (drive value ignored)
     assert reasons["distance"] == pytest.approx(0.0)
 
 
