@@ -87,6 +87,15 @@ export function AlertRoutingSection() {
                         aria-label={`${row.type} ${ch}`}
                         checked={isChecked}
                         disabled={!isConfigured}
+                        // The last-remaining-channel guard cannot live in
+                        // onChange alone: by then the browser has already
+                        // toggled .checked, and since handleChannelToggle
+                        // short-circuits without state change, React never
+                        // re-renders to sync the DOM back. Suppress the
+                        // default toggle at the click stage.
+                        onClick={(e) => {
+                          if (isLastChannel) e.preventDefault();
+                        }}
                         onChange={() => handleChannelToggle(row, ch)}
                         title={
                           !isConfigured
