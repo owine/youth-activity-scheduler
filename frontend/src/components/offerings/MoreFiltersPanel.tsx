@@ -25,6 +25,8 @@ function countActiveFilters(value: FilterState): number {
   if (value.timeOfDayMin !== null || value.timeOfDayMax !== null) count++;
   // maxDistanceMi !== null → +1
   if (value.maxDistanceMi !== null) count++;
+  // maxDriveMinutes !== null → +1
+  if (value.maxDriveMinutes !== null) count++;
   // ageMin !== null || ageMax !== null → +1
   if (value.ageMin !== null || value.ageMax !== null) count++;
   // watchlistOnly → +1
@@ -45,6 +47,7 @@ export function MoreFiltersPanel({ value, onChange, programTypeOptions, isOpen, 
       timeOfDayMin: null,
       timeOfDayMax: null,
       maxDistanceMi: null,
+      maxDriveMinutes: null,
       ageMin: null,
       ageMax: null,
       watchlistOnly: false,
@@ -199,6 +202,40 @@ export function MoreFiltersPanel({ value, onChange, programTypeOptions, isOpen, 
                 <button
                   type="button"
                   onClick={() => onChange({ ...value, maxDistanceMi: null })}
+                  className="rounded border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 6b. Drive time */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Drive time</label>
+            <p className="text-xs text-muted-foreground mb-2">
+              Routed driving minutes. Offerings without a drive estimate (e.g. unroutable
+              destinations) pass through.
+            </p>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={value.maxDriveMinutes ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                    onChange({ ...value, maxDriveMinutes: val });
+                  }}
+                  placeholder="Max minutes"
+                  className="w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
+                />
+              </div>
+              {value.maxDriveMinutes !== null && (
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...value, maxDriveMinutes: null })}
                   className="rounded border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
                 >
                   Clear

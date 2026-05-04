@@ -80,6 +80,11 @@ export interface FilterState {
   timeOfDayMin: string | null; // 'HH:MM'
   timeOfDayMax: string | null;
   maxDistanceMi: number | null;
+  /** Drive-time cap (minutes). When set, filters offerings whose
+   *  drive_minutes (from `Match.reasons`) exceeds the cap. Offerings
+   *  without drive_minutes (no provider result, e.g. unroutable
+   *  destinations) pass through — same as the matcher's gate behavior. */
+  maxDriveMinutes: number | null;
   ageMin: number | null;
   ageMax: number | null;
   watchlistOnly: boolean;

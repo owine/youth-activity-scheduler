@@ -25,6 +25,7 @@ export function defaultFilterState(allKidIds: number[]): FilterState {
     timeOfDayMin: null,
     timeOfDayMax: null,
     maxDistanceMi: null,
+    maxDriveMinutes: null,
     ageMin: null,
     ageMax: null,
     watchlistOnly: false,
@@ -89,7 +90,7 @@ export function applyFilters(
         if (f.regTiming === 'open_now' && !isOpen) return false;
         if (f.regTiming === 'closed' && !isClosed) return false;
       }
-      // distance
+      // distance (great-circle miles)
       if (
         f.maxDistanceMi !== null &&
         household?.home_lat != null &&
@@ -104,6 +105,19 @@ export function applyFilters(
           o.location_lon,
         );
         if (miles > f.maxDistanceMi) return false;
+      }
+      // drive time (routed minutes from Match.reasons.drive_minutes)
+      // Offerings without drive_minutes (no provider result, unroutable
+      // destination, feature off) pass through — same as the matcher's
+      // gate behavior of "unknown = let it through."
+      if (f.maxDriveMinutes !== null) {
+        const driveValues = row.matches
+          .map((m) => (m.reasons as { drive_minutes?: unknown }).drive_minutes)
+          .filter((v): v is number => typeof v === 'number');
+        if (driveValues.length > 0) {
+          const min = Math.min(...driveValues);
+          if (min > f.maxDriveMinutes) return false;
+        }
       }
       // age range overlap
       if (f.ageMin !== null && o.age_max !== null && o.age_max < f.ageMin) return false;

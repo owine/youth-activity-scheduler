@@ -45,9 +45,20 @@ def compute_score(
     distance_mi: float | None,
     household_max_distance_mi: float | None,
     today: date,
+    drive_minutes: float | None = None,
 ) -> tuple[float, dict[str, Any]]:
+    """Compute the score for one (kid, offering) pair.
+
+    When `drive_minutes` is provided AND the kid has `max_drive_minutes`
+    set, the distance component uses routed-driving time instead of
+    great-circle miles. Otherwise falls back to miles. The breakdown
+    field is named `distance` in both cases — it's a normalized
+    "how far is this" signal regardless of the underlying unit.
+    """
     availability = _availability_signal(kid, offering)
-    distance = _distance_signal(kid, offering, distance_mi, household_max_distance_mi)
+    distance = _distance_signal(
+        kid, offering, distance_mi, household_max_distance_mi, drive_minutes
+    )
     price = _price_signal(kid, offering)
     registration = _registration_signal(offering, today=today)
     freshness = _freshness_signal(offering, today=today)
@@ -85,7 +96,26 @@ def _distance_signal(
     offering: Any,
     distance_mi: float | None,
     household_default: float | None,
+    drive_minutes: float | None = None,
 ) -> float:
+    """Normalized 0..1 closeness signal.
+
+    Prefers drive-time when both (a) the kid has `max_drive_minutes` set
+    AND (b) `drive_minutes` is computable. Falls back to great-circle
+    miles (`distance_mi` against `kid.max_distance_mi` or household
+    default) otherwise. Same shape: 1.0 at ≤30% of cap, linear decay to
+    0.0 at the cap.
+    """
+    drive_cap_raw = getattr(kid, "max_drive_minutes", None)
+    if drive_cap_raw is not None and drive_minutes is not None and drive_cap_raw > 0:
+        drive_cap = float(drive_cap_raw)
+        threshold = drive_cap * 0.3
+        if drive_minutes <= threshold:
+            return 1.0
+        if drive_minutes >= drive_cap:
+            return 0.0
+        return max(0.0, 1.0 - (drive_minutes - threshold) / (drive_cap - threshold))
+
     cap = kid.max_distance_mi if kid.max_distance_mi is not None else household_default
     if distance_mi is None or cap is None or cap <= 0:
         return 0.5
@@ -94,7 +124,6 @@ def _distance_signal(
         return 1.0
     if distance_mi >= cap:
         return 0.0
-    # linear decay from 1.0 at threshold to 0.0 at cap
     return max(0.0, 1.0 - (distance_mi - threshold) / (cap - threshold))
 
 
