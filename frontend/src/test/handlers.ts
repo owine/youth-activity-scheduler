@@ -9,7 +9,17 @@ export const inboxSummaryFixture = {
 };
 
 export const handlers = [
+  // /healthz is hit by the persistent Footer (added 2026-05-03) on
+  // any layout-rendering test. Default to a benign payload so MSW
+  // doesn't log an unhandled-request warning per render.
+  http.get('/healthz', () =>
+    HttpResponse.json({ status: 'ok', git_sha: 'unknown', version: '0.1.0' }),
+  ),
   http.get('/api/kids', () => HttpResponse.json([])),
+  // Default per-kid GET — tests that need specific kid data override
+  // via server.use(...). 404 is the closest-to-real default for
+  // "no kid by this id."
+  http.get('/api/kids/:id', () => HttpResponse.json({ detail: 'Not found' }, { status: 404 })),
   http.get('/api/matches', () => HttpResponse.json([])),
   http.get('/api/enrollments', () => HttpResponse.json([])),
   http.get('/api/inbox/summary', () => HttpResponse.json(inboxSummaryFixture)),
