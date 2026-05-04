@@ -15,14 +15,14 @@ describe('InterestsField', () => {
   it('renders input placeholder', () => {
     render(<InterestsField value={[]} onChange={vi.fn()} />);
     expect(
-      screen.getByPlaceholderText('Type and press Enter (e.g., baseball)'),
+      screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)'),
     ).toBeInTheDocument();
   });
 
   it('typing + Enter adds a chip and clears input', async () => {
     const onChange = vi.fn();
     render(<InterestsField value={[]} onChange={onChange} />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     await userEvent.type(input, 'Tennis');
     await userEvent.keyboard('{Enter}');
     expect(onChange).toHaveBeenCalledWith(['Tennis']);
@@ -32,7 +32,7 @@ describe('InterestsField', () => {
   it('typing + comma adds a chip and clears input', async () => {
     const onChange = vi.fn();
     render(<InterestsField value={[]} onChange={onChange} />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     await userEvent.type(input, 'Basketball,');
     expect(onChange).toHaveBeenCalledWith(['Basketball']);
     expect(input).toHaveValue('');
@@ -41,7 +41,7 @@ describe('InterestsField', () => {
   it('blur on non-empty input adds chip', async () => {
     const onChange = vi.fn();
     render(<InterestsField value={[]} onChange={onChange} />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     await userEvent.type(input, 'Volleyball');
     await userEvent.click(document.body);
     expect(onChange).toHaveBeenCalledWith(['Volleyball']);
@@ -50,7 +50,7 @@ describe('InterestsField', () => {
   it('empty trimmed input does not add chip', async () => {
     const onChange = vi.fn();
     render(<InterestsField value={[]} onChange={onChange} />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     await userEvent.type(input, '   ');
     await userEvent.keyboard('{Enter}');
     expect(onChange).not.toHaveBeenCalled();
@@ -59,7 +59,7 @@ describe('InterestsField', () => {
   it('duplicate (case-insensitive) does not add', async () => {
     const onChange = vi.fn();
     render(<InterestsField value={['Baseball']} onChange={onChange} />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     await userEvent.type(input, 'baseball');
     await userEvent.keyboard('{Enter}');
     expect(onChange).not.toHaveBeenCalled();
@@ -79,7 +79,7 @@ describe('InterestsField', () => {
 
   it('sets aria-invalid on input when error is present', () => {
     render(<InterestsField value={[]} onChange={vi.fn()} error="This field is required" />);
-    const input = screen.getByPlaceholderText('Type and press Enter (e.g., baseball)');
+    const input = screen.getByPlaceholderText('Type an interest and press Enter (e.g. tennis)');
     expect(input).toHaveAttribute('aria-invalid', 'true');
   });
 });
