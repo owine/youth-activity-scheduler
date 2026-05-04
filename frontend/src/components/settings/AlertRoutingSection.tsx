@@ -79,6 +79,12 @@ export function AlertRoutingSection() {
                   const isConfigured = configuredChannels[ch as keyof typeof configuredChannels];
                   const isChecked = row.channels.includes(ch);
                   const isLastChannel = row.enabled && row.channels.length === 1 && isChecked;
+                  // Disable when not configured OR when removing this channel
+                  // would orphan the row (enabled with no destinations). The
+                  // user disables a row entirely via the Enabled toggle.
+                  // (Earlier attempt with onClick.preventDefault was racey
+                  // under some library timings; disabled is bulletproof.)
+                  const disabled = !isConfigured || isLastChannel;
 
                   return (
                     <td key={`${row.type}-${ch}`} className="border border-border px-4 py-2">
@@ -86,16 +92,7 @@ export function AlertRoutingSection() {
                         type="checkbox"
                         aria-label={`${row.type} ${ch}`}
                         checked={isChecked}
-                        disabled={!isConfigured}
-                        // The last-remaining-channel guard cannot live in
-                        // onChange alone: by then the browser has already
-                        // toggled .checked, and since handleChannelToggle
-                        // short-circuits without state change, React never
-                        // re-renders to sync the DOM back. Suppress the
-                        // default toggle at the click stage.
-                        onClick={(e) => {
-                          if (isLastChannel) e.preventDefault();
-                        }}
+                        disabled={disabled}
                         onChange={() => handleChannelToggle(row, ch)}
                         title={
                           !isConfigured
@@ -104,7 +101,7 @@ export function AlertRoutingSection() {
                               ? 'Use Enabled toggle to disable this alert type entirely'
                               : undefined
                         }
-                        className={isConfigured ? 'cursor-pointer' : 'cursor-not-allowed'}
+                        className={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
                       />
                     </td>
                   );
