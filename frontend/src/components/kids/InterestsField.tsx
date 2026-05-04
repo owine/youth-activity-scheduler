@@ -21,20 +21,30 @@ export function InterestsField({ value, onChange, error }: Props) {
 
   return (
     <div className="space-y-1">
-      <div className="flex flex-wrap gap-1">
-        {value.map((v, i) => (
-          <span
-            key={`${v}-${i}`}
-            className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs"
-          >
-            {v}
-            <button type="button" aria-label={`Remove ${v}`} onClick={() => remove(i)}>
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
+      <label htmlFor="interests-input" className="block text-sm font-medium">
+        Interests
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Add at least one — without interests, no offerings will match this kid. Examples: soccer,
+        tennis, baseball, swim, gymnastics, art, music, multisport.
+      </p>
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-1">
+          {value.map((v, i) => (
+            <span
+              key={`${v}-${i}`}
+              className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs"
+            >
+              {v}
+              <button type="button" aria-label={`Remove ${v}`} onClick={() => remove(i)}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <input
+        id="interests-input"
         type="text"
         value={input}
         onChange={(e) => setInput(e.target.value)}
@@ -45,8 +55,9 @@ export function InterestsField({ value, onChange, error }: Props) {
           }
         }}
         onBlur={() => add(input)}
-        placeholder="Type and press Enter (e.g., baseball)"
+        placeholder="Type an interest and press Enter (e.g. tennis)"
         aria-invalid={error ? 'true' : undefined}
+        className="mt-1 block w-full rounded border border-input px-3 py-2"
       />
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
