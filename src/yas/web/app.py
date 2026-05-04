@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Response
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -23,10 +26,18 @@ def create_app(
     llm: LLMClient | None = None,
     geocoder: Geocoder | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="yas", version="0.1.0")
     s = settings or get_settings()
     e = engine or create_engine_for(s.database_url)
     state = AppState(engine=e, settings=s, fetcher=fetcher, llm=llm, geocoder=geocoder)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Startup: nothing to do (state is wired below).
+        yield
+        # Shutdown: release the SQLAlchemy engine pool.
+        await state.engine.dispose()
+
+    app = FastAPI(title="yas", version="0.1.0", lifespan=lifespan)
     app.state.yas = state
 
     @app.get("/healthz")
@@ -86,10 +97,6 @@ def create_app(
     app.include_router(enrollments_router)
     app.include_router(offerings_router)
     app.include_router(matches_router)
-
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        await state.engine.dispose()
 
     install_spa_fallback(app)
     return app
