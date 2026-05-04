@@ -31,11 +31,10 @@
   },
   "packageRules": [
     {
-      "description": "Default: bundle every non-major update into a single weekly PR; auto-merge once CI passes (any time of day, even though branches only land Mondays)",
+      "description": "Default: bundle every non-major update into a single weekly PR; Renovate auto-merges in its own polling cycle once CI passes. We don't use GitHub's native (platform) auto-merge — it would require branch protection with required status checks, which the single-maintainer flow doesn't otherwise need.",
       "matchUpdateTypes": ["patch", "minor", "pin", "digest", "lockFileMaintenance"],
       "groupName": "all non-major dependencies",
       "automerge": true,
-      "platformAutomerge": true,
       "automergeSchedule": ["at any time"]
     },
     {
@@ -103,8 +102,9 @@
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Anthropic SDK — review manually; do not auto-merge",
+      "description": "Anthropic SDK — review manually; do not auto-merge. Carved into its own group so it doesn't poison the 'all non-major dependencies' bundle's automerge.",
       "matchPackageNames": ["anthropic"],
+      "groupName": "anthropic-sdk",
       "automerge": false,
       "labels": ["dependencies", "review-required"]
     },
