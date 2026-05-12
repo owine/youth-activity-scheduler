@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.23.0
+# syntax=docker/dockerfile:1.23.0@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
 
 # --- Stage 1: build the React SPA ---
-FROM node:24.15.0-alpine AS frontend-build
+FROM node:24.15.0-alpine@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f AS frontend-build
 WORKDIR /build
 # Corepack ships with Node and pins pnpm to the version recorded in
 # package.json's `packageManager` field. No network install of pnpm needed.
