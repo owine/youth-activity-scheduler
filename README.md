@@ -274,8 +274,11 @@ docker compose up -d  # or: python -m yas api
 
 # Terminal 2: frontend with hot reload
 cd frontend
-npm install
-npm run dev
+# Corepack ships with Node and pins pnpm to the version in package.json's
+# packageManager field. .nvmrc pins Node 24.15.0 — fnm auto-switches on cd.
+corepack enable
+pnpm install
+pnpm run dev
 # Open http://localhost:5173 — Vite proxies /api to :8080
 ```
 
@@ -286,7 +289,7 @@ Matches your OS light/dark mode by default. Click the sun/moon/monitor icon in t
 ### Build
 
 ```bash
-cd frontend && npm run build       # emits frontend/dist/
+cd frontend && pnpm run build      # emits frontend/dist/
 docker compose build yas-api       # multi-stage build copies dist into /app/static
 ```
 

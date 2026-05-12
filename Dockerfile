@@ -3,12 +3,16 @@
 # --- Stage 1: build the React SPA ---
 FROM node:24.15.0-alpine AS frontend-build
 WORKDIR /build
-# Cache deps separately
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+# Corepack ships with Node and pins pnpm to the version recorded in
+# package.json's `packageManager` field. No network install of pnpm needed.
+RUN corepack enable
+# Cache deps separately. .npmrc enforces minimum-release-age soak so a
+# compromised version can't slip into the image build.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
+RUN pnpm install --frozen-lockfile
 # Build
 COPY frontend/ ./
-RUN npm run build  # emits /build/dist with index.html + assets/
+RUN pnpm run build  # emits /build/dist with index.html + assets/
 
 # --- Stage 2: Python backend ---
 FROM python:3.14.4-slim AS base
