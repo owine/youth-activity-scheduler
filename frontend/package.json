@@ -41,6 +41,7 @@
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.59.1",
     "@tailwindcss/vite": "4.3.0",
+    "@tanstack/query-core": "5.100.9",
     "@tanstack/react-query-devtools": "5.100.9",
     "@tanstack/router-devtools": "1.166.13",
     "@tanstack/router-vite-plugin": "1.166.47",
