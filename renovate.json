@@ -1,144 +1,31 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    "helpers:pinGitHubActionDigests",
-    "security:openssf-scorecard"
+    "github>owine/renovate-config",
+    "github>owine/renovate-config:automerge",
+    "github>owine/renovate-config:node",
+    "github>owine/renovate-config:python",
+    "github>owine/renovate-config:docker"
   ],
-  "timezone": "America/Chicago",
-  "schedule": ["before 6am on monday"],
-  "labels": ["dependencies"],
-  "rangeStrategy": "pin",
-  "docker-compose": {
-    "enabled": false
-  },
-  "pre-commit": {
-    "enabled": true
-  },
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 6am on monday"]
-  },
-  "vulnerabilityAlerts": {
-    "labels": ["security"],
-    "minimumReleaseAge": null
-  },
-  "osvVulnerabilityAlerts": true,
-  "pep621": {
-    "enabled": true
-  },
   "packageRules": [
     {
-      "description": "Default: bundle every non-major update into a single weekly PR; Renovate auto-merges in its own polling cycle once CI passes. We don't use GitHub's native (platform) auto-merge — it would require branch protection with required status checks, which the single-maintainer flow doesn't otherwise need.",
-      "matchUpdateTypes": ["patch", "minor", "pin", "digest", "lockFileMaintenance"],
-      "groupName": "all non-major dependencies",
-      "automerge": true,
-      "automergeSchedule": ["at any time"]
-    },
-    {
-      "description": "Group ESLint plugins and TS-ESLint (overrides default)",
-      "matchPackageNames": ["/^eslint-/", "/^@typescript-eslint//"],
-      "groupName": "eslint plugins"
-    },
-    {
-      "description": "Group React core",
-      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"],
-      "groupName": "react"
-    },
-    {
-      "description": "Group TanStack libraries",
-      "matchPackageNames": ["/^@tanstack//"],
-      "groupName": "tanstack"
-    },
-    {
-      "description": "Group Radix UI primitives (shadcn/ui)",
-      "matchPackageNames": ["/^@radix-ui//"],
-      "groupName": "radix-ui"
-    },
-    {
-      "description": "Group SQLAlchemy ecosystem",
-      "matchPackageNames": ["sqlalchemy", "alembic", "aiosqlite"],
-      "groupName": "sqlalchemy"
-    },
-    {
-      "description": "Group FastAPI / Pydantic / Uvicorn stack (peer-dep coupled)",
-      "matchPackageNames": [
-        "fastapi",
-        "uvicorn",
-        "starlette",
-        "pydantic",
-        "pydantic-settings",
-        "python-multipart"
-      ],
-      "groupName": "fastapi-stack"
-    },
-    {
-      "description": "Group HTTP client + parsers",
-      "matchPackageNames": ["httpx", "respx", "selectolax"],
-      "groupName": "http-clients"
-    },
-    {
-      "description": "Group Vite + plugin (peer-dep coupled — plugin majors track Vite majors)",
-      "matchPackageNames": ["vite", "@vitejs/plugin-react"],
-      "groupName": "vite"
-    },
-    {
-      "description": "Don't track `python` in pep621 — `requires-python` is a metadata range declaring minimum supported Python, not a pinnable runtime version. Pinning it would lock the project to one exact Python version.",
-      "matchManagers": ["pep621"],
-      "matchDepNames": ["python"],
-      "enabled": false
-    },
-    {
-      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9+ requires flat config",
+      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9+ requires flat config migration",
       "matchPackageNames": ["eslint"],
       "matchUpdateTypes": ["major"],
       "enabled": false
     },
     {
-      "description": "Hold Playwright bumps for 3 days — large download, breaking changes possible",
-      "matchPackageNames": ["playwright"],
-      "minimumReleaseAge": "3 days"
-    },
-    {
-      "description": "Anthropic SDK — review manually; do not auto-merge. Carved into its own group so it doesn't poison the 'all non-major dependencies' bundle's automerge.",
+      "description": "Anthropic SDK — review every bump, do not bundle with the non-major automerge group",
       "matchPackageNames": ["anthropic"],
       "groupName": "anthropic-sdk",
       "automerge": false,
-      "labels": ["dependencies", "review-required"]
+      "addLabels": ["needs-review"]
     },
     {
-      "description": "Major Python deps require manual review — separate PR per dep",
+      "description": "HTTP client + parsers (selectolax is project-specific so not in shared python preset)",
       "matchManagers": ["pep621"],
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    },
-    {
-      "description": "Major frontend deps require manual review — separate PR per dep (or per smart-group bundle)",
-      "matchManagers": ["npm"],
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    },
-    {
-      "description": "Major Docker base image bumps require manual review",
-      "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    },
-    {
-      "description": "Major GitHub Action bumps — auto-merge fine if CI passes (digests are pinned)",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["major"],
-      "automerge": false
-    },
-    {
-      "description": "Auto-merge Dockerfile pin/digest updates any time",
-      "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["pin", "pinDigest"],
-      "automerge": true,
-      "platformAutomerge": true,
-      "automergeSchedule": ["at any time"]
+      "matchPackageNames": ["httpx", "respx", "selectolax"],
+      "groupName": "http-clients"
     }
   ]
 }
