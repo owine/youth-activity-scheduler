@@ -20,6 +20,12 @@
       "groupName": "anthropic-sdk",
       "automerge": false,
       "addLabels": ["needs-review"]
+    },
+    {
+      "description": "HTTP client + parsers (selectolax is project-specific so not in shared python preset). Pulls httpx out of preset's fastapi-stack and respx out of preset's pytest-stack so all three travel together as test-infra HTTP tooling.",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["httpx", "respx", "selectolax"],
+      "groupName": "http-clients"
     }
   ]
 }
