@@ -15,7 +15,7 @@ COPY frontend/ ./
 RUN pnpm run build  # emits /build/dist with index.html + assets/
 
 # --- Stage 2: Python backend ---
-FROM python:3.14.4-slim AS base
+FROM python:3.14.5-slim@sha256:af79f947dee1c929919b0488d20db7200d8737e00f68ee4abeef1fcf1fe05939 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.11.13 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.14@sha256:1025398289b62de8269e70c45b91ffa37c373f38118d7da036fb8bb8efc85d97 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
