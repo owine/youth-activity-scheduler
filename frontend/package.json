@@ -20,8 +20,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@tanstack/react-form": "1.31.0",
-    "@tanstack/react-query": "5.100.9",
+    "@tanstack/react-form": "1.32.0",
+    "@tanstack/react-query": "5.100.10",
     "@tanstack/react-router": "1.169.2",
     "@types/react-big-calendar": "1.16.3",
     "class-variance-authority": "0.7.1",
@@ -41,8 +41,8 @@
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.59.1",
     "@tailwindcss/vite": "4.3.0",
-    "@tanstack/query-core": "5.100.9",
-    "@tanstack/react-query-devtools": "5.100.9",
+    "@tanstack/query-core": "5.100.10",
+    "@tanstack/react-query-devtools": "5.100.10",
     "@tanstack/router-devtools": "1.166.13",
     "@tanstack/router-vite-plugin": "1.166.50",
     "@testing-library/jest-dom": "6.9.1",
