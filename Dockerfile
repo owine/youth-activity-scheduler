@@ -8,7 +8,7 @@ WORKDIR /build
 RUN corepack enable
 # Cache deps separately. .npmrc enforces minimum-release-age soak so a
 # compromised version can't slip into the image build.
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./
 RUN pnpm install --frozen-lockfile
 # Build
 COPY frontend/ ./
