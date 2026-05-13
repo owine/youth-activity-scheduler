@@ -20,12 +20,6 @@
       "groupName": "anthropic-sdk",
       "automerge": false,
       "addLabels": ["needs-review"]
-    },
-    {
-      "description": "HTTP client + parsers (selectolax is project-specific so not in shared python preset)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["httpx", "respx", "selectolax"],
-      "groupName": "http-clients"
     }
   ]
 }
