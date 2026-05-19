@@ -2,19 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Activity Digest — 2026-05-19</title>
+  <title>{% block title %}YAS Update{% endblock %}</title>
 </head>
 <body style="font-family: -apple-system, Segoe UI, sans-serif; max-width: 600px; margin: 0 auto; padding: 16px; color: #222;">
 <header style="border-bottom: 1px solid #ccc; padding-bottom: 8px; margin-bottom: 16px;">
-  <strong style="font-size: 1.05em;">Daily digest — Cy</strong>
+  <strong style="font-size: 1.05em;">{% block heading %}Youth Activity Scheduler{% endblock %}</strong>
 </header>
 
-<p style="font-size: 1.1em; font-weight: bold;">Cy — still searching</p>
-
-<p>We haven't found any activities matching <strong>Cy</strong> yet.
-We're still scanning sites and will be in touch as soon as we find something. Back tomorrow.</p>
+{% block body %}{% endblock %}
 
 <footer style="margin-top: 32px; padding-top: 8px; border-top: 1px solid #eee; font-size: 0.8em; color: #999;">
-  Youth Activity Scheduler · 2026-05-19</footer>
+  Youth Activity Scheduler{% if payload is defined and payload.for_date is defined %} · {{ payload.for_date }}{% endif %}
+</footer>
 </body>
 </html>

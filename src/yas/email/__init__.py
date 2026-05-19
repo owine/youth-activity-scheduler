@@ -1,9 +1,17 @@
-"""Outbound email rendering — see docs/superpowers/specs/2026-05-19-outbound-email-template-layer-design.md."""
+"""Outbound email rendering -- see docs/superpowers/specs/2026-05-19-outbound-email-template-layer-design.md."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from yas.db.models import Alert
+from yas.db.models._types import AlertType
 from yas.email._errors import EmailRenderError
+from yas.email.environment import env
+from yas.email.payloads import DigestPayload
+from yas.email.registry import RENDERERS, EmailKind
 
 
 @dataclass(frozen=True)
@@ -15,4 +23,56 @@ class RenderedEmail:
     body_html: str
 
 
-__all__ = ["EmailRenderError", "RenderedEmail"]
+def _render_pair(html_template: str, txt_template: str, ctx: dict[str, Any]) -> RenderedEmail:
+    """Render one kind's two templates and pull the subject out of the .txt block."""
+    txt_tpl = env.get_template(txt_template)
+    html_tpl = env.get_template(html_template)
+    # Subject lives in {% block subject %} in the .txt template.
+    subject = "".join(txt_tpl.blocks["subject"](txt_tpl.new_context(ctx))).strip()
+    body_plain = txt_tpl.render(ctx)
+    body_html = html_tpl.render(ctx)
+    return RenderedEmail(subject=subject, body_plain=body_plain, body_html=body_html)
+
+
+async def render_email(
+    session: AsyncSession,
+    kind: EmailKind,
+    lead: Alert,
+    members: list[Alert],
+) -> RenderedEmail:
+    """Render one outbound email by looking up its TypeRenderer."""
+    try:
+        renderer = RENDERERS[kind]
+    except KeyError as exc:
+        raise EmailRenderError(
+            f"no renderer registered for {kind!r}",
+            alert_id=lead.id if lead else None,
+        ) from exc
+    payload = await renderer.build(session, lead, members)
+    return _render_pair(renderer.html_template, renderer.txt_template, {"payload": payload})
+
+
+def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmail:
+    """Synchronous render for the digest path.
+
+    The digest assembles its own payload outside the Alert lifecycle (in
+    yas.worker.digest_loop), so it bypasses ``render_email`` and the
+    ``TypeRenderer.build`` callable.
+    """
+    try:
+        renderer = RENDERERS[AlertType.digest]
+    except KeyError as exc:
+        raise EmailRenderError("digest renderer not registered") from exc
+    return _render_pair(
+        renderer.html_template,
+        renderer.txt_template,
+        {"payload": payload, "top_line": top_line},
+    )
+
+
+__all__ = [
+    "EmailRenderError",
+    "RenderedEmail",
+    "render_digest_payload",
+    "render_email",
+]

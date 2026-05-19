@@ -443,11 +443,17 @@ def test_render_digest_produces_both_text_and_html() -> None:
 
 
 def test_render_digest_includes_top_line() -> None:
-    """top_line appears in both plain-text and HTML output."""
+    """top_line appears in both plain-text and HTML output.
+
+    HTML autoescape is on (enabled in yas.email.environment for the shared
+    base), so apostrophes in the top_line become ``&#39;`` in the HTML body.
+    The plain-text rendering is unaffected.
+    """
     top = "Here's your daily digest for Alice."
     plain, html = render_digest(_empty_payload(), top_line=top)
     assert top in plain
-    assert top in html
+    # HTML is autoescaped: ' -> &#39;
+    assert "Here&#39;s your daily digest for Alice." in html
 
 
 def test_render_digest_empty_sections_omitted_cleanly() -> None:

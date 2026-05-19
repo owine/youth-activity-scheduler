@@ -1,5 +1,6 @@
-{{ top_line }}
-
+{% extends "base.txt.j2" %}
+{% block subject %}{{ top_line }}{% endblock %}
+{% block body %}
 {% if payload.under_no_matches_threshold -%}
 We haven't found any activities matching {{ payload.kid_name }} yet. We're still scanning sites and will be in touch as soon as we find something. Back tomorrow.
 {%- else -%}
@@ -31,3 +32,4 @@ DELIVERY ISSUES:
 No new activity today.
 {%- endif %}
 {%- endif %}
+{% endblock %}
