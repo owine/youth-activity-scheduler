@@ -104,6 +104,8 @@ RENDERERS: dict[AlertType, TypeRenderer] = {
 
 An explicit dict so the type→behavior mapping is greppable and reviewable — same idiom as the `notifiers` dict in `delivery.py`.
 
+**`test_send` keying:** `test_send` is a channel-test concept, not an `AlertType` enum member. The registry key is therefore `AlertType | Literal["test_send"]` (a small `EmailKind` union alias), with `test_send` carrying its own builder + templates and the channel test endpoint calling `render_email(..., "test_send", ...)`. No new `AlertType` value is added — that would leak a UI concept into the alert taxonomy.
+
 ### Styling approach
 
 Inline `style="..."` attributes in the shared `base.html.j2` and macros. No external CSS, no inliner dependency. This matches the existing digest pattern and is what survives Gmail/Outlook/Apple Mail without surprises.
@@ -228,7 +230,7 @@ The work is internal-only (no API/contract changes), so rollout is by commits, n
 1. Add `yas.email` package skeleton + `RenderedEmail` + empty `RENDERERS`; registry-completeness test fails.
 2. Add `base.html.j2` / `base.txt.j2` / `macros.j2` + the `Environment` with `StrictUndefined` + golden infrastructure.
 3. Capture digest goldens against the *current* templates (pre-migration baseline).
-4. Move `DigestPayload` and `gather_digest_payload` into `yas.email`; add `render_email`/`render_digest_payload`; migrate digest templates to extend the shared base; update `digest_loop.py` and `digest_preview.py` imports; **digest goldens stay green** (re-baseline chrome diff in this commit).
+4. Move `DigestPayload` and `gather_digest_payload` into `yas.email`; add `render_email`/`render_digest_payload`; migrate digest templates to extend the shared base; update `digest_loop.py` and `digest_preview.py` imports. The digest **content** goldens (sections, data, plain-text body) must stay green; the **chrome** golden (DOCTYPE, `<body>` wrapper, header/footer) is re-baselined deliberately in this same commit as the only intentional diff.
 5. Per immediate alert type, in its own commit: payload dataclass, builder, two templates, registry line, golden, builder unit tests.
 6. Switch `delivery.py` to call `render_email`; delete `_render_subject`/`_render_body`/`<pre>`; extend delivery integration test.
 
