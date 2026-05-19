@@ -9,7 +9,7 @@
 Outbound email today has two unrelated rendering paths:
 
 - **The digest** uses Jinja2 templates (`digest.html.j2`, `digest.txt.j2`) with hand-rolled inline styles. It joins to `Offering`/`Kid`/`Match` and produces useful content.
-- **All immediate alerts** (`match_found`, `reg_opens_now`, `reg_opens_24h`, `reg_opens_1h`, `schedule_posted`, `site_stagnant`) go through placeholder helpers in `src/yas/alerts/delivery.py`:
+- **All immediate alerts** (`watchlist_hit`, `new_match`, `reg_opens_now`, `reg_opens_24h`, `reg_opens_1h`, `schedule_posted`, `site_stagnant`, `crawl_failed`, `no_matches_for_kid`, `push_cap`) go through placeholder helpers in `src/yas/alerts/delivery.py`:
 
   ```python
   def _render_subject(...): return f"{prefix}{alert_type}"
@@ -55,7 +55,7 @@ src/yas/email/
     macros.j2            # offering_row, reg_countdown, kid_header (HTML + text)
     digest.html.j2       # migrated: extends base, uses macros
     digest.txt.j2        # migrated: extends base.txt
-    match_found.html.j2 / .txt.j2
+    new_match.html.j2 / .txt.j2
     reg_opens_now.html.j2 / .txt.j2
     reg_opens_24h.html.j2 / .txt.j2
     reg_opens_1h.html.j2 / .txt.j2
@@ -92,11 +92,11 @@ async def render_email(
 @dataclass(frozen=True)
 class TypeRenderer:
     build: Callable[[AsyncSession, Alert, list[Alert]], Awaitable[Any]]  # returns payload
-    html_template: str  # e.g. "match_found.html.j2"
+    html_template: str  # e.g. "new_match.html.j2"
     txt_template: str
 
 RENDERERS: dict[AlertType, TypeRenderer] = {
-    AlertType.match_found:      TypeRenderer(build_match_found,      "match_found.html.j2",      "match_found.txt.j2"),
+    AlertType.new_match:      TypeRenderer(build_new_match,      "new_match.html.j2",      "new_match.txt.j2"),
     AlertType.reg_opens_now:    TypeRenderer(build_reg_opens_now,    "reg_opens_now.html.j2",    "reg_opens_now.txt.j2"),
     # ... one line per type
 }
@@ -151,7 +151,7 @@ msg = NotifierMessage(
 
 Each is `async (session, lead, members) -> <TypePayload>`:
 
-- `match_found` / `schedule_posted`: join `Match`/`Offering`/`Kid` from ids in `payload_json`, reusing the digest's `_offering_to_dict` shape so the **shared `offering_row` macro renders identically** in digest and immediate alerts. Coalesced `members` → list of offering dicts grouped under one `kid_header`.
+- `new_match` / `schedule_posted`: join `Match`/`Offering`/`Kid` from ids in `payload_json`, reusing the digest's `_offering_to_dict` shape so the **shared `offering_row` macro renders identically** in digest and immediate alerts. Coalesced `members` → list of offering dicts grouped under one `kid_header`.
 - `reg_opens_now` / `reg_opens_1h` / `reg_opens_24h`: offering essentials **plus** `opens_at` and a computed `time_remaining` for the prominent CTA block (Bar 3).
 - `site_stagnant`: site name/id + last-change age (no offering join).
 - `test_send`: trivial static payload (used by the channel test-send endpoint).
@@ -184,7 +184,11 @@ NotifierMessage ──► EmailChannel transport (unchanged)
 
 | Alert type        | Subject                                     | Body essentials                                                                                                        |
 |-------------------|---------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
-| `match_found`     | `New match for <kid>: <offering>` (or `N new matches for <kid>` if coalesced) | kid header, per-offering row (name, site, start_date, price, score, register link), match-reason snippet              |
+| `watchlist_hit`   | `Watchlist hit for <kid>: <offering>`       | kid header, offering rows (same macro as new_match), explicit "this matches your watchlist" framing                  |
+| `new_match`     | `New match for <kid>: <offering>` (or `N new matches for <kid>` if coalesced) | kid header, per-offering row (name, site, start_date, price, score, register link), match-reason snippet              |
+| `crawl_failed`    | `Crawl failed: <site>`                      | site name, last successful crawl, error summary, link to site                                                          |
+| `no_matches_for_kid` | `Still searching for activities for <kid>` | kid header, days since kid added, encouragement copy                                                                  |
+| `push_cap`        | (push-only; no email body needed)           | minimal renderer present for registry completeness; never actually delivered via email under default routing          |
 | `reg_opens_now`   | `Register now: <offering> for <kid>`        | prominent CTA button-style block, register link, opens-at time, "Open now" indicator, offering essentials             |
 | `reg_opens_1h`    | `Registration opens in 1h: <offering>`      | countdown to `opens_at`, register link, offering essentials, prep checklist line                                      |
 | `reg_opens_24h`   | `Registration opens tomorrow: <offering>`   | countdown, register link, offering essentials                                                                          |
@@ -193,7 +197,7 @@ NotifierMessage ──► EmailChannel transport (unchanged)
 | `digest`          | (unchanged)                                  | (unchanged content; chrome migrated to shared base)                                                                    |
 | `test_send`       | `<channel> test`                            | one line confirming the channel is wired                                                                               |
 
-The shared `offering_row` macro renders identically in `digest` and in `match_found`/`schedule_posted` — that uniformity is the whole point of the macro.
+The shared `offering_row` macro renders identically in `digest` and in `new_match`/`schedule_posted` — that uniformity is the whole point of the macro.
 
 ## Error handling
 
@@ -214,7 +218,7 @@ Mirrors the existing `tests/unit` + `tests/integration` split and the codebase's
 ### Unit
 
 - **`tests/unit/test_email_builders.py`** — per type: given seeded `Alert`/`Offering`/`Kid`/`Match` rows, assert the builder returns a payload with correct fields, correct coalesced-member handling, and correct countdown math for `reg_opens_*`. Failure cases: deleted offering → `EmailRenderError(alert_id, ...)`; empty members.
-- **`tests/unit/test_email_registry.py`** — assert every `AlertType` that can route to the email channel has a `RENDERERS` entry; assert each entry's templates exist and load. Guards "forgot to wire a new type."
+- **`tests/unit/test_email_registry.py`** — assert `set(RENDERERS) == set(AlertType) | {"test_send"}` (every `AlertType` has a renderer, plus the `test_send` channel-test concept); assert each entry's templates exist and load. Guards "forgot to wire a new type." Routing decisions (which types actually get emailed by default) live in `routing.py`, not the registry — the layer renders whatever the router asks for.
 - **`tests/unit/test_email_render_golden.py`** — for each type, render `RenderedEmail` from a fixed payload and compare `subject`/`body_plain`/`body_html` against committed goldens in `tests/golden/email/`. Verifies Bar-3 content present (kid, offering, date, price, register link; countdown + CTA for reg-opens types), shared base chrome present, `StrictUndefined` raises on field drift. Regenerated only via an explicit, reviewed step.
 - **`tests/unit/test_digest_golden.py`** — capture current digest HTML/text output as goldens **before** migration; the shared-base refactor must keep them green except the deliberately re-baselined chrome diff (one reviewed commit, called out in its message).
 
