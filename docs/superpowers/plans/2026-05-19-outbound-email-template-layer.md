@@ -89,7 +89,25 @@ uv run pytest tests/unit/test_email_registry.py -v
 ```
 Expected: FAIL (module does not exist yet).
 
-- [ ] **Step 3: Create `src/yas/email/registry.py` (empty registry)**
+- [ ] **Step 3: Create `src/yas/email/_errors.py`**
+
+Placed in its own module from the start so Task 4's registry can import it without a circular dep on `yas.email.__init__`.
+
+```python
+# src/yas/email/_errors.py
+"""Errors raised by the outbound-email layer."""
+from __future__ import annotations
+
+
+class EmailRenderError(RuntimeError):
+    """Raised when a payload builder or template render cannot produce a useful email."""
+
+    def __init__(self, message: str, *, alert_id: int | None = None) -> None:
+        super().__init__(message)
+        self.alert_id = alert_id
+```
+
+- [ ] **Step 4: Create `src/yas/email/registry.py` (empty registry)**
 
 ```python
 """Email type → renderer registry.
@@ -125,7 +143,7 @@ class TypeRenderer:
 RENDERERS: dict[EmailKind, TypeRenderer] = {}
 ```
 
-- [ ] **Step 4: Create `src/yas/email/__init__.py` with public types**
+- [ ] **Step 5: Create `src/yas/email/__init__.py` with public types**
 
 ```python
 """Outbound email rendering — see docs/superpowers/specs/2026-05-19-outbound-email-template-layer-design.md."""
@@ -133,17 +151,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
-class EmailRenderError(RuntimeError):
-    """Raised when a payload builder or template render cannot produce a useful email.
-
-    Carries the offending alert id (when known) so the delivery layer can mark
-    members skipped with a clear reason instead of sending an empty body.
-    """
-
-    def __init__(self, message: str, *, alert_id: int | None = None) -> None:
-        super().__init__(message)
-        self.alert_id = alert_id
+from yas.email._errors import EmailRenderError
 
 
 @dataclass(frozen=True)
@@ -158,14 +166,14 @@ class RenderedEmail:
 __all__ = ["EmailRenderError", "RenderedEmail"]
 ```
 
-- [ ] **Step 5: Run test, expect RED with `missing: {...}` message**
+- [ ] **Step 6: Run test, expect RED with `missing: {...}` message**
 
 ```bash
 uv run pytest tests/unit/test_email_registry.py -v
 ```
 Expected: FAIL with the assertion message listing every AlertType + `test_send` as missing. This RED state is intentional — Tasks 5–14 turn it green.
 
-- [ ] **Step 6: Mark the test xfail for now so CI stays green**
+- [ ] **Step 7: Mark the test xfail for now so CI stays green**
 
 Replace the test body with:
 
@@ -190,7 +198,7 @@ def test_every_alert_type_has_a_renderer() -> None:
 
 `strict=True` means the moment the registry is complete (Task 14), the xfail flips to XPASS and *that* fails — forcing the executor to remove the marker. This is the registry's TDD ratchet.
 
-- [ ] **Step 7: Run lint, types, full unit suite**
+- [ ] **Step 8: Run lint, types, full unit suite**
 
 ```bash
 uv run ruff check src tests
@@ -199,10 +207,10 @@ uv run pytest tests/unit -q
 ```
 Expected: ruff clean, mypy clean, unit suite green (the xfail counts as expected-fail, not failure).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/yas/email/__init__.py src/yas/email/registry.py tests/unit/test_email_registry.py
+git add src/yas/email/__init__.py src/yas/email/_errors.py src/yas/email/registry.py tests/unit/test_email_registry.py
 git commit -m "feat(email): scaffold yas.email package + empty renderer registry
 
 Adds RenderedEmail, EmailRenderError, EmailKind, and an empty RENDERERS
@@ -784,7 +792,7 @@ RENDERERS["digest"] = TypeRenderer(
 )
 ```
 
-(Circular-import note: this needs `from yas.email import EmailRenderError`. If that creates a cycle, move `EmailRenderError` to its own module `yas/email/_errors.py` and import from both `__init__.py` and `registry.py`. Make the decision at implementation time.)
+(Circular-import note: `EmailRenderError` already lives in `yas/email/_errors.py` from Task 1, so import from there: `from yas.email._errors import EmailRenderError`.)
 
 - [ ] **Step 9: Update `digest_loop.py` and `digest_preview.py` imports**
 
