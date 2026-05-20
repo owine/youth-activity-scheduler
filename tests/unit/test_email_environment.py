@@ -1,4 +1,5 @@
 """Jinja Environment shared by all outbound-email templates."""
+
 from __future__ import annotations
 
 import pytest

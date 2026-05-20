@@ -10,6 +10,7 @@ Digest payloads are assembled outside the Alert lifecycle by
 ``yas.worker.digest_loop`` and rendered via ``render_digest_payload``. The
 completeness test special-cases digest accordingly.
 """
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

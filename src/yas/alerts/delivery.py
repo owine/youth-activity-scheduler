@@ -153,9 +153,7 @@ async def send_alert_group(
         )
     else:
         try:
-            rendered = await render_email(
-                session, AlertType(group.alert_type), lead, members
-            )
+            rendered = await render_email(session, AlertType(group.alert_type), lead, members)
         except EmailRenderError as exc:
             log.warning(
                 "email.render_failed",

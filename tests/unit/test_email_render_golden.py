@@ -1,4 +1,5 @@
 """End-to-end render goldens -- every kind must produce a stable subject/txt/html."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

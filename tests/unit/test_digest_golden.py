@@ -4,6 +4,7 @@ These goldens lock the current digest output BEFORE the shared-base
 refactor. After Task 4 lands, the `chrome` portions (DOCTYPE, <body>, footer)
 are re-baselined deliberately; section content must remain byte-identical.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -19,6 +20,7 @@ def render_digest(payload: DigestPayload, top_line: str) -> tuple[str, str]:
     """Test helper: keep the (plain, html) tuple shape these goldens were captured against."""
     rendered = render_digest_payload(payload, top_line)
     return rendered.body_plain, rendered.body_html
+
 
 _GOLDEN_DIR = Path(__file__).parent.parent / "golden" / "digest"
 

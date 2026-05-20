@@ -52,9 +52,7 @@ def _synthetic_alert(channel: str) -> Alert:
     )
 
 
-async def _test_message(
-    request: Request, channel: str
-) -> NotifierMessage:
+async def _test_message(request: Request, channel: str) -> NotifierMessage:
     """Render the test_send email through the shared email layer so the user
     sees the branded base chrome -- not a one-line inline string."""
     synthetic = _synthetic_alert(channel)

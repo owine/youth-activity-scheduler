@@ -5,6 +5,7 @@ doesn't have raises UndefinedError at render, which the delivery layer routes
 into the same skipped-alert + 'Delivery Issues' machinery as a permanent send
 failure. Silent half-rendered emails are the bug we're fixing.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

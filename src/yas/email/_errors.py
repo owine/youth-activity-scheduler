@@ -1,4 +1,5 @@
 """Errors raised by the outbound-email layer."""
+
 from __future__ import annotations
 
 

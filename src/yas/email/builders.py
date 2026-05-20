@@ -1,4 +1,5 @@
 """Payload builders that gather DB state into render contexts."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -253,24 +254,16 @@ async def _resolve_kid_matches(
     they share identical coalesced-offering shape.
     """
     if lead.kid_id is None:
-        raise EmailRenderError(
-            f"{lead.type} alert has no kid_id", alert_id=lead.id
-        )
-    kid = (
-        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
-    ).scalar_one_or_none()
+        raise EmailRenderError(f"{lead.type} alert has no kid_id", alert_id=lead.id)
+    kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
     offering_ids = [
-        int(a.payload_json["offering_id"])
-        for a in members
-        if "offering_id" in a.payload_json
+        int(a.payload_json["offering_id"]) for a in members if "offering_id" in a.payload_json
     ]
     if not offering_ids:
-        raise EmailRenderError(
-            f"{lead.type} alert missing offering_id", alert_id=lead.id
-        )
+        raise EmailRenderError(f"{lead.type} alert missing offering_id", alert_id=lead.id)
 
     stmt = (
         select(Offering, Match.score)
@@ -282,20 +275,13 @@ async def _resolve_kid_matches(
     if len(rows) != len(offering_ids):
         found = {o.id for o, _ in rows}
         missing = [oid for oid in offering_ids if oid not in found]
-        raise EmailRenderError(
-            f"offerings not found: {missing}", alert_id=lead.id
-        )
+        raise EmailRenderError(f"offerings not found: {missing}", alert_id=lead.id)
 
     site_ids = list({o.site_id for o, _ in rows})
-    site_rows = (
-        await session.execute(select(Site).where(Site.id.in_(site_ids)))
-    ).scalars().all()
+    site_rows = (await session.execute(select(Site).where(Site.id.in_(site_ids)))).scalars().all()
     site_names = {s.id: s.name for s in site_rows}
 
-    matches = [
-        _offering_to_dict(o, score, site_names.get(o.site_id, ""))
-        for o, score in rows
-    ]
+    matches = [_offering_to_dict(o, score, site_names.get(o.site_id, "")) for o, score in rows]
     return kid, matches
 
 
@@ -351,14 +337,10 @@ async def build_reg_opens_now(
 
     offering_id_raw = lead.payload_json.get("offering_id")
     if offering_id_raw is None:
-        raise EmailRenderError(
-            "reg_opens_now alert missing offering_id", alert_id=lead.id
-        )
+        raise EmailRenderError("reg_opens_now alert missing offering_id", alert_id=lead.id)
     offering_id = int(offering_id_raw)
 
-    kid = (
-        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
-    ).scalar_one_or_none()
+    kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
@@ -366,14 +348,10 @@ async def build_reg_opens_now(
         await session.execute(select(Offering).where(Offering.id == offering_id))
     ).scalar_one_or_none()
     if offering is None:
-        raise EmailRenderError(
-            f"offering {offering_id} not found", alert_id=lead.id
-        )
+        raise EmailRenderError(f"offering {offering_id} not found", alert_id=lead.id)
 
     if not offering.registration_url:
-        raise EmailRenderError(
-            f"offering {offering_id} has no registration_url", alert_id=lead.id
-        )
+        raise EmailRenderError(f"offering {offering_id} has no registration_url", alert_id=lead.id)
 
     site_name = ""
     if offering.site_id is not None:
@@ -494,13 +472,9 @@ async def build_schedule_posted(
     """
     del members  # site-scoped, not coalesced
     if lead.site_id is None:
-        raise EmailRenderError(
-            "schedule_posted alert has no site_id", alert_id=lead.id
-        )
+        raise EmailRenderError("schedule_posted alert has no site_id", alert_id=lead.id)
 
-    site = (
-        await session.execute(select(Site).where(Site.id == lead.site_id))
-    ).scalar_one_or_none()
+    site = (await session.execute(select(Site).where(Site.id == lead.site_id))).scalar_one_or_none()
     if site is None:
         raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
 
@@ -510,16 +484,14 @@ async def build_schedule_posted(
     if isinstance(raw_ids, list) and raw_ids:
         offering_ids = [int(x) for x in raw_ids]
         rows = (
-            await session.execute(
-                select(Offering).where(Offering.id.in_(offering_ids))
-            )
-        ).scalars().all()
+            (await session.execute(select(Offering).where(Offering.id.in_(offering_ids))))
+            .scalars()
+            .all()
+        )
         found = {o.id: o for o in rows}
         missing = [oid for oid in offering_ids if oid not in found]
         if missing:
-            raise EmailRenderError(
-                f"offerings not found: {missing}", alert_id=lead.id
-            )
+            raise EmailRenderError(f"offerings not found: {missing}", alert_id=lead.id)
         # Preserve caller-supplied order.
         offerings = [found[oid] for oid in offering_ids]
     else:
@@ -545,7 +517,9 @@ async def build_schedule_posted(
                     .where(Offering.first_seen <= se_param)
                     .order_by(Offering.first_seen)
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
 
     if not offerings:
@@ -554,9 +528,7 @@ async def build_schedule_posted(
             alert_id=lead.id,
         )
 
-    new_offerings = [
-        _offering_to_dict(o, score=None, site_name=site.name) for o in offerings
-    ]
+    new_offerings = [_offering_to_dict(o, score=None, site_name=site.name) for o in offerings]
 
     notes_raw = lead.payload_json.get("notes")
     if not isinstance(notes_raw, str) or not notes_raw:
@@ -596,21 +568,15 @@ async def build_crawl_failed(
     """
     del members  # site-scoped, not coalesced
     if lead.site_id is None:
-        raise EmailRenderError(
-            "crawl_failed alert has no site_id", alert_id=lead.id
-        )
+        raise EmailRenderError("crawl_failed alert has no site_id", alert_id=lead.id)
 
-    site = (
-        await session.execute(select(Site).where(Site.id == lead.site_id))
-    ).scalar_one_or_none()
+    site = (await session.execute(select(Site).where(Site.id == lead.site_id))).scalar_one_or_none()
     if site is None:
         raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
 
     pj = lead.payload_json or {}
 
-    raw_err: Any = (
-        pj.get("error_summary") or pj.get("last_error") or pj.get("error") or ""
-    )
+    raw_err: Any = pj.get("error_summary") or pj.get("last_error") or pj.get("error") or ""
     if not isinstance(raw_err, str):
         raw_err = str(raw_err)
     if len(raw_err) > _ERROR_SUMMARY_MAX:
@@ -622,7 +588,7 @@ async def build_crawl_failed(
     failure_raw = pj.get("consecutive_failures", pj.get("failure_count", 1))
     try:
         failure_count = int(failure_raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         failure_count = 1
 
     last_success_at: datetime | None = None
@@ -676,13 +642,9 @@ async def build_site_stagnant(
     """
     del members  # site-scoped, not coalesced
     if lead.site_id is None:
-        raise EmailRenderError(
-            "site_stagnant alert has no site_id", alert_id=lead.id
-        )
+        raise EmailRenderError("site_stagnant alert has no site_id", alert_id=lead.id)
 
-    site = (
-        await session.execute(select(Site).where(Site.id == lead.site_id))
-    ).scalar_one_or_none()
+    site = (await session.execute(select(Site).where(Site.id == lead.site_id))).scalar_one_or_none()
     if site is None:
         raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
 
@@ -741,12 +703,8 @@ async def build_no_matches_for_kid(
     """
     del members  # not coalesced
     if lead.kid_id is None:
-        raise EmailRenderError(
-            "no_matches_for_kid alert has no kid_id", alert_id=lead.id
-        )
-    kid = (
-        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
-    ).scalar_one_or_none()
+        raise EmailRenderError("no_matches_for_kid alert has no kid_id", alert_id=lead.id)
+    kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
@@ -807,9 +765,7 @@ async def build_push_cap(
     pj = lead.payload_json or {}
     count_raw = pj.get("suppressed_count")
     if count_raw is None:
-        raise EmailRenderError(
-            "push_cap alert missing suppressed_count", alert_id=lead.id
-        )
+        raise EmailRenderError("push_cap alert missing suppressed_count", alert_id=lead.id)
     try:
         suppressed_count = int(count_raw)
     except (TypeError, ValueError) as exc:
@@ -820,9 +776,7 @@ async def build_push_cap(
 
     kid_name: str | None = None
     if lead.kid_id is not None:
-        kid = (
-            await session.execute(select(Kid).where(Kid.id == lead.kid_id))
-        ).scalar_one_or_none()
+        kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
         if kid is not None:
             kid_name = kid.name
 

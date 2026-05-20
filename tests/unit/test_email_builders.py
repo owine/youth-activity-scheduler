@@ -1,4 +1,5 @@
 """Per-kind builder tests: real DB joins, payload-shape assertions, failure modes."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta

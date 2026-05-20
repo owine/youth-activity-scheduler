@@ -3,6 +3,7 @@
 Covers behavior that the per-kind golden tests don't exercise directly:
 the subject-newline guard and the macro score=None tolerance.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -32,11 +33,11 @@ def test_subject_with_embedded_newline_raises(tmp_path, monkeypatch) -> None:
 
 def test_render_pair_passes_extras_into_context(monkeypatch) -> None:
     """Keyword extras land in the render context alongside payload."""
-    txt = env.from_string("{% block subject %}{{ top_line }}{% endblock %}{% block body %}{{ top_line }}{% endblock %}")
-    html = env.from_string("{{ top_line }}")
-    monkeypatch.setattr(
-        env, "get_template", lambda name: txt if name.endswith(".txt.j2") else html
+    txt = env.from_string(
+        "{% block subject %}{{ top_line }}{% endblock %}{% block body %}{{ top_line }}{% endblock %}"
     )
+    html = env.from_string("{{ top_line }}")
+    monkeypatch.setattr(env, "get_template", lambda name: txt if name.endswith(".txt.j2") else html)
 
     rendered = _render_pair("x.html.j2", "x.txt.j2", payload=object(), top_line="Hello there")
     assert rendered.subject == "Hello there"
@@ -64,9 +65,7 @@ def test_offering_row_macro_omits_score_when_none(variant: str) -> None:
     omitting the key) -- "%.2f" | format(None) would raise TypeError otherwise.
     """
     macro = f"offering_row_{variant}"
-    tpl = env.from_string(
-        f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}'
-    )
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
     out = tpl.render(m=_offering(score=None))
     assert "nan" not in out.lower()
     assert "score" not in out
@@ -76,9 +75,7 @@ def test_offering_row_macro_omits_score_when_none(variant: str) -> None:
 def test_offering_row_macro_omits_score_when_absent(variant: str) -> None:
     """offering_row_* with the score key entirely absent also omits the fragment."""
     macro = f"offering_row_{variant}"
-    tpl = env.from_string(
-        f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}'
-    )
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
     out = tpl.render(m=_offering())  # no score key at all
     assert "score" not in out
 
@@ -87,8 +84,6 @@ def test_offering_row_macro_omits_score_when_absent(variant: str) -> None:
 def test_offering_row_macro_renders_score_when_present(variant: str) -> None:
     """Sanity: a real float score still renders."""
     macro = f"offering_row_{variant}"
-    tpl = env.from_string(
-        f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}'
-    )
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
     out = tpl.render(m=_offering(score=0.91))
     assert "score 0.91" in out

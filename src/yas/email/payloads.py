@@ -1,4 +1,5 @@
 """Email payload dataclasses — context dicts passed to Jinja templates."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -25,6 +25,7 @@ def render_digest(payload: DigestPayload, top_line: str) -> tuple[str, str]:
     rendered = render_digest_payload(payload, top_line)
     return rendered.body_plain, rendered.body_html
 
+
 # ---------------------------------------------------------------------------
 # Engine / schema helper
 # ---------------------------------------------------------------------------

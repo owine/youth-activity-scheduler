@@ -1,4 +1,5 @@
 """Outbound email rendering -- see docs/superpowers/specs/2026-05-19-outbound-email-template-layer-design.md."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -52,9 +53,7 @@ def _render_pair(
     # body) would produce an RFC-violating header. Fail loud here rather than
     # let the SMTP/HTTP transport see it.
     if "\n" in subject or "\r" in subject:
-        raise EmailRenderError(
-            f"subject block rendered with embedded newline: {subject!r}"
-        )
+        raise EmailRenderError(f"subject block rendered with embedded newline: {subject!r}")
     body_plain = txt_tpl.render(ctx)
     body_html = html_tpl.render(ctx)
     return RenderedEmail(subject=subject, body_plain=body_plain, body_html=body_html)

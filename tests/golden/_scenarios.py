@@ -4,6 +4,7 @@ A scenario seeds an in-memory DB and returns ``(lead_alert, member_alerts)`` -- 
 what render_email expects. Keeping the seed code shared means the golden file and the
 unit test cannot drift from each other.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -289,9 +290,7 @@ async def seed_crawl_failed(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     ``GOLDEN_NOW`` and three subsequent failed crawls. The lead alert carries
     a short error summary so the template ``<code>`` block stays readable.
     """
-    site = Site(
-        name="Northshore Athletics", base_url="https://n.example.com", active=True
-    )
+    site = Site(name="Northshore Athletics", base_url="https://n.example.com", active=True)
     session.add(site)
     await session.flush()
     last_ok = GOLDEN_NOW - timedelta(days=2)
@@ -400,9 +399,7 @@ async def seed_site_stagnant(session: AsyncSession) -> tuple[Alert, list[Alert]]
     ``payload_json`` carries ``days_since_change`` (the builder also accepts
     the legacy ``days_silent`` key produced by the current enqueuer).
     """
-    site = Site(
-        name="Hilldale Center", base_url="https://h.example.com", active=True
-    )
+    site = Site(name="Hilldale Center", base_url="https://h.example.com", active=True)
     session.add(site)
     await session.flush()
     a = Alert(
