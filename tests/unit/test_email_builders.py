@@ -25,6 +25,7 @@ from yas.email.builders import (
     build_site_stagnant,
     build_test_send,
     build_watchlist_hit,
+    gather_digest_payload,
 )
 from yas.email.payloads import (
     CrawlFailedPayload,
@@ -1040,3 +1041,85 @@ async def test_build_test_send_explicit_channel(tmp_path: Any) -> None:
         payload = await build_test_send(s, a, [a])
 
     assert payload.channel == "ntfy"
+
+
+@pytest.mark.asyncio
+async def test_gather_digest_populates_site_name_and_groups(tmp_path: Any) -> None:
+    """Regression: site_name is resolved (was always ''); new_match_groups nests by site->program."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site_a = Site(name="Park District", base_url="https://a.example.com", active=True)
+        site_b = Site(name="YMCA", base_url="https://b.example.com", active=True)
+        s.add_all([site_a, site_b])
+        await s.flush()
+        page_a = Page(site_id=site_a.id, url="https://a.example.com/s", kind=PageKind.schedule)
+        page_b = Page(site_id=site_b.id, url="https://b.example.com/s", kind=PageKind.schedule)
+        s.add_all([page_a, page_b])
+        await s.flush()
+        kid = Kid(name="Ada", dob=date(2017, 1, 1), created_at=NOW - timedelta(days=30))
+        s.add(kid)
+        await s.flush()
+        o1 = Offering(
+            site_id=site_a.id,
+            page_id=page_a.id,
+            name="Soccer Camp",
+            normalized_name="soccer camp",
+            program_type="soccer",
+            start_date=date(2026, 6, 1),
+            price_cents=15000,
+            registration_url="https://a.example.com/r/1",
+        )
+        o2 = Offering(
+            site_id=site_a.id,
+            page_id=page_a.id,
+            name="Summer Swim",
+            normalized_name="summer swim",
+            program_type="swim",
+            start_date=date(2026, 6, 15),
+            price_cents=14000,
+        )
+        o3 = Offering(
+            site_id=site_b.id,
+            page_id=page_b.id,
+            name="Ballet I",
+            normalized_name="ballet i",
+            program_type="dance",
+            start_date=date(2026, 6, 3),
+            price_cents=12000,
+        )
+        s.add_all([o1, o2, o3])
+        await s.flush()
+        s.add_all(
+            [
+                Match(kid_id=kid.id, offering_id=o1.id, score=0.91, computed_at=NOW),
+                Match(kid_id=kid.id, offering_id=o2.id, score=0.80, computed_at=NOW),
+                Match(kid_id=kid.id, offering_id=o3.id, score=0.66, computed_at=NOW),
+            ]
+        )
+        await s.flush()
+
+        payload = await gather_digest_payload(
+            s,
+            kid,
+            window_start=NOW - timedelta(days=1),
+            window_end=NOW + timedelta(hours=1),
+            alert_no_matches_kid_days=7,
+            now=NOW,
+        )
+
+    # Bug fix: site_name is populated on the flat list (previously always "").
+    assert all(m["site_name"] for m in payload.new_matches)
+    # program_type present on every offering dict.
+    assert all("program_type" in m for m in payload.new_matches)
+    # Grouped: Park District (best 0.91) before YMCA (0.66).
+    assert [g["site_name"] for g in payload.new_match_groups] == ["Park District", "YMCA"]
+    park = payload.new_match_groups[0]
+    assert [p["program_type"] for p in park["programs"]] == ["soccer", "swim"]
+    # Program labels are wired through (templates render these).
+    assert [p["program_label"] for p in park["programs"]] == ["Soccer", "Swim"]
+    # The actual offerings land under the right program, not just the type list.
+    assert [o["offering_name"] for o in park["programs"][0]["offerings"]] == ["Soccer Camp"]
+    assert [o["offering_name"] for o in park["programs"][1]["offerings"]] == ["Summer Swim"]
+    ymca = payload.new_match_groups[1]
+    assert [p["program_label"] for p in ymca["programs"]] == ["Dance"]
+    assert [o["offering_name"] for o in ymca["programs"][0]["offerings"]] == ["Ballet I"]

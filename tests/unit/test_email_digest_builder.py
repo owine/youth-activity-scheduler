@@ -16,7 +16,7 @@ from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
 from yas.db.session import create_engine_for, session_scope
 from yas.email import render_digest_payload
-from yas.email.builders import gather_digest_payload
+from yas.email.builders import _group_matches_by_site, gather_digest_payload
 from yas.email.payloads import DigestPayload
 
 
@@ -427,22 +427,26 @@ def _empty_payload() -> DigestPayload:
 
 
 def _payload_with_matches() -> DigestPayload:
+    new_matches = [
+        {
+            "offering_id": 10,
+            "offering_name": "Soccer Camp",
+            "score": 0.92,
+            "site_id": 1,
+            "site_name": "City Rec",
+            "program_type": "soccer",
+            "start_date": TODAY + timedelta(days=5),
+            "price_cents": 15000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/register",
+        }
+    ]
     return DigestPayload(
         kid_id=1,
         kid_name="Alice",
         for_date=TODAY,
-        new_matches=[
-            {
-                "offering_id": 10,
-                "offering_name": "Soccer Camp",
-                "score": 0.92,
-                "site_name": "City Rec",
-                "start_date": TODAY + timedelta(days=5),
-                "price_cents": 15000,
-                "registration_opens_at": None,
-                "registration_url": "https://example.com/register",
-            }
-        ],
+        new_matches=new_matches,
+        new_match_groups=_group_matches_by_site(new_matches),
     )
 
 

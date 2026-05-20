@@ -47,6 +47,7 @@ def _offering_to_dict(
     d: dict[str, Any] = {
         "offering_id": offering.id,
         "offering_name": offering.name,
+        "program_type": offering.program_type,
         "site_id": offering.site_id,
         "start_date": offering.start_date,
         "price_cents": offering.price_cents,
@@ -58,6 +59,67 @@ def _offering_to_dict(
     if score is not None:
         d["score"] = score
     return d
+
+
+def _program_label(program_type: str) -> str:
+    """Human display label for a ProgramType value. `unknown` -> 'Other'."""
+    if program_type == "unknown":
+        return "Other"
+    return program_type.replace("_", " ").title()
+    # Note: acronyms like 'stem' render as 'Stem'. Acceptable; do not special-case.
+
+
+def _group_matches_by_site(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group a score-sorted flat match list into site -> program -> offerings.
+
+    Pure reorganization of the same dicts (no DB). Ordering:
+      - sites by their best (max) offering score, descending
+      - programs within a site by their best offering score, descending
+      - offerings within a program preserve the input order (score desc)
+
+    `matches` is expected pre-sorted by score desc (as gather_digest_payload
+    produces). Offerings without a 'score' key sort last within their bucket.
+    """
+
+    def _score(o: dict[str, Any]) -> float:
+        s = o.get("score")
+        return s if isinstance(s, (int, float)) else float("-inf")
+
+    # Preserve first-seen order while bucketing so we can sort buckets by max score.
+    sites: dict[int, dict[str, Any]] = {}
+    for m in matches:
+        site_id = m["site_id"]
+        site = sites.setdefault(
+            site_id,
+            {"site_id": site_id, "site_name": m.get("site_name", ""), "_programs": {}},
+        )
+        # Coerce missing / None / empty program_type to "unknown" so the label
+        # mapping never sees None (offerings always carry a value in practice
+        # since the column defaults to "unknown", but be defensive).
+        pt = m.get("program_type") or "unknown"
+        prog = site["_programs"].setdefault(
+            pt, {"program_type": pt, "program_label": _program_label(pt), "offerings": []}
+        )
+        prog["offerings"].append(m)
+
+    result: list[dict[str, Any]] = []
+    for site in sites.values():
+        programs = list(site["_programs"].values())
+        # offerings already score-sorted from input; sort programs by their best score.
+        programs.sort(key=lambda p: max(_score(o) for o in p["offerings"]), reverse=True)
+        result.append(
+            {
+                "site_id": site["site_id"],
+                "site_name": site["site_name"],
+                "programs": programs,
+            }
+        )
+    # sites by their best offering score across all programs.
+    result.sort(
+        key=lambda s: max(_score(o) for p in s["programs"] for o in p["offerings"]),
+        reverse=True,
+    )
+    return result
 
 
 async def gather_digest_payload(
@@ -106,6 +168,20 @@ async def gather_digest_payload(
     for m, o in match_rows:
         d = _offering_to_dict(o, m.score)
         new_matches.append(d)
+
+    # Resolve site names for the new-match offerings (one batch query) and
+    # populate site_name on each dict. Without this the digest showed no site
+    # (site_name defaulted to "" and the row macro guard dropped it).
+    if new_matches:
+        site_ids = {m["site_id"] for m in new_matches}
+        name_rows = (
+            await session.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
+        ).all()
+        site_names = {row.id: row.name for row in name_rows}
+        for m in new_matches:
+            m["site_name"] = site_names.get(m["site_id"], "")
+
+    new_match_groups = _group_matches_by_site(new_matches)
 
     # ------------------------------------------------------------------
     # 2. starting_soon -- any matched offering starting in (today, today+14d]
@@ -234,6 +310,7 @@ async def gather_digest_payload(
         kid_name=kid.name,
         for_date=today,
         new_matches=new_matches,
+        new_match_groups=new_match_groups,
         starting_soon=starting_soon,
         registration_calendar=registration_calendar,
         delivery_failures=delivery_failures,

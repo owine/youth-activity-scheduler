@@ -1,6 +1,8 @@
 Ada — 1 new match
 NEW MATCHES (1):
-- Soccer Camp @ Park District · Mon, Jun 1 · $150.00 · score 0.91
+Park District:
+  Soccer:
+    - Soccer Camp · Mon, Jun 1 · $150.00 · score 0.91 · https://example.com/reg/10
 
 ---
 Youth Activity Scheduler

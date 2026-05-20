@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from yas.email import render_digest_payload
+from yas.email.builders import _group_matches_by_site
 from yas.email.payloads import DigestPayload
 
 
@@ -26,23 +27,80 @@ _GOLDEN_DIR = Path(__file__).parent.parent / "golden" / "digest"
 
 
 def _payload_with_matches() -> DigestPayload:
+    new_matches = [
+        {
+            "offering_id": 10,
+            "offering_name": "Soccer Camp",
+            "score": 0.91,
+            "site_id": 1,
+            "site_name": "Park District",
+            "program_type": "soccer",
+            "start_date": date(2026, 6, 1),
+            "price_cents": 15000,
+            "registration_opens_at": datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
+            "registration_url": "https://example.com/reg/10",
+        }
+    ]
     return DigestPayload(
         kid_id=1,
         kid_name="Ada",
         for_date=date(2026, 5, 19),
-        new_matches=[
-            {
-                "offering_id": 10,
-                "offering_name": "Soccer Camp",
-                "score": 0.91,
-                "site_id": 1,
-                "site_name": "Park District",
-                "start_date": date(2026, 6, 1),
-                "price_cents": 15000,
-                "registration_opens_at": datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
-                "registration_url": "https://example.com/reg/10",
-            }
-        ],
+        new_matches=new_matches,
+        new_match_groups=_group_matches_by_site(new_matches),
+        starting_soon=[],
+        registration_calendar=[],
+        delivery_failures=[],
+        site_stagnant_ids=[],
+        silent_schedule_posts=[],
+        under_no_matches_threshold=False,
+    )
+
+
+def _payload_multi_site() -> DigestPayload:
+    new_matches = [
+        {
+            "offering_id": 10,
+            "offering_name": "Soccer Camp",
+            "score": 0.91,
+            "site_id": 1,
+            "site_name": "Park District",
+            "program_type": "soccer",
+            "start_date": date(2026, 6, 1),
+            "price_cents": 15000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/reg/10",
+        },
+        {
+            "offering_id": 11,
+            "offering_name": "Summer Swim",
+            "score": 0.80,
+            "site_id": 1,
+            "site_name": "Park District",
+            "program_type": "swim",
+            "start_date": date(2026, 6, 15),
+            "price_cents": 14000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/reg/11",
+        },
+        {
+            "offering_id": 12,
+            "offering_name": "Ballet I",
+            "score": 0.66,
+            "site_id": 2,
+            "site_name": "YMCA",
+            "program_type": "dance",
+            "start_date": date(2026, 6, 3),
+            "price_cents": 12000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/reg/12",
+        },
+    ]
+    return DigestPayload(
+        kid_id=1,
+        kid_name="Ada",
+        for_date=date(2026, 5, 19),
+        new_matches=new_matches,
+        new_match_groups=_group_matches_by_site(new_matches),
         starting_soon=[],
         registration_calendar=[],
         delivery_failures=[],
@@ -67,6 +125,7 @@ def _payload_under_threshold() -> DigestPayload:
 
 _CASES = [
     ("with_matches", _payload_with_matches, "Ada — 1 new match"),
+    ("multi_site", _payload_multi_site, "Ada — 3 new matches"),
     ("empty", _payload_empty, "Bo — quiet day"),
     ("under_threshold", _payload_under_threshold, "Cy — still searching"),
 ]
@@ -79,3 +138,36 @@ def test_digest_golden(name: str, factory, top_line: str) -> None:
     expected_html = (_GOLDEN_DIR / f"{name}.html").read_text()
     assert txt == expected_txt, f"text diverges for {name}"
     assert html == expected_html, f"html diverges for {name}"
+
+
+def test_unknown_program_type_renders_as_other_header() -> None:
+    """A match with program_type 'unknown' renders under an 'Other' program
+    header in both formats (validates the label mapping in rendered output,
+    not just in the helper unit test). Kept off the goldens to avoid churn."""
+    new_matches = [
+        {
+            "offering_id": 99,
+            "offering_name": "Mystery Program",
+            "score": 0.5,
+            "site_id": 9,
+            "site_name": "Some Site",
+            "program_type": "unknown",
+            "start_date": date(2026, 7, 1),
+            "price_cents": 5000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/reg/99",
+        }
+    ]
+    payload = DigestPayload(
+        kid_id=1,
+        kid_name="Ada",
+        for_date=date(2026, 5, 19),
+        new_matches=new_matches,
+        new_match_groups=_group_matches_by_site(new_matches),
+    )
+    txt, html = render_digest(payload, "Ada — 1 new match")
+    assert "Other" in txt
+    assert "Other" in html
+    # And not the raw enum value.
+    assert "unknown" not in txt
+    assert "unknown" not in html

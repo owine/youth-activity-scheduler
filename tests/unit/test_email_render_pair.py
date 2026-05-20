@@ -87,3 +87,31 @@ def test_offering_row_macro_renders_score_when_present(variant: str) -> None:
     tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
     out = tpl.render(m=_offering(score=0.91))
     assert "score 0.91" in out
+
+
+@pytest.mark.parametrize("variant", ["html", "text"])
+def test_offering_row_show_site_false_omits_site(variant: str) -> None:
+    macro = f"offering_row_{variant}"
+    tpl = env.from_string(
+        f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m, show_site=false) }}}}'
+    )
+    out = tpl.render(m=_offering(site_name="Park District", score=0.9))
+    assert "Park District" not in out
+
+
+@pytest.mark.parametrize("variant", ["html", "text"])
+def test_offering_row_default_includes_site(variant: str) -> None:
+    macro = f"offering_row_{variant}"
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
+    out = tpl.render(m=_offering(site_name="Park District", score=0.9))
+    assert "Park District" in out
+
+
+@pytest.mark.parametrize("variant", ["html", "text"])
+def test_offering_row_includes_registration_url(variant: str) -> None:
+    """Both row variants surface the registration link (text digests rely on this
+    after adopting offering_row_text in the grouped New Matches section)."""
+    macro = f"offering_row_{variant}"
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
+    out = tpl.render(m=_offering(registration_url="https://e.example.com/r/42"))
+    assert "https://e.example.com/r/42" in out

@@ -1,4 +1,5 @@
 {% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
 {% block subject %}{{ top_line }}{% endblock %}
 {% block body %}
 {% if payload.under_no_matches_threshold -%}
@@ -6,9 +7,19 @@ We haven't found any activities matching {{ payload.kid_name }} yet. We're still
 {%- else -%}
 {% if payload.new_matches -%}
 NEW MATCHES ({{ payload.new_matches|length }}):
-{% for m in payload.new_matches -%}
-  - {{ m.offering_name }} @ {{ m.site_name }} · {{ m.start_date|rel_date }} · {{ m.price_cents|price }} · score {{ "%.2f"|format(m.score) }}
-{% endfor %}
+{# Whitespace: the env uses trim_blocks + lstrip_blocks, which strips leading
+   whitespace BEFORE a block tag. The 2-space (program) and 4-space (row)
+   indents below therefore ride on the SAME line as their {% for %} tag, after
+   the %}, so they survive. Do NOT move the {% for %} onto its own line to
+   "tidy" this — the indentation will silently vanish. Re-baseline the digest
+   goldens if you change this block. #}
+{% for site in payload.new_match_groups -%}
+{{ site.site_name or "Unknown site" }}:
+{% for prog in site.programs %}  {{ prog.program_label }}:
+{% for m in prog.offerings %}    {{ offering_row_text(m, show_site=false) }}
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
 {%- endif %}
 {% if payload.starting_soon -%}
 STARTING SOON:

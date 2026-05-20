@@ -1,0 +1,13 @@
+Ada — 3 new matches
+NEW MATCHES (3):
+Park District:
+  Soccer:
+    - Soccer Camp · Mon, Jun 1 · $150.00 · score 0.91 · https://example.com/reg/10
+  Swim:
+    - Summer Swim · Mon, Jun 15 · $140.00 · score 0.80 · https://example.com/reg/11
+YMCA:
+  Dance:
+    - Ballet I · Wed, Jun 3 · $120.00 · score 0.66 · https://example.com/reg/12
+
+---
+Youth Activity Scheduler
