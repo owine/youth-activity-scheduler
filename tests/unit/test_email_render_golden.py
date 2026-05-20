@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.golden._scenarios import (
+    seed_crawl_failed,
     seed_new_match,
     seed_reg_opens_1h,
     seed_reg_opens_24h,
@@ -39,7 +40,8 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
         (AlertType.reg_opens_24h, seed_reg_opens_24h),
         (AlertType.watchlist_hit, seed_watchlist_hit),
         (AlertType.schedule_posted, seed_schedule_posted),
-        # Tasks 11-14 append more entries here.
+        (AlertType.crawl_failed, seed_crawl_failed),
+        # Tasks 12-14 append more entries here.
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )

@@ -4,18 +4,20 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
-from yas.db.models._types import AlertType
+from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.models.alert import Alert
+from yas.db.models.crawl_run import CrawlRun
 from yas.db.models.kid import Kid
 from yas.db.models.match import Match
 from yas.db.models.offering import Offering
 from yas.db.models.site import Site
 from yas.email._errors import EmailRenderError
 from yas.email.payloads import (
+    CrawlFailedPayload,
     DigestPayload,
     NewMatchPayload,
     RegOpens1hPayload,
@@ -24,6 +26,8 @@ from yas.email.payloads import (
     SchedulePostedPayload,
     WatchlistHitPayload,
 )
+
+_ERROR_SUMMARY_MAX = 200
 
 
 def _offering_to_dict(
@@ -563,7 +567,93 @@ async def build_schedule_posted(
     )
 
 
+async def build_crawl_failed(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> CrawlFailedPayload:
+    """Build a CrawlFailedPayload for a site-scoped crawl_failed alert.
+
+    Source-of-truth for fields (matches ``enqueue_crawl_failed`` in
+    ``src/yas/alerts/enqueuer.py``):
+
+    * ``error_summary`` <- ``payload_json["last_error"]`` (also accepts
+      ``error_summary`` / ``error`` keys for forward-compatibility).
+      Truncated to 200 characters with an ellipsis indicator.
+    * ``failure_count`` <- ``payload_json["consecutive_failures"]`` (also
+      accepts legacy ``failure_count``); defaults to ``1`` when absent.
+    * ``last_success_at`` <- ``payload_json["last_success_at"]`` (ISO string)
+      when supplied; otherwise queried from ``CrawlRun`` as
+      ``max(finished_at) where site_id == lead.site_id and status == ok``
+      (None when no successful crawl has ever completed).
+
+    Site-keyed alert (``Alert.kid_id`` is None); ``members`` is unused (one
+    alert per site dedup key, no coalescing).
+    """
+    del members  # site-scoped, not coalesced
+    if lead.site_id is None:
+        raise EmailRenderError(
+            "crawl_failed alert has no site_id", alert_id=lead.id
+        )
+
+    site = (
+        await session.execute(select(Site).where(Site.id == lead.site_id))
+    ).scalar_one_or_none()
+    if site is None:
+        raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
+
+    pj = lead.payload_json or {}
+
+    raw_err: Any = (
+        pj.get("error_summary") or pj.get("last_error") or pj.get("error") or ""
+    )
+    if not isinstance(raw_err, str):
+        raw_err = str(raw_err)
+    if len(raw_err) > _ERROR_SUMMARY_MAX:
+        # Reserve 1 char for the truncation marker so the total stays bounded.
+        error_summary = raw_err[: _ERROR_SUMMARY_MAX - 1] + "…"
+    else:
+        error_summary = raw_err
+
+    failure_raw = pj.get("consecutive_failures", pj.get("failure_count", 1))
+    try:
+        failure_count = int(failure_raw)
+    except (TypeError, ValueError):
+        failure_count = 1
+
+    last_success_at: datetime | None = None
+    raw_lsa = pj.get("last_success_at")
+    if isinstance(raw_lsa, str) and raw_lsa:
+        try:
+            last_success_at = datetime.fromisoformat(raw_lsa)
+        except ValueError:
+            last_success_at = None
+    elif isinstance(raw_lsa, datetime):
+        last_success_at = raw_lsa
+
+    if last_success_at is None:
+        last_success_at = (
+            await session.execute(
+                select(func.max(CrawlRun.finished_at))
+                .where(CrawlRun.site_id == lead.site_id)
+                .where(CrawlRun.status == CrawlStatus.ok.value)
+            )
+        ).scalar_one_or_none()
+
+    if last_success_at is not None and last_success_at.tzinfo is None:
+        last_success_at = last_success_at.replace(tzinfo=UTC)
+
+    return CrawlFailedPayload(
+        site_id=site.id,
+        site_name=site.name,
+        error_summary=error_summary,
+        last_success_at=last_success_at,
+        failure_count=failure_count,
+    )
+
+
 __all__ = [
+    "build_crawl_failed",
     "build_new_match",
     "build_reg_opens_1h",
     "build_reg_opens_24h",

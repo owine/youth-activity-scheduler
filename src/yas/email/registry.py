@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Literal
 
 from yas.db.models._types import AlertType
 from yas.email.builders import (
+    build_crawl_failed,
     build_new_match,
     build_reg_opens_1h,
     build_reg_opens_24h,
@@ -75,5 +76,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_schedule_posted,
         html_template="schedule_posted.html.j2",
         txt_template="schedule_posted.txt.j2",
+    ),
+    AlertType.crawl_failed: TypeRenderer(
+        build=build_crawl_failed,
+        html_template="crawl_failed.html.j2",
+        txt_template="crawl_failed.txt.j2",
     ),
 }

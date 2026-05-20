@@ -1,0 +1,11 @@
+Crawl failed: Northshore Athletics
+Northshore Athletics
+
+Last successful crawl: Sun 12:00 PM May 17
+Failure count: 3
+
+Error:
+> HTTPError 503: Service Unavailable
+
+---
+Youth Activity Scheduler

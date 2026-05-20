@@ -8,10 +8,12 @@ import pytest
 
 from yas.db.base import Base
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
-from yas.db.models._types import AlertType, PageKind
+from yas.db.models._types import AlertType, CrawlStatus, PageKind
+from yas.db.models.crawl_run import CrawlRun
 from yas.db.session import create_engine_for, session_scope
 from yas.email import EmailRenderError
 from yas.email.builders import (
+    build_crawl_failed,
     build_new_match,
     build_reg_opens_1h,
     build_reg_opens_24h,
@@ -20,6 +22,7 @@ from yas.email.builders import (
     build_watchlist_hit,
 )
 from yas.email.payloads import (
+    CrawlFailedPayload,
     NewMatchPayload,
     RegOpens1hPayload,
     RegOpens24hPayload,
@@ -696,3 +699,102 @@ async def test_build_schedule_posted_no_offerings_raises(tmp_path: Any) -> None:
         await s.flush()
         with pytest.raises(EmailRenderError):
             await build_schedule_posted(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_crawl_failed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_crawl_failed_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Northshore Athletics", base_url="https://n.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        last_ok = NOW - timedelta(days=2)
+        run = CrawlRun(
+            site_id=site.id,
+            started_at=last_ok - timedelta(minutes=5),
+            finished_at=last_ok,
+            status=CrawlStatus.ok.value,
+            pages_fetched=4,
+        )
+        s.add(run)
+        await s.flush()
+        a = Alert(
+            type=AlertType.crawl_failed.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="cf-happy",
+            payload_json={
+                "consecutive_failures": 3,
+                "last_error": "HTTPError 503: Service Unavailable",
+            },
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_crawl_failed(s, a, [a])
+
+    assert isinstance(payload, CrawlFailedPayload)
+    assert payload.site_name == "Northshore Athletics"
+    assert payload.failure_count == 3
+    assert payload.error_summary == "HTTPError 503: Service Unavailable"
+    assert payload.last_success_at is not None
+    # CrawlRun.finished_at round-trips through SQLite; we normalize to UTC.
+    assert payload.last_success_at.replace(tzinfo=None) == last_ok.replace(tzinfo=None)
+
+
+@pytest.mark.asyncio
+async def test_build_crawl_failed_no_site_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.crawl_failed.value,
+            kid_id=None,
+            site_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="cf-nosite",
+            payload_json={"consecutive_failures": 1, "last_error": "boom"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_crawl_failed(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_crawl_failed_truncates_long_error(tmp_path: Any) -> None:
+    """Errors longer than 200 chars are truncated with an ellipsis marker."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Talky Site", base_url="https://t.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        long_err = "ERR: " + ("x" * 500)
+        a = Alert(
+            type=AlertType.crawl_failed.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="cf-long",
+            payload_json={"consecutive_failures": 7, "last_error": long_err},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        payload = await build_crawl_failed(s, a, [a])
+
+    # Truncation cap is ~200 chars including the ellipsis marker.
+    assert len(payload.error_summary) == 200
+    assert payload.error_summary.endswith("…")
+    assert payload.last_success_at is None  # no successful CrawlRun seeded
+    assert payload.failure_count == 7

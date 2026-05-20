@@ -85,6 +85,22 @@ class SchedulePostedPayload:
 
 
 @dataclass(frozen=True)
+class CrawlFailedPayload:
+    """Site-scoped ``crawl_failed`` alert: crawler has been failing for a site.
+
+    Site-keyed (``Alert.site_id``, ``kid_id`` is None). ``error_summary`` is
+    truncated to ~200 chars by the builder. ``last_success_at`` may be None
+    when there has never been a successful crawl.
+    """
+
+    site_id: int
+    site_name: str
+    error_summary: str
+    last_success_at: datetime | None
+    failure_count: int
+
+
+@dataclass(frozen=True)
 class RegOpens24hPayload:
     """Per-offering reg_opens_24h alert. Not coalesced.
 
@@ -101,6 +117,7 @@ class RegOpens24hPayload:
 
 
 __all__ = [
+    "CrawlFailedPayload",
     "DigestPayload",
     "NewMatchPayload",
     "RegOpens1hPayload",

@@ -11,7 +11,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
-from yas.db.models._types import AlertType, PageKind
+from yas.db.models._types import AlertType, CrawlStatus, PageKind
+from yas.db.models.crawl_run import CrawlRun
 
 # Fixed timestamp -- goldens must be deterministic.
 GOLDEN_NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
@@ -274,6 +275,46 @@ async def seed_reg_opens_24h(session: AsyncSession) -> tuple[Alert, list[Alert]]
         scheduled_for=GOLDEN_NOW,
         dedup_key="reg_opens_24h-golden",
         payload_json={"offering_id": off.id},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
+async def seed_crawl_failed(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a site-scoped crawl_failed scenario.
+
+    Site "Northshore Athletics" has a successful crawl 2 days before
+    ``GOLDEN_NOW`` and three subsequent failed crawls. The lead alert carries
+    a short error summary so the template ``<code>`` block stays readable.
+    """
+    site = Site(
+        name="Northshore Athletics", base_url="https://n.example.com", active=True
+    )
+    session.add(site)
+    await session.flush()
+    last_ok = GOLDEN_NOW - timedelta(days=2)
+    ok_run = CrawlRun(
+        site_id=site.id,
+        started_at=last_ok - timedelta(minutes=5),
+        finished_at=last_ok,
+        status=CrawlStatus.ok.value,
+        pages_fetched=4,
+    )
+    session.add(ok_run)
+    await session.flush()
+    a = Alert(
+        type=AlertType.crawl_failed.value,
+        kid_id=None,
+        site_id=site.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="crawl_failed-golden",
+        payload_json={
+            "consecutive_failures": 3,
+            "last_error": "HTTPError 503: Service Unavailable",
+        },
         skipped=False,
     )
     session.add(a)
