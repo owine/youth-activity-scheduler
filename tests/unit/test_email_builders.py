@@ -11,8 +11,18 @@ from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
 from yas.db.session import create_engine_for, session_scope
 from yas.email import EmailRenderError
-from yas.email.builders import build_new_match, build_reg_opens_1h, build_reg_opens_now
-from yas.email.payloads import NewMatchPayload, RegOpens1hPayload, RegOpensNowPayload
+from yas.email.builders import (
+    build_new_match,
+    build_reg_opens_1h,
+    build_reg_opens_24h,
+    build_reg_opens_now,
+)
+from yas.email.payloads import (
+    NewMatchPayload,
+    RegOpens1hPayload,
+    RegOpens24hPayload,
+    RegOpensNowPayload,
+)
 
 NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
 
@@ -384,3 +394,47 @@ async def test_build_reg_opens_1h_no_url_raises(tmp_path: Any) -> None:
         a, _, _ = await _seed_reg_opens_now_minimal(s, registration_url=None)
         with pytest.raises(EmailRenderError):
             await build_reg_opens_1h(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_reg_opens_24h
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_24h_happy_path(tmp_path: Any) -> None:
+    """Explicit ``now`` is preserved on the payload for determinism."""
+    eng = await _engine(tmp_path)
+    fixed_now = NOW - timedelta(hours=24)
+    async with session_scope(eng) as s:
+        a, _off, _kid = await _seed_reg_opens_now_minimal(s)
+        payload = await build_reg_opens_24h(s, a, [a], now=fixed_now)
+
+    assert isinstance(payload, RegOpens24hPayload)
+    assert payload.kid_name == "Bo"
+    assert payload.offering["offering_name"] == "Tennis Camp"
+    assert payload.registration_url == "https://p.example.com/r/20"
+    assert payload.now == fixed_now
+    assert payload.opens_at is not None
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_24h_missing_offering_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW)
+        s.add(kid)
+        await s.flush()
+        a = Alert(
+            type=AlertType.reg_opens_24h.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="r24h-noff",
+            payload_json={"offering_id": 999999},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_reg_opens_24h(s, a, [a])

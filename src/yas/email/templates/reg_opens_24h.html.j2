@@ -1,0 +1,24 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html, reg_countdown_html %}
+
+{% block title %}Registration opens tomorrow: {{ payload.offering.offering_name }}{% endblock %}
+{% block heading %}Registration opens tomorrow: {{ payload.offering.offering_name }}{% endblock %}
+
+{% block body %}
+{{ reg_countdown_html(payload.opens_at, "Registration opens tomorrow") }}
+
+<ul>
+  {{ offering_row_html(payload.offering) }}
+</ul>
+
+<p style="margin-top: 16px; color: #555;">
+  Add this to your calendar so you don't miss the opening.
+</p>
+
+<p style="margin-top: 12px;">
+  <a href="{{ payload.registration_url }}"
+     style="background: #2a6df4; color: #fff; padding: 10px 16px; border-radius: 4px; text-decoration: none;">
+    View registration page
+  </a>
+</p>
+{% endblock %}

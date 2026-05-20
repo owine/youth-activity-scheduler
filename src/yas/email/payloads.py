@@ -59,9 +59,26 @@ class RegOpens1hPayload:
     now: datetime
 
 
+@dataclass(frozen=True)
+class RegOpens24hPayload:
+    """Per-offering reg_opens_24h alert. Not coalesced.
+
+    Same shape as :class:`RegOpens1hPayload`; kept separate because future
+    divergence (different fields per cadence) is likely.
+    """
+
+    kid_id: int
+    kid_name: str
+    offering: dict[str, Any]
+    opens_at: datetime
+    registration_url: str
+    now: datetime
+
+
 __all__ = [
     "DigestPayload",
     "NewMatchPayload",
     "RegOpens1hPayload",
+    "RegOpens24hPayload",
     "RegOpensNowPayload",
 ]

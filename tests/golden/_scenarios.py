@@ -143,3 +143,48 @@ async def seed_reg_opens_1h(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     session.add(a)
     await session.flush()
     return a, [a]
+
+
+async def seed_reg_opens_24h(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a single-offering reg_opens_24h scenario.
+
+    ``Offering.registration_opens_at == GOLDEN_NOW + 24h`` and the alert is
+    scheduled at ``GOLDEN_NOW`` so the 24h offset is exact.
+    """
+    site = Site(name="Park District", base_url="https://p.example.com", active=True)
+    session.add(site)
+    await session.flush()
+    page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+    session.add(page)
+    await session.flush()
+    kid = Kid(name="Dee", dob=date(2019, 5, 1), created_at=GOLDEN_NOW - timedelta(days=30))
+    session.add(kid)
+    await session.flush()
+    off = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name="Art Class",
+        normalized_name="art class",
+        start_date=date(2026, 9, 1),
+        price_cents=9000,
+        registration_url="https://p.example.com/r/40",
+        registration_opens_at=GOLDEN_NOW + timedelta(hours=24),
+    )
+    session.add(off)
+    await session.flush()
+    m = Match(kid_id=kid.id, offering_id=off.id, score=0.72, computed_at=GOLDEN_NOW)
+    session.add(m)
+    await session.flush()
+    a = Alert(
+        type=AlertType.reg_opens_24h.value,
+        kid_id=kid.id,
+        offering_id=off.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="reg_opens_24h-golden",
+        payload_json={"offering_id": off.id},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
