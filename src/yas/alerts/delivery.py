@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +18,7 @@ from yas.alerts.routing import get_routing
 from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings
 from yas.db.models._types import AlertType
+from yas.email import EmailRenderError, render_email
 from yas.logging import get_logger
 
 log = get_logger("yas.alerts.delivery")
@@ -32,33 +32,6 @@ _RETRY_DELAYS: dict[int, timedelta] = {
     3: timedelta(minutes=30),
 }
 _MAX_RETRIES = 3  # after attempt 3 → skipped
-
-
-# ---------------------------------------------------------------------------
-# Minimal subject / body renderers (Task 10 will provide rich digest rendering)
-# ---------------------------------------------------------------------------
-
-
-def _render_subject(
-    alert_type: str,
-    payload: dict[str, Any],
-    member_count: int,
-) -> str:
-    # TODO(Task 10): replace with Jinja template rendering.
-    prefix = f"[{member_count}] " if member_count > 1 else ""
-    return f"{prefix}{alert_type}"
-
-
-def _render_body(
-    alert_type: str,
-    lead_payload: dict[str, Any],
-    member_payloads: list[dict[str, Any]],
-) -> str:
-    # TODO(Task 10): replace with Jinja template rendering.
-    lines = [f"Alert: {alert_type}"]
-    if len(member_payloads) > 1:
-        lines.append(f"Members: {len(member_payloads)}")
-    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -151,19 +124,57 @@ async def send_alert_group(
         return
 
     # 2. Build message --------------------------------------------------------
-    member_payloads = [a.payload_json for a in members]
-    subject = _render_subject(group.alert_type, lead.payload_json, len(members))
-    body_plain = _render_body(group.alert_type, lead.payload_json, member_payloads)
-    body_html = f"<pre>{body_plain}</pre>"
-    msg = NotifierMessage(
-        kid_id=group.kid_id,
-        alert_type=AlertType(group.alert_type),
-        subject=subject,
-        body_plain=body_plain,
-        body_html=body_html,
-        url=lead.payload_json.get("registration_url"),
-        urgent=(group.alert_type == AlertType.reg_opens_now.value),
-    )
+    # Digest is special: yas.worker.digest_loop pre-renders subject/body_plain/
+    # body_html into the Alert.payload_json BEFORE enqueueing (because it
+    # assembles its own DigestPayload outside the Alert lifecycle and calls
+    # render_digest_payload directly). render_email has no renderer registered
+    # for AlertType.digest by design, so we pull the pre-rendered values out
+    # of payload_json here instead of going through the registry.
+    if group.alert_type == AlertType.digest.value:
+        pj = lead.payload_json or {}
+        subject = pj.get("subject") or ""
+        body_plain = pj.get("body_plain") or ""
+        body_html = pj.get("body_html") or ""
+        if not subject or not body_plain or not body_html:
+            log.warning(
+                "delivery.digest_missing_prerender",
+                alert_id=lead.id,
+            )
+            _mark_all_skipped(members, "digest missing pre-rendered subject/body")
+            return
+        msg = NotifierMessage(
+            kid_id=group.kid_id,
+            alert_type=AlertType(group.alert_type),
+            subject=subject,
+            body_plain=body_plain,
+            body_html=body_html,
+            url=lead.payload_json.get("registration_url"),
+            urgent=False,
+        )
+    else:
+        try:
+            rendered = await render_email(
+                session, AlertType(group.alert_type), lead, members
+            )
+        except EmailRenderError as exc:
+            log.warning(
+                "email.render_failed",
+                alert_id=lead.id,
+                alert_type=group.alert_type,
+                reason=str(exc),
+            )
+            _mark_all_skipped(members, f"render failed: {exc}")
+            return
+
+        msg = NotifierMessage(
+            kid_id=group.kid_id,
+            alert_type=AlertType(group.alert_type),
+            subject=rendered.subject,
+            body_plain=rendered.body_plain,
+            body_html=rendered.body_html,
+            url=lead.payload_json.get("registration_url"),
+            urgent=(group.alert_type == AlertType.reg_opens_now.value),
+        )
 
     # 3. Per-channel send ------------------------------------------------------
     now = datetime.now(UTC)
