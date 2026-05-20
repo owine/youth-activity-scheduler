@@ -115,8 +115,7 @@ Internal-only; no flags. Single feature branch:
 1. Add `program_type` to `_offering_to_dict`; add `_group_matches_by_site` + unit test.
 2. Resolve site names in `gather_digest_payload`; populate `new_match_groups`; extend builder test (asserts the bug fix).
 3. Add `show_site` param to the macros + macro test.
-4. Update digest templates' New Matches section.
-5. Re-baseline the `with_matches` digest golden; add the multi-site golden scenario + seeder.
+4. Update digest templates' New Matches section **and** re-baseline goldens in one reviewable unit: the template change *is* what produces the golden diff, so updating the `with_matches` golden and adding the multi-site golden scenario + seeder happen in the same step/commit as the template edit.
 
 Each step keeps the suite green. The digest goldens change deliberately (grouping is the point); the change is reviewed as a golden diff.
 
