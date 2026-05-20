@@ -70,6 +70,21 @@ class RegOpens1hPayload:
 
 
 @dataclass(frozen=True)
+class SchedulePostedPayload:
+    """Site-scoped ``schedule_posted`` alert: one or more new offerings on a site.
+
+    Site-keyed (not kid-keyed): the alert references ``Alert.site_id`` rather
+    than a kid. ``new_offerings`` carries offering_row dicts with the ``score``
+    key omitted (this kind is not match-driven).
+    """
+
+    site_id: int
+    site_name: str
+    new_offerings: list[dict[str, Any]]
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
 class RegOpens24hPayload:
     """Per-offering reg_opens_24h alert. Not coalesced.
 
@@ -91,5 +106,6 @@ __all__ = [
     "RegOpens1hPayload",
     "RegOpens24hPayload",
     "RegOpensNowPayload",
+    "SchedulePostedPayload",
     "WatchlistHitPayload",
 ]

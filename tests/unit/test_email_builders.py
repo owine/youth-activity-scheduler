@@ -16,6 +16,7 @@ from yas.email.builders import (
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
+    build_schedule_posted,
     build_watchlist_hit,
 )
 from yas.email.payloads import (
@@ -23,6 +24,7 @@ from yas.email.payloads import (
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
+    SchedulePostedPayload,
     WatchlistHitPayload,
 )
 
@@ -587,3 +589,110 @@ async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
     assert payload.matches[0]["offering_name"] == "LEGO Lab"
     assert payload.matches[1]["offering_name"] == "Robotics Camp"
     assert payload.watchlist_label == "build stuff"
+
+
+# ---------------------------------------------------------------------------
+# build_schedule_posted
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_schedule_posted_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Lakeshore Rec", base_url="https://l.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        page = Page(site_id=site.id, url="https://l.example.com/s", kind=PageKind.schedule)
+        s.add(page)
+        await s.flush()
+        off1 = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Summer Swim Sessions",
+            normalized_name="summer swim sessions",
+            start_date=date(2026, 6, 15),
+            price_cents=14000,
+            registration_url="https://l.example.com/r/100",
+        )
+        s.add(off1)
+        off2 = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Sailing 101",
+            normalized_name="sailing 101",
+            start_date=date(2026, 7, 1),
+            price_cents=24000,
+            registration_url="https://l.example.com/r/101",
+        )
+        s.add(off2)
+        await s.flush()
+        a = Alert(
+            type=AlertType.schedule_posted.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="sp-happy",
+            payload_json={
+                "offering_ids": [off1.id, off2.id],
+                "notes": "fall schedule",
+            },
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_schedule_posted(s, a, [a])
+
+    assert isinstance(payload, SchedulePostedPayload)
+    assert payload.site_name == "Lakeshore Rec"
+    assert len(payload.new_offerings) == 2
+    assert payload.notes == "fall schedule"
+    # score key omitted (not match-driven)
+    assert "score" not in payload.new_offerings[0]
+    assert "score" not in payload.new_offerings[1]
+
+
+@pytest.mark.asyncio
+async def test_build_schedule_posted_no_site_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.schedule_posted.value,
+            kid_id=None,
+            site_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="sp-nosite",
+            payload_json={"offering_ids": [1]},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_schedule_posted(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_schedule_posted_no_offerings_raises(tmp_path: Any) -> None:
+    """No offering_ids in payload AND fallback window yields nothing -> raise."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Empty Rec", base_url="https://e.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        a = Alert(
+            type=AlertType.schedule_posted.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="sp-empty",
+            payload_json={"summary": None},  # no offering_ids
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_schedule_posted(s, a, [a])

@@ -22,6 +22,7 @@ from yas.email.builders import (
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
+    build_schedule_posted,
     build_watchlist_hit,
 )
 
@@ -69,5 +70,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_watchlist_hit,
         html_template="watchlist_hit.html.j2",
         txt_template="watchlist_hit.txt.j2",
+    ),
+    AlertType.schedule_posted: TypeRenderer(
+        build=build_schedule_posted,
+        html_template="schedule_posted.html.j2",
+        txt_template="schedule_posted.txt.j2",
     ),
 }

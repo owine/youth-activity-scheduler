@@ -21,6 +21,7 @@ from yas.email.payloads import (
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
+    SchedulePostedPayload,
     WatchlistHitPayload,
 )
 
@@ -457,11 +458,117 @@ async def build_reg_opens_24h(
     )
 
 
+async def build_schedule_posted(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> SchedulePostedPayload:
+    """Build a SchedulePostedPayload for a site-scoped schedule_posted alert.
+
+    Source-of-truth for offerings (in priority order):
+
+    1. ``lead.payload_json["offering_ids"]`` -- explicit list of ints. Each id
+       must resolve to an Offering row; missing ids raise ``EmailRenderError``.
+    2. Fallback query: offerings on this site whose ``first_seen`` falls inside
+       a 24h window ending at ``lead.scheduled_for``. The current enqueuer
+       (``enqueue_schedule_posted``) only stores ``{"summary": ...}`` in
+       ``payload_json`` and does NOT populate ``offering_ids``, so this
+       fallback is the production path. The explicit ``offering_ids`` path is
+       supported so callers (or future enqueuer changes) can pin an exact set.
+
+    Notes are read from ``payload_json.get("notes")`` (falls back to
+    ``payload_json.get("summary")`` for compatibility with the current
+    enqueuer, which writes ``summary``).
+
+    Site-keyed alert: requires ``lead.site_id``; ``members`` is unused (this
+    kind is one alert per (site, page) dedup key, not coalesced across
+    offerings).
+    """
+    del members  # site-scoped, not coalesced
+    if lead.site_id is None:
+        raise EmailRenderError(
+            "schedule_posted alert has no site_id", alert_id=lead.id
+        )
+
+    site = (
+        await session.execute(select(Site).where(Site.id == lead.site_id))
+    ).scalar_one_or_none()
+    if site is None:
+        raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
+
+    offerings: list[Offering] = []
+
+    raw_ids = lead.payload_json.get("offering_ids")
+    if isinstance(raw_ids, list) and raw_ids:
+        offering_ids = [int(x) for x in raw_ids]
+        rows = (
+            await session.execute(
+                select(Offering).where(Offering.id.in_(offering_ids))
+            )
+        ).scalars().all()
+        found = {o.id: o for o in rows}
+        missing = [oid for oid in offering_ids if oid not in found]
+        if missing:
+            raise EmailRenderError(
+                f"offerings not found: {missing}", alert_id=lead.id
+            )
+        # Preserve caller-supplied order.
+        offerings = [found[oid] for oid in offering_ids]
+    else:
+        # Fallback: offerings on this site first_seen within the 24h leading
+        # up to scheduled_for.
+        scheduled_for = lead.scheduled_for
+        if scheduled_for is None:
+            raise EmailRenderError(
+                "schedule_posted alert has no scheduled_for for fallback window",
+                alert_id=lead.id,
+            )
+        window_start = scheduled_for - timedelta(hours=24)
+        # SQLite strips tzinfo on read-back; pass naive bounds when the column
+        # round-trips as naive UTC.
+        ws_param: datetime = window_start
+        se_param: datetime = scheduled_for
+        offerings = list(
+            (
+                await session.execute(
+                    select(Offering)
+                    .where(Offering.site_id == lead.site_id)
+                    .where(Offering.first_seen >= ws_param)
+                    .where(Offering.first_seen <= se_param)
+                    .order_by(Offering.first_seen)
+                )
+            ).scalars().all()
+        )
+
+    if not offerings:
+        raise EmailRenderError(
+            f"schedule_posted alert has no offerings (site {lead.site_id})",
+            alert_id=lead.id,
+        )
+
+    new_offerings = [
+        _offering_to_dict(o, score=None, site_name=site.name) for o in offerings
+    ]
+
+    notes_raw = lead.payload_json.get("notes")
+    if not isinstance(notes_raw, str) or not notes_raw:
+        summary_raw = lead.payload_json.get("summary")
+        notes_raw = summary_raw if isinstance(summary_raw, str) and summary_raw else None
+
+    return SchedulePostedPayload(
+        site_id=site.id,
+        site_name=site.name,
+        new_offerings=new_offerings,
+        notes=notes_raw,
+    )
+
+
 __all__ = [
     "build_new_match",
     "build_reg_opens_1h",
     "build_reg_opens_24h",
     "build_reg_opens_now",
+    "build_schedule_posted",
     "build_watchlist_hit",
     "gather_digest_payload",
 ]

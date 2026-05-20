@@ -184,6 +184,58 @@ async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]
     return a, [a]
 
 
+async def seed_schedule_posted(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a site-scoped schedule_posted scenario with two new offerings.
+
+    Site-keyed (Alert.kid_id is None). The lead's ``payload_json`` carries an
+    explicit ``offering_ids`` list so the builder takes the explicit path
+    instead of the first_seen fallback.
+    """
+    site = Site(name="Lakeshore Rec", base_url="https://l.example.com", active=True)
+    session.add(site)
+    await session.flush()
+    page = Page(site_id=site.id, url="https://l.example.com/s", kind=PageKind.schedule)
+    session.add(page)
+    await session.flush()
+    off1 = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name="Summer Swim Sessions",
+        normalized_name="summer swim sessions",
+        start_date=date(2026, 6, 15),
+        price_cents=14000,
+        registration_url="https://l.example.com/r/100",
+    )
+    session.add(off1)
+    off2 = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name="Sailing 101",
+        normalized_name="sailing 101",
+        start_date=date(2026, 7, 1),
+        price_cents=24000,
+        registration_url="https://l.example.com/r/101",
+    )
+    session.add(off2)
+    await session.flush()
+    a = Alert(
+        type=AlertType.schedule_posted.value,
+        kid_id=None,
+        site_id=site.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="schedule_posted-golden",
+        payload_json={
+            "offering_ids": [off1.id, off2.id],
+            "notes": "Fall 2026 schedule now available",
+        },
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
 async def seed_reg_opens_24h(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     """Seed a single-offering reg_opens_24h scenario.
 

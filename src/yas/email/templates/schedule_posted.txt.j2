@@ -1,0 +1,14 @@
+{% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
+
+{% block subject %}New schedule posted: {{ payload.site_name }}{% endblock %}
+
+{% block body %}
+{{ payload.site_name }} just posted {% if payload.new_offerings | length > 1 %}{{ payload.new_offerings | length }} new offerings{% else %}a new offering{% endif %}:
+
+{% for o in payload.new_offerings %}{{ offering_row_text(o) }}
+{% endfor %}
+{% if payload.notes %}
+Note: {{ payload.notes }}
+{% endif %}
+{% endblock %}
