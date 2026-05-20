@@ -15,17 +15,21 @@ from yas.db.models.match import Match
 from yas.db.models.offering import Offering
 from yas.db.models.site import Site
 from yas.email._errors import EmailRenderError
-from yas.email.payloads import DigestPayload, NewMatchPayload
+from yas.email.payloads import DigestPayload, NewMatchPayload, RegOpensNowPayload
 
 
 def _offering_to_dict(
-    offering: Offering, score: float, site_name: str = ""
+    offering: Offering, score: float | None = None, site_name: str = ""
 ) -> dict[str, Any]:
-    """Convert an Offering ORM row + score into the standard match dict."""
-    return {
+    """Convert an Offering ORM row (+ optional score) into the standard match dict.
+
+    When ``score`` is None, the ``score`` key is omitted entirely so the macro's
+    ``{% if m.score is defined %}`` guard falls through cleanly under
+    StrictUndefined (used by reg_opens_now where no Match row may exist yet).
+    """
+    d: dict[str, Any] = {
         "offering_id": offering.id,
         "offering_name": offering.name,
-        "score": score,
         "site_id": offering.site_id,
         "start_date": offering.start_date,
         "price_cents": offering.price_cents,
@@ -34,6 +38,9 @@ def _offering_to_dict(
         # site_name populated separately by caller when available
         "site_name": site_name,
     }
+    if score is not None:
+        d["score"] = score
+    return d
 
 
 async def gather_digest_payload(
@@ -275,4 +282,86 @@ async def build_new_match(
     )
 
 
-__all__ = ["build_new_match", "gather_digest_payload"]
+async def build_reg_opens_now(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> RegOpensNowPayload:
+    """Build a RegOpensNowPayload from a single reg_opens_now alert.
+
+    reg_opens_now alerts are NOT coalesced (each opening is its own urgent
+    alert), so ``members`` is ignored. Requires a valid kid, offering, and
+    registration_url — without the URL the alert is useless and we raise.
+    """
+    del members  # not coalesced; signature kept uniform for the registry
+    if lead.kid_id is None:
+        raise EmailRenderError("reg_opens_now alert has no kid_id", alert_id=lead.id)
+
+    offering_id_raw = lead.payload_json.get("offering_id")
+    if offering_id_raw is None:
+        raise EmailRenderError(
+            "reg_opens_now alert missing offering_id", alert_id=lead.id
+        )
+    offering_id = int(offering_id_raw)
+
+    kid = (
+        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
+    ).scalar_one_or_none()
+    if kid is None:
+        raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
+
+    offering = (
+        await session.execute(select(Offering).where(Offering.id == offering_id))
+    ).scalar_one_or_none()
+    if offering is None:
+        raise EmailRenderError(
+            f"offering {offering_id} not found", alert_id=lead.id
+        )
+
+    if not offering.registration_url:
+        raise EmailRenderError(
+            f"offering {offering_id} has no registration_url", alert_id=lead.id
+        )
+
+    site_name = ""
+    if offering.site_id is not None:
+        site = (
+            await session.execute(select(Site).where(Site.id == offering.site_id))
+        ).scalar_one_or_none()
+        if site is not None:
+            site_name = site.name
+
+    # Optional Match lookup: include score if available, omit otherwise.
+    score: float | None = (
+        await session.execute(
+            select(Match.score)
+            .where(Match.kid_id == kid.id)
+            .where(Match.offering_id == offering.id)
+        )
+    ).scalar_one_or_none()
+
+    offering_dict = _offering_to_dict(offering, score=score, site_name=site_name)
+
+    # Prefer the Offering column for opens_at; fall back to payload_json.
+    opens_at: datetime | None = offering.registration_opens_at
+    if opens_at is None:
+        raw = lead.payload_json.get("opens_at")
+        if isinstance(raw, str):
+            opens_at = datetime.fromisoformat(raw)
+    if opens_at is None:
+        raise EmailRenderError(
+            f"offering {offering_id} has no registration_opens_at", alert_id=lead.id
+        )
+    if opens_at.tzinfo is None:
+        opens_at = opens_at.replace(tzinfo=UTC)
+
+    return RegOpensNowPayload(
+        kid_id=kid.id,
+        kid_name=kid.name,
+        offering=offering_dict,
+        opens_at=opens_at,
+        registration_url=offering.registration_url,
+    )
+
+
+__all__ = ["build_new_match", "build_reg_opens_now", "gather_digest_payload"]

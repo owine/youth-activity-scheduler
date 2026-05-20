@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from yas.db.models._types import AlertType
-from yas.email.builders import build_new_match
+from yas.email.builders import build_new_match, build_reg_opens_now
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,5 +43,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_new_match,
         html_template="new_match.html.j2",
         txt_template="new_match.txt.j2",
+    ),
+    AlertType.reg_opens_now: TypeRenderer(
+        build=build_reg_opens_now,
+        html_template="reg_opens_now.html.j2",
+        txt_template="reg_opens_now.txt.j2",
     ),
 }

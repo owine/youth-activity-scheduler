@@ -32,4 +32,15 @@ class NewMatchPayload:
     generated_at: datetime
 
 
-__all__ = ["DigestPayload", "NewMatchPayload"]
+@dataclass(frozen=True)
+class RegOpensNowPayload:
+    """Per-offering reg_opens_now alert. Not coalesced."""
+
+    kid_id: int
+    kid_name: str
+    offering: dict[str, Any]  # offering_row dict shape (same as new_match.matches[*])
+    opens_at: datetime
+    registration_url: str
+
+
+__all__ = ["DigestPayload", "NewMatchPayload", "RegOpensNowPayload"]

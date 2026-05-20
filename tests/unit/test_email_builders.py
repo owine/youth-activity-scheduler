@@ -11,8 +11,8 @@ from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
 from yas.db.session import create_engine_for, session_scope
 from yas.email import EmailRenderError
-from yas.email.builders import build_new_match
-from yas.email.payloads import NewMatchPayload
+from yas.email.builders import build_new_match, build_reg_opens_now
+from yas.email.payloads import NewMatchPayload, RegOpensNowPayload
 
 NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
 
@@ -185,3 +185,130 @@ async def test_build_new_match_no_kid(tmp_path: Any) -> None:
         await s.flush()
         with pytest.raises(EmailRenderError):
             await build_new_match(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_reg_opens_now
+# ---------------------------------------------------------------------------
+
+
+async def _seed_reg_opens_now_minimal(
+    s: Any,
+    *,
+    with_match: bool = True,
+    registration_url: str | None = "https://p.example.com/r/20",
+) -> tuple[Alert, Offering, Kid]:
+    site = Site(name="Park", base_url="https://p.example.com", active=True)
+    s.add(site)
+    await s.flush()
+    page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+    s.add(page)
+    await s.flush()
+    kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
+    s.add(kid)
+    await s.flush()
+    off = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name="Tennis Camp",
+        normalized_name="tennis camp",
+        start_date=date(2026, 7, 1),
+        price_cents=12000,
+        registration_url=registration_url,
+        registration_opens_at=NOW,
+    )
+    s.add(off)
+    await s.flush()
+    if with_match:
+        m = Match(kid_id=kid.id, offering_id=off.id, score=0.85, computed_at=NOW)
+        s.add(m)
+        await s.flush()
+    a = Alert(
+        type=AlertType.reg_opens_now.value,
+        kid_id=kid.id,
+        offering_id=off.id,
+        channels=[],
+        scheduled_for=NOW,
+        dedup_key="r1",
+        payload_json={"offering_id": off.id},
+        skipped=False,
+    )
+    s.add(a)
+    await s.flush()
+    return a, off, kid
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_now_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a, _off, _kid = await _seed_reg_opens_now_minimal(s)
+        payload = await build_reg_opens_now(s, a, [a])
+
+    assert isinstance(payload, RegOpensNowPayload)
+    assert payload.kid_name == "Bo"
+    assert payload.offering["offering_name"] == "Tennis Camp"
+    assert payload.offering["score"] == 0.85
+    assert payload.offering["site_name"] == "Park"
+    assert payload.registration_url == "https://p.example.com/r/20"
+    assert payload.opens_at is not None
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_now_no_kid_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.reg_opens_now.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="r-nokid",
+            payload_json={"offering_id": 1},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_reg_opens_now(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_now_missing_offering_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW)
+        s.add(kid)
+        await s.flush()
+        a = Alert(
+            type=AlertType.reg_opens_now.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="r-noff",
+            payload_json={"offering_id": 999999},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_reg_opens_now(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_now_no_url_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a, _, _ = await _seed_reg_opens_now_minimal(s, registration_url=None)
+        with pytest.raises(EmailRenderError):
+            await build_reg_opens_now(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_reg_opens_now_no_match_omits_score(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a, _, _ = await _seed_reg_opens_now_minimal(s, with_match=False)
+        payload = await build_reg_opens_now(s, a, [a])
+
+    assert "score" not in payload.offering
