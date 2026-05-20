@@ -13,10 +13,14 @@ from yas.db.models.alert import Alert
 from yas.db.models.kid import Kid
 from yas.db.models.match import Match
 from yas.db.models.offering import Offering
-from yas.email.payloads import DigestPayload
+from yas.db.models.site import Site
+from yas.email._errors import EmailRenderError
+from yas.email.payloads import DigestPayload, NewMatchPayload
 
 
-def _offering_to_dict(offering: Offering, score: float) -> dict[str, Any]:
+def _offering_to_dict(
+    offering: Offering, score: float, site_name: str = ""
+) -> dict[str, Any]:
     """Convert an Offering ORM row + score into the standard match dict."""
     return {
         "offering_id": offering.id,
@@ -28,7 +32,7 @@ def _offering_to_dict(offering: Offering, score: float) -> dict[str, Any]:
         "registration_opens_at": offering.registration_opens_at,
         "registration_url": offering.registration_url,
         # site_name populated separately by caller when available
-        "site_name": "",
+        "site_name": site_name,
     }
 
 
@@ -215,4 +219,60 @@ async def gather_digest_payload(
     )
 
 
-__all__ = ["gather_digest_payload"]
+async def build_new_match(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> NewMatchPayload:
+    """Build a NewMatchPayload from a coalesced group of new_match alerts."""
+    if lead.kid_id is None:
+        raise EmailRenderError("new_match alert has no kid_id", alert_id=lead.id)
+    kid = (
+        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
+    ).scalar_one_or_none()
+    if kid is None:
+        raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
+
+    offering_ids = [
+        int(a.payload_json["offering_id"])
+        for a in members
+        if "offering_id" in a.payload_json
+    ]
+    if not offering_ids:
+        raise EmailRenderError(
+            "new_match alert missing offering_id", alert_id=lead.id
+        )
+
+    stmt = (
+        select(Offering, Match.score)
+        .join(Match, (Match.offering_id == Offering.id) & (Match.kid_id == kid.id))
+        .where(Offering.id.in_(offering_ids))
+        .order_by(Match.score.desc())
+    )
+    rows = (await session.execute(stmt)).all()
+    if len(rows) != len(offering_ids):
+        found = {o.id for o, _ in rows}
+        missing = [oid for oid in offering_ids if oid not in found]
+        raise EmailRenderError(
+            f"offerings not found: {missing}", alert_id=lead.id
+        )
+
+    site_ids = list({o.site_id for o, _ in rows})
+    site_rows = (
+        await session.execute(select(Site).where(Site.id.in_(site_ids)))
+    ).scalars().all()
+    site_names = {s.id: s.name for s in site_rows}
+
+    matches = [
+        _offering_to_dict(o, score, site_names.get(o.site_id, ""))
+        for o, score in rows
+    ]
+    return NewMatchPayload(
+        kid_id=kid.id,
+        kid_name=kid.name,
+        matches=matches,
+        generated_at=datetime.now(UTC),
+    )
+
+
+__all__ = ["build_new_match", "gather_digest_payload"]

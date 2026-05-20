@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 
@@ -22,4 +22,14 @@ class DigestPayload:
     under_no_matches_threshold: bool = False
 
 
-__all__ = ["DigestPayload"]
+@dataclass(frozen=True)
+class NewMatchPayload:
+    """Coalesced ``new_match`` alert: one or more offerings matched for one kid."""
+
+    kid_id: int
+    kid_name: str
+    matches: list[dict[str, Any]]  # same shape as DigestPayload.new_matches
+    generated_at: datetime
+
+
+__all__ = ["DigestPayload", "NewMatchPayload"]

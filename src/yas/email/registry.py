@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from yas.db.models._types import AlertType
+from yas.email.builders import build_new_match
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,4 +38,10 @@ class TypeRenderer:
 
 # Populated incrementally across Tasks 5-14. Task 1 ships it empty so the
 # completeness test is initially red and the layer can't be silently used.
-RENDERERS: dict[EmailKind, TypeRenderer] = {}
+RENDERERS: dict[EmailKind, TypeRenderer] = {
+    AlertType.new_match: TypeRenderer(
+        build=build_new_match,
+        html_template="new_match.html.j2",
+        txt_template="new_match.txt.j2",
+    ),
+}
