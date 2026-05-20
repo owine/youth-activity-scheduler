@@ -9,11 +9,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.alerts.digest.llm_summary import generate_top_line
 from yas.db.models import HouseholdSettings, Kid
 from yas.db.session import session_scope
 from yas.email import render_digest_payload
 from yas.email.builders import gather_digest_payload
+from yas.email.llm_summary import generate_top_line
 from yas.web.routes.digest_preview_schemas import DigestPreviewOut
 
 router = APIRouter(prefix="/api/digest", tags=["digest"])

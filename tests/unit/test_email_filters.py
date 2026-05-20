@@ -1,4 +1,4 @@
-"""Tests for digest Jinja filters: price, rel_date, fmt."""
+"""Tests for the shared email-template Jinja filters: price, rel_date, fmt."""
 
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from yas.alerts.digest.llm_summary import generate_top_line
+from yas.email.llm_summary import generate_top_line
 from yas.email.payloads import DigestPayload
 
 # ---------------------------------------------------------------------------

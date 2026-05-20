@@ -1,8 +1,7 @@
-"""Tests for digest builder: gather_digest_payload and render_digest_payload.
+"""Tests for the digest builder: gather_digest_payload and render_digest_payload.
 
-Lives under tests/unit/ with the historical filename; the code under test moved
-to yas.email in the email-template-layer refactor. A future cleanup pass can
-rename this to test_email_digest_builder.py.
+The code under test lives in yas.email (yas.email.builders +
+yas.email.render_digest_payload) since the email-template-layer refactor.
 """
 
 from __future__ import annotations

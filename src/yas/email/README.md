@@ -17,6 +17,7 @@ yas/email/
 ├── filters.py         — price, rel_date, fmt
 ├── payloads.py        — one frozen dataclass per kind (the typed contract)
 ├── builders.py        — async builder per kind: (session, lead, members) → payload
+├── llm_summary.py     — generate_top_line: LLM digest top-line with template fallback
 ├── registry.py        — RENDERERS: dict[EmailKind, TypeRenderer]
 └── templates/
     ├── base.html.j2   — shared branded chrome (DOCTYPE, body styles, header, footer)

@@ -1,4 +1,4 @@
-"""Jinja2 filters for digest templates: price, rel_date, fmt."""
+"""Jinja2 filters shared by all outbound-email templates: price, rel_date, fmt."""
 
 from __future__ import annotations
 

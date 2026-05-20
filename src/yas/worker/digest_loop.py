@@ -17,7 +17,6 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.alerts.digest.llm_summary import generate_top_line
 from yas.alerts.enqueuer import enqueue_digest
 from yas.config import Settings
 from yas.db.models import HouseholdSettings
@@ -25,6 +24,7 @@ from yas.db.models.kid import Kid
 from yas.db.session import session_scope
 from yas.email import render_digest_payload
 from yas.email.builders import gather_digest_payload
+from yas.email.llm_summary import generate_top_line
 from yas.llm.client import LLMClient
 from yas.logging import get_logger
 from yas.worker.sweep import _parse_hhmm
