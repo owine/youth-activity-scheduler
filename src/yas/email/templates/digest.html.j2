@@ -12,11 +12,17 @@ We're still scanning sites and will be in touch as soon as we find something. Ba
 
 {% if payload.new_matches %}
 <h1 style="font-size: 1em; border-bottom: 1px solid #ccc;">New Matches ({{ payload.new_matches|length }})</h1>
-<ul>
-  {% for m in payload.new_matches %}
-  {{ offering_row_html(m) }}
+{% for site in payload.new_match_groups %}
+<h2 style="font-size: 0.95em; margin: 12px 0 4px;">{{ site.site_name or "Unknown site" }}</h2>
+{% for prog in site.programs %}
+<h3 style="font-size: 0.85em; color: #555; margin: 6px 0 2px;">{{ prog.program_label }}</h3>
+<ul style="margin-top: 0;">
+  {% for m in prog.offerings %}
+  {{ offering_row_html(m, show_site=false) }}
   {% endfor %}
 </ul>
+{% endfor %}
+{% endfor %}
 {% endif %}
 
 {% if payload.starting_soon %}
