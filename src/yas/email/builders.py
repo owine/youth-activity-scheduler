@@ -21,6 +21,7 @@ from yas.email.payloads import (
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
+    WatchlistHitPayload,
 )
 
 
@@ -232,14 +233,20 @@ async def gather_digest_payload(
     )
 
 
-async def build_new_match(
+async def _resolve_kid_matches(
     session: AsyncSession,
     lead: Alert,
     members: list[Alert],
-) -> NewMatchPayload:
-    """Build a NewMatchPayload from a coalesced group of new_match alerts."""
+) -> tuple[Kid, list[dict[str, Any]]]:
+    """Shared kid lookup + offering id collection + Match join + site name resolution.
+
+    Used by both :func:`build_new_match` and :func:`build_watchlist_hit` since
+    they share identical coalesced-offering shape.
+    """
     if lead.kid_id is None:
-        raise EmailRenderError("new_match alert has no kid_id", alert_id=lead.id)
+        raise EmailRenderError(
+            f"{lead.type} alert has no kid_id", alert_id=lead.id
+        )
     kid = (
         await session.execute(select(Kid).where(Kid.id == lead.kid_id))
     ).scalar_one_or_none()
@@ -253,7 +260,7 @@ async def build_new_match(
     ]
     if not offering_ids:
         raise EmailRenderError(
-            "new_match alert missing offering_id", alert_id=lead.id
+            f"{lead.type} alert missing offering_id", alert_id=lead.id
         )
 
     stmt = (
@@ -280,11 +287,41 @@ async def build_new_match(
         _offering_to_dict(o, score, site_names.get(o.site_id, ""))
         for o, score in rows
     ]
+    return kid, matches
+
+
+async def build_new_match(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> NewMatchPayload:
+    """Build a NewMatchPayload from a coalesced group of new_match alerts."""
+    kid, matches = await _resolve_kid_matches(session, lead, members)
     return NewMatchPayload(
         kid_id=kid.id,
         kid_name=kid.name,
         matches=matches,
         generated_at=datetime.now(UTC),
+    )
+
+
+async def build_watchlist_hit(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> WatchlistHitPayload:
+    """Build a WatchlistHitPayload from a coalesced group of watchlist_hit alerts.
+
+    Same shape as :func:`build_new_match`; additionally reads
+    ``watchlist_label`` from ``lead.payload_json`` (None if absent).
+    """
+    kid, matches = await _resolve_kid_matches(session, lead, members)
+    label = lead.payload_json.get("watchlist_label")
+    return WatchlistHitPayload(
+        kid_id=kid.id,
+        kid_name=kid.name,
+        matches=matches,
+        watchlist_label=label if isinstance(label, str) else None,
     )
 
 
@@ -425,5 +462,6 @@ __all__ = [
     "build_reg_opens_1h",
     "build_reg_opens_24h",
     "build_reg_opens_now",
+    "build_watchlist_hit",
     "gather_digest_payload",
 ]

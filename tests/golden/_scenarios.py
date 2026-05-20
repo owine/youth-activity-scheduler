@@ -145,6 +145,45 @@ async def seed_reg_opens_1h(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     return a, [a]
 
 
+async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a single-offering watchlist_hit scenario with a watchlist label."""
+    site = Site(name="Park District", base_url="https://p.example.com", active=True)
+    session.add(site)
+    await session.flush()
+    page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+    session.add(page)
+    await session.flush()
+    kid = Kid(name="Eli", dob=date(2019, 5, 1), created_at=GOLDEN_NOW - timedelta(days=30))
+    session.add(kid)
+    await session.flush()
+    off = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name="Robotics Camp",
+        normalized_name="robotics camp",
+        start_date=date(2026, 7, 15),
+        price_cents=22000,
+        registration_url="https://p.example.com/r/50",
+    )
+    session.add(off)
+    await session.flush()
+    m = Match(kid_id=kid.id, offering_id=off.id, score=0.88, computed_at=GOLDEN_NOW)
+    session.add(m)
+    await session.flush()
+    a = Alert(
+        type=AlertType.watchlist_hit.value,
+        kid_id=kid.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="watchlist_hit-golden",
+        payload_json={"offering_id": off.id, "watchlist_label": "robotics"},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
 async def seed_reg_opens_24h(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     """Seed a single-offering reg_opens_24h scenario.
 

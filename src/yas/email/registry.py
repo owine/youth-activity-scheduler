@@ -22,6 +22,7 @@ from yas.email.builders import (
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
+    build_watchlist_hit,
 )
 
 if TYPE_CHECKING:
@@ -63,5 +64,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_reg_opens_24h,
         html_template="reg_opens_24h.html.j2",
         txt_template="reg_opens_24h.txt.j2",
+    ),
+    AlertType.watchlist_hit: TypeRenderer(
+        build=build_watchlist_hit,
+        html_template="watchlist_hit.html.j2",
+        txt_template="watchlist_hit.txt.j2",
     ),
 }

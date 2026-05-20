@@ -16,12 +16,14 @@ from yas.email.builders import (
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
+    build_watchlist_hit,
 )
 from yas.email.payloads import (
     NewMatchPayload,
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
+    WatchlistHitPayload,
 )
 
 NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
@@ -438,3 +440,150 @@ async def test_build_reg_opens_24h_missing_offering_raises(tmp_path: Any) -> Non
         await s.flush()
         with pytest.raises(EmailRenderError):
             await build_reg_opens_24h(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_watchlist_hit
+# ---------------------------------------------------------------------------
+
+
+async def _seed_watchlist_kid_and_offering(
+    s: Any,
+    *,
+    name: str = "Robotics Camp",
+    normalized: str = "robotics camp",
+    score: float = 0.88,
+    registration_url: str = "https://p.example.com/r/50",
+) -> tuple[Kid, Offering]:
+    site = Site(name="Park", base_url="https://p.example.com", active=True)
+    s.add(site)
+    await s.flush()
+    page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+    s.add(page)
+    await s.flush()
+    kid = Kid(name="Eli", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
+    s.add(kid)
+    await s.flush()
+    off = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name=name,
+        normalized_name=normalized,
+        start_date=date(2026, 7, 15),
+        price_cents=22000,
+        registration_url=registration_url,
+    )
+    s.add(off)
+    await s.flush()
+    m = Match(kid_id=kid.id, offering_id=off.id, score=score, computed_at=NOW)
+    s.add(m)
+    await s.flush()
+    return kid, off
+
+
+@pytest.mark.asyncio
+async def test_build_watchlist_hit_single_with_label(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid, off = await _seed_watchlist_kid_and_offering(s)
+        a = Alert(
+            type=AlertType.watchlist_hit.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="wh1",
+            payload_json={"offering_id": off.id, "watchlist_label": "robotics camps"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_watchlist_hit(s, a, [a])
+
+    assert isinstance(payload, WatchlistHitPayload)
+    assert payload.kid_name == "Eli"
+    assert payload.watchlist_label == "robotics camps"
+    assert len(payload.matches) == 1
+    assert payload.matches[0]["offering_name"] == "Robotics Camp"
+
+
+@pytest.mark.asyncio
+async def test_build_watchlist_hit_single_no_label(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid, off = await _seed_watchlist_kid_and_offering(s)
+        a = Alert(
+            type=AlertType.watchlist_hit.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="wh2",
+            payload_json={"offering_id": off.id},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_watchlist_hit(s, a, [a])
+
+    assert payload.watchlist_label is None
+    assert len(payload.matches) == 1
+
+
+@pytest.mark.asyncio
+async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
+    """Two offerings -> ordered by score desc."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid, off1 = await _seed_watchlist_kid_and_offering(
+            s,
+            name="Robotics Camp",
+            normalized="robotics camp",
+            score=0.7,
+            registration_url="https://p.example.com/r/50",
+        )
+        # Second offering on same kid
+        site_id = off1.site_id
+        page_id = off1.page_id
+        off2 = Offering(
+            site_id=site_id,
+            page_id=page_id,
+            name="LEGO Lab",
+            normalized_name="lego lab",
+            start_date=date(2026, 7, 20),
+            price_cents=18000,
+            registration_url="https://p.example.com/r/51",
+        )
+        s.add(off2)
+        await s.flush()
+        m2 = Match(kid_id=kid.id, offering_id=off2.id, score=0.95, computed_at=NOW)
+        s.add(m2)
+        await s.flush()
+        a1 = Alert(
+            type=AlertType.watchlist_hit.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="wh-c1",
+            payload_json={"offering_id": off1.id, "watchlist_label": "build stuff"},
+            skipped=False,
+        )
+        a2 = Alert(
+            type=AlertType.watchlist_hit.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="wh-c2",
+            payload_json={"offering_id": off2.id},
+            skipped=False,
+        )
+        s.add(a1)
+        s.add(a2)
+        await s.flush()
+
+        payload = await build_watchlist_hit(s, a1, [a1, a2])
+
+    assert len(payload.matches) == 2
+    assert payload.matches[0]["offering_name"] == "LEGO Lab"
+    assert payload.matches[1]["offering_name"] == "Robotics Camp"
+    assert payload.watchlist_label == "build stuff"

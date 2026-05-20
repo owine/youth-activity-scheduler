@@ -13,6 +13,7 @@ from tests.golden._scenarios import (
     seed_reg_opens_1h,
     seed_reg_opens_24h,
     seed_reg_opens_now,
+    seed_watchlist_hit,
 )
 from yas.db.base import Base
 from yas.db.models import Alert
@@ -35,7 +36,8 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
         (AlertType.reg_opens_now, seed_reg_opens_now),
         (AlertType.reg_opens_1h, seed_reg_opens_1h),
         (AlertType.reg_opens_24h, seed_reg_opens_24h),
-        # Tasks 9-14 append more entries here.
+        (AlertType.watchlist_hit, seed_watchlist_hit),
+        # Tasks 10-14 append more entries here.
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )

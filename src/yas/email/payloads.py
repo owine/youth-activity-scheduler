@@ -33,6 +33,16 @@ class NewMatchPayload:
 
 
 @dataclass(frozen=True)
+class WatchlistHitPayload:
+    """Coalesced ``watchlist_hit`` alert: offerings matching a watched query."""
+
+    kid_id: int
+    kid_name: str
+    matches: list[dict[str, Any]]  # same shape as NewMatchPayload.matches
+    watchlist_label: str | None = None
+
+
+@dataclass(frozen=True)
 class RegOpensNowPayload:
     """Per-offering reg_opens_now alert. Not coalesced."""
 
@@ -81,4 +91,5 @@ __all__ = [
     "RegOpens1hPayload",
     "RegOpens24hPayload",
     "RegOpensNowPayload",
+    "WatchlistHitPayload",
 ]

@@ -1,0 +1,24 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html %}
+
+{% block title %}Watchlist hit — {{ payload.kid_name }}{% endblock %}
+{% block heading %}Watchlist {% if payload.matches | length > 1 %}matches{% else %}hit{% endif %} for {{ payload.kid_name }}{% endblock %}
+
+{% block body %}
+<p style="background: #e8f4f8; border-left: 4px solid #2a6df4; padding: 12px; margin: 0 0 16px 0;">
+  <strong>On your watchlist{% if payload.watchlist_label %}: "{{ payload.watchlist_label }}"{% endif %}</strong>
+</p>
+
+<ul>
+  {% for m in payload.matches %}{{ offering_row_html(m) }}{% endfor %}
+</ul>
+
+{% if payload.matches | length == 1 and payload.matches[0].registration_url %}
+<p style="margin-top: 16px;">
+  <a href="{{ payload.matches[0].registration_url }}"
+     style="background: #2a6df4; color: #fff; padding: 10px 16px; border-radius: 4px; text-decoration: none;">
+    Register
+  </a>
+</p>
+{% endif %}
+{% endblock %}
