@@ -6,8 +6,6 @@ note in ``yas.email.registry`` for the rationale.
 """
 from __future__ import annotations
 
-import pytest
-
 from yas.db.models._types import AlertType
 from yas.email.registry import RENDERERS
 
@@ -15,11 +13,13 @@ from yas.email.registry import RENDERERS
 _REGISTRY_EXCLUDED: frozenset[str] = frozenset({AlertType.digest.value})
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Renderers wired incrementally across Tasks 5-14; flips to PASS at Task 14.",
-)
 def test_every_alert_type_has_a_renderer() -> None:
+    """The registry is complete: every email-deliverable AlertType (digest
+    excluded) plus the ``test_send`` literal has a renderer.
+
+    Task 14 completed the registry; this is the live completeness guarantee.
+    Adding a new AlertType without a corresponding RENDERERS entry fails CI.
+    """
     expected = ({at.value for at in AlertType} - _REGISTRY_EXCLUDED) | {"test_send"}
     actual = {str(k) for k in RENDERERS}
     assert actual == expected, (

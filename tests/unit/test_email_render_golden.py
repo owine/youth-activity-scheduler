@@ -18,6 +18,7 @@ from tests.golden._scenarios import (
     seed_reg_opens_now,
     seed_schedule_posted,
     seed_site_stagnant,
+    seed_test_send,
     seed_watchlist_hit,
 )
 from yas.db.base import Base
@@ -47,7 +48,7 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
         (AlertType.site_stagnant, seed_site_stagnant),
         (AlertType.no_matches_for_kid, seed_no_matches_for_kid),
         (AlertType.push_cap, seed_push_cap),
-        # Task 14 appends test_send here.
+        ("test_send", seed_test_send),
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )

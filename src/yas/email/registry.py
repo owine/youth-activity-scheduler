@@ -27,6 +27,7 @@ from yas.email.builders import (
     build_reg_opens_now,
     build_schedule_posted,
     build_site_stagnant,
+    build_test_send,
     build_watchlist_hit,
 )
 
@@ -47,8 +48,10 @@ class TypeRenderer:
     txt_template: str
 
 
-# Populated incrementally across Tasks 5-14. Task 1 ships it empty so the
-# completeness test is initially red and the layer can't be silently used.
+# Populated incrementally across Tasks 5-14. Task 1 shipped it empty; Task 14
+# completes the registry (every AlertType except digest, plus the "test_send"
+# literal). Membership is asserted (strict, not xfail) by
+# ``tests/unit/test_email_registry.py``.
 RENDERERS: dict[EmailKind, TypeRenderer] = {
     AlertType.new_match: TypeRenderer(
         build=build_new_match,
@@ -99,5 +102,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_push_cap,
         html_template="push_cap.html.j2",
         txt_template="push_cap.txt.j2",
+    ),
+    "test_send": TypeRenderer(
+        build=build_test_send,
+        html_template="test_send.html.j2",
+        txt_template="test_send.txt.j2",
     ),
 }

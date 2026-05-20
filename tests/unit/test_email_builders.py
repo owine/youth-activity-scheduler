@@ -22,6 +22,7 @@ from yas.email.builders import (
     build_reg_opens_now,
     build_schedule_posted,
     build_site_stagnant,
+    build_test_send,
     build_watchlist_hit,
 )
 from yas.email.payloads import (
@@ -34,6 +35,7 @@ from yas.email.payloads import (
     RegOpensNowPayload,
     SchedulePostedPayload,
     SiteStagnantPayload,
+    TestSendPayload,
     WatchlistHitPayload,
 )
 
@@ -993,3 +995,47 @@ async def test_build_push_cap_missing_count_raises(tmp_path: Any) -> None:
         await s.flush()
         with pytest.raises(EmailRenderError):
             await build_push_cap(s, a, [a])
+
+
+@pytest.mark.asyncio
+async def test_build_test_send_default_channel(tmp_path: Any) -> None:
+    """Empty payload_json -> channel defaults to 'email'; now is timezone-aware."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.digest.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="ts-default",
+            payload_json={},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        payload = await build_test_send(s, a, [a])
+
+    assert isinstance(payload, TestSendPayload)
+    assert payload.channel == "email"
+    assert payload.now.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_build_test_send_explicit_channel(tmp_path: Any) -> None:
+    """Explicit channel in payload_json flows through to the payload."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.digest.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="ts-ntfy",
+            payload_json={"channel": "ntfy"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        payload = await build_test_send(s, a, [a])
+
+    assert payload.channel == "ntfy"

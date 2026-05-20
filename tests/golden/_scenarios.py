@@ -368,6 +368,31 @@ async def seed_push_cap(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     return a, [a]
 
 
+async def seed_test_send(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a test_send scenario.
+
+    test_send carries no real DB state -- it is a user-initiated channel
+    test. The Alert here is synthesized just to give the renderer a lead;
+    we persist it (the test engine doesn't care) but no other rows are
+    needed. ``now`` is pinned via ``payload_json["now"]`` so the golden is
+    deterministic.
+    """
+    a = Alert(
+        # ``type`` is required by the model but unused since the registry
+        # dispatches on the kind="test_send" literal, not the alert's type.
+        type=AlertType.digest.value,
+        kid_id=None,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="test_send-golden",
+        payload_json={"channel": "email", "now": GOLDEN_NOW.isoformat()},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
 async def seed_site_stagnant(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     """Seed a site-scoped site_stagnant scenario.
 

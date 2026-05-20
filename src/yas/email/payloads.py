@@ -141,6 +141,20 @@ class PushCapPayload:
 
 
 @dataclass(frozen=True)
+class TestSendPayload:
+    """User-initiated channel-test email.
+
+    Built by :func:`yas.email.builders.build_test_send` from a synthetic
+    (un-persisted) Alert carrying ``payload_json={"channel": <channel>}``;
+    rendered with the same branded base chrome as production alerts so the
+    "Send test" button in the settings UI surfaces the real look-and-feel.
+    """
+
+    channel: str
+    now: datetime
+
+
+@dataclass(frozen=True)
 class RegOpens24hPayload:
     """Per-offering reg_opens_24h alert. Not coalesced.
 
@@ -167,5 +181,6 @@ __all__ = [
     "RegOpensNowPayload",
     "SchedulePostedPayload",
     "SiteStagnantPayload",
+    "TestSendPayload",
     "WatchlistHitPayload",
 ]

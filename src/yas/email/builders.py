@@ -27,6 +27,7 @@ from yas.email.payloads import (
     RegOpensNowPayload,
     SchedulePostedPayload,
     SiteStagnantPayload,
+    TestSendPayload,
     WatchlistHitPayload,
 )
 
@@ -832,6 +833,43 @@ async def build_push_cap(
     )
 
 
+async def build_test_send(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> TestSendPayload:
+    """Build a TestSendPayload for a user-initiated channel-test email.
+
+    Does not touch the DB (``session`` / ``members`` are accepted only for
+    protocol compliance with :class:`yas.email.registry.TypeRenderer`). The
+    channel name is pulled from ``lead.payload_json["channel"]`` -- the
+    notifier-test route synthesizes a one-shot Alert carrying exactly that
+    field. ``now`` defaults to ``datetime.now(UTC)``; the route does not
+    set it, but seeds (goldens) can pin it via ``payload_json["now"]`` (ISO
+    string) for deterministic output.
+    """
+    del session, members  # protocol-compliant signature, no DB / coalescing
+    pj = lead.payload_json or {}
+    channel_raw = pj.get("channel", "email")
+    channel = channel_raw if isinstance(channel_raw, str) and channel_raw else "email"
+
+    now: datetime | None = None
+    raw_now = pj.get("now")
+    if isinstance(raw_now, str) and raw_now:
+        try:
+            now = datetime.fromisoformat(raw_now)
+        except ValueError:
+            now = None
+    elif isinstance(raw_now, datetime):
+        now = raw_now
+    if now is None:
+        now = datetime.now(UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+
+    return TestSendPayload(channel=channel, now=now)
+
+
 __all__ = [
     "build_crawl_failed",
     "build_new_match",
@@ -842,6 +880,7 @@ __all__ = [
     "build_reg_opens_now",
     "build_schedule_posted",
     "build_site_stagnant",
+    "build_test_send",
     "build_watchlist_hit",
     "gather_digest_payload",
 ]
