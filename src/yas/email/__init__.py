@@ -7,11 +7,15 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.db.models import Alert
-from yas.db.models._types import AlertType
 from yas.email._errors import EmailRenderError
 from yas.email.environment import env
 from yas.email.payloads import DigestPayload
 from yas.email.registry import RENDERERS, EmailKind
+
+# Digest is rendered through render_digest_payload (bypassing the Alert-driven
+# registry path); these are the only hard-coded template names in the layer.
+_DIGEST_HTML_TEMPLATE = "digest.html.j2"
+_DIGEST_TXT_TEMPLATE = "digest.txt.j2"
 
 
 @dataclass(frozen=True)
@@ -56,16 +60,13 @@ def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmai
     """Synchronous render for the digest path.
 
     The digest assembles its own payload outside the Alert lifecycle (in
-    yas.worker.digest_loop), so it bypasses ``render_email`` and the
-    ``TypeRenderer.build`` callable.
+    yas.worker.digest_loop), so it bypasses ``render_email``, the registry, and
+    the ``TypeRenderer.build`` callable. Template names are hard-coded here
+    rather than registered as a stub TypeRenderer.
     """
-    try:
-        renderer = RENDERERS[AlertType.digest]
-    except KeyError as exc:
-        raise EmailRenderError("digest renderer not registered") from exc
     return _render_pair(
-        renderer.html_template,
-        renderer.txt_template,
+        _DIGEST_HTML_TEMPLATE,
+        _DIGEST_TXT_TEMPLATE,
         {"payload": payload, "top_line": top_line},
     )
 
