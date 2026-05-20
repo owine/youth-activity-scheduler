@@ -47,6 +47,7 @@ def _offering_to_dict(
     d: dict[str, Any] = {
         "offering_id": offering.id,
         "offering_name": offering.name,
+        "program_type": offering.program_type,
         "site_id": offering.site_id,
         "start_date": offering.start_date,
         "price_cents": offering.price_cents,
@@ -164,6 +165,20 @@ async def gather_digest_payload(
     for m, o in match_rows:
         d = _offering_to_dict(o, m.score)
         new_matches.append(d)
+
+    # Resolve site names for the new-match offerings (one batch query) and
+    # populate site_name on each dict. Without this the digest showed no site
+    # (site_name defaulted to "" and the row macro guard dropped it).
+    if new_matches:
+        site_ids = {m["site_id"] for m in new_matches}
+        name_rows = (
+            await session.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
+        ).all()
+        site_names = {row.id: row.name for row in name_rows}
+        for m in new_matches:
+            m["site_name"] = site_names.get(m["site_id"], "")
+
+    new_match_groups = _group_matches_by_site(new_matches)
 
     # ------------------------------------------------------------------
     # 2. starting_soon -- any matched offering starting in (today, today+14d]
@@ -292,6 +307,7 @@ async def gather_digest_payload(
         kid_name=kid.name,
         for_date=today,
         new_matches=new_matches,
+        new_match_groups=new_match_groups,
         starting_soon=starting_soon,
         registration_calendar=registration_calendar,
         delivery_failures=delivery_failures,

@@ -15,6 +15,7 @@ class DigestPayload:
     kid_name: str
     for_date: date
     new_matches: list[dict[str, Any]] = field(default_factory=list)
+    new_match_groups: list[dict[str, Any]] = field(default_factory=list)
     starting_soon: list[dict[str, Any]] = field(default_factory=list)
     registration_calendar: list[dict[str, Any]] = field(default_factory=list)
     delivery_failures: list[dict[str, Any]] = field(default_factory=list)
