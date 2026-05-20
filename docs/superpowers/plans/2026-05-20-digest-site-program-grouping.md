@@ -94,7 +94,7 @@ def test_groups_by_site_then_program():
     park = groups[0]
     # Programs ordered by their best offering's score: soccer (0.91) before swim (0.80).
     assert [p["program_type"] for p in park["programs"]] == ["soccer", "swim"]
-    assert [p["program_label"] for p in park["programs"]] == ["Soccer", "Swimming" if False else "Swim"]
+    assert [p["program_label"] for p in park["programs"]] == ["Soccer", "Swim"]
     # Offerings within soccer ordered by score desc.
     soccer = park["programs"][0]
     assert [o["offering_name"] for o in soccer["offerings"]] == ["Soccer Camp", "Lil Kickers"]
@@ -113,8 +113,6 @@ def test_missing_site_name_groups_under_blank():
     assert groups[0]["site_id"] == 5
     assert groups[0]["site_name"] == ""
 ```
-
-Note: fix the `program_label` assertion line — `_program_label("swim")` returns `"Swim"`. Write it as `assert [p["program_label"] for p in park["programs"]] == ["Soccer", "Swim"]`.
 
 - [ ] **Step 2: Run, expect failure (ImportError)**
 
