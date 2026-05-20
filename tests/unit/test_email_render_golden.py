@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tests.golden._scenarios import (
     seed_crawl_failed,
     seed_new_match,
+    seed_no_matches_for_kid,
+    seed_push_cap,
     seed_reg_opens_1h,
     seed_reg_opens_24h,
     seed_reg_opens_now,
@@ -43,7 +45,9 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
         (AlertType.schedule_posted, seed_schedule_posted),
         (AlertType.crawl_failed, seed_crawl_failed),
         (AlertType.site_stagnant, seed_site_stagnant),
-        # Tasks 13-14 append more entries here.
+        (AlertType.no_matches_for_kid, seed_no_matches_for_kid),
+        (AlertType.push_cap, seed_push_cap),
+        # Task 14 appends test_send here.
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )

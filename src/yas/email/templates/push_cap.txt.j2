@@ -1,0 +1,9 @@
+{% extends "base.txt.j2" %}
+
+{% block subject %}[push] {{ payload.suppressed_count }} alerts consolidated{% endblock %}
+
+{% block body %}
+{{ payload.suppressed_count }} push notifications were consolidated to stay under the per-hour cap{% if payload.kid_name %} for {{ payload.kid_name }}{% endif %}.
+
+No action needed -- this is a notice that we batched alerts rather than send them individually.
+{% endblock %}

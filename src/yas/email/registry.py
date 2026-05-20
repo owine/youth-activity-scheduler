@@ -20,6 +20,8 @@ from yas.db.models._types import AlertType
 from yas.email.builders import (
     build_crawl_failed,
     build_new_match,
+    build_no_matches_for_kid,
+    build_push_cap,
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
@@ -87,5 +89,15 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_site_stagnant,
         html_template="site_stagnant.html.j2",
         txt_template="site_stagnant.txt.j2",
+    ),
+    AlertType.no_matches_for_kid: TypeRenderer(
+        build=build_no_matches_for_kid,
+        html_template="no_matches_for_kid.html.j2",
+        txt_template="no_matches_for_kid.txt.j2",
+    ),
+    AlertType.push_cap: TypeRenderer(
+        build=build_push_cap,
+        html_template="push_cap.html.j2",
+        txt_template="push_cap.txt.j2",
     ),
 }

@@ -15,6 +15,8 @@ from yas.email import EmailRenderError
 from yas.email.builders import (
     build_crawl_failed,
     build_new_match,
+    build_no_matches_for_kid,
+    build_push_cap,
     build_reg_opens_1h,
     build_reg_opens_24h,
     build_reg_opens_now,
@@ -25,6 +27,8 @@ from yas.email.builders import (
 from yas.email.payloads import (
     CrawlFailedPayload,
     NewMatchPayload,
+    NoMatchesForKidPayload,
+    PushCapPayload,
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
@@ -864,3 +868,128 @@ async def test_build_site_stagnant_missing_days_raises(tmp_path: Any) -> None:
         await s.flush()
         with pytest.raises(EmailRenderError):
             await build_site_stagnant(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_no_matches_for_kid
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_no_matches_for_kid_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid = Kid(name="Fia", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=14))
+        s.add(kid)
+        await s.flush()
+        a = Alert(
+            type=AlertType.no_matches_for_kid.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="nmk-happy",
+            payload_json={"kid_name": "Fia", "days_since_created": 14},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_no_matches_for_kid(s, a, [a])
+
+    assert isinstance(payload, NoMatchesForKidPayload)
+    assert payload.kid_name == "Fia"
+    assert payload.days_since_added == 14
+
+
+@pytest.mark.asyncio
+async def test_build_no_matches_for_kid_no_kid_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.no_matches_for_kid.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="nmk-nokid",
+            payload_json={"days_since_created": 14},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_no_matches_for_kid(s, a, [a])
+
+
+# ---------------------------------------------------------------------------
+# build_push_cap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_push_cap_with_kid_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        kid = Kid(name="Gabe", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
+        s.add(kid)
+        await s.flush()
+        a = Alert(
+            type=AlertType.push_cap.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="pc-happy",
+            payload_json={"suppressed_count": 5, "hour_bucket": "2026-05-19T12"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_push_cap(s, a, [a])
+
+    assert isinstance(payload, PushCapPayload)
+    assert payload.kid_id == kid.id
+    assert payload.kid_name == "Gabe"
+    assert payload.suppressed_count == 5
+
+
+@pytest.mark.asyncio
+async def test_build_push_cap_without_kid_happy_path(tmp_path: Any) -> None:
+    """System-wide push_cap with kid_id=None -> kid_name is None."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.push_cap.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="pc-nokid",
+            payload_json={"suppressed_count": 9, "hour_bucket": "2026-05-19T12"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_push_cap(s, a, [a])
+
+    assert payload.kid_id is None
+    assert payload.kid_name is None
+    assert payload.suppressed_count == 9
+
+
+@pytest.mark.asyncio
+async def test_build_push_cap_missing_count_raises(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        a = Alert(
+            type=AlertType.push_cap.value,
+            kid_id=None,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="pc-nocount",
+            payload_json={"hour_bucket": "2026-05-19T12"},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_push_cap(s, a, [a])

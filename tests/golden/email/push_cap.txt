@@ -1,0 +1,7 @@
+[push] 5 alerts consolidated
+5 push notifications were consolidated to stay under the per-hour cap for Gabe.
+
+No action needed -- this is a notice that we batched alerts rather than send them individually.
+
+---
+Youth Activity Scheduler

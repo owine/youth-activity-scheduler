@@ -1,0 +1,12 @@
+{% extends "base.html.j2" %}
+
+{% block title %}{{ payload.suppressed_count }} alerts consolidated{% endblock %}
+{% block heading %}Notifications consolidated{% endblock %}
+
+{% block body %}
+<p>{{ payload.suppressed_count }} push notifications were consolidated to stay under the per-hour cap{% if payload.kid_name %} for <strong>{{ payload.kid_name }}</strong>{% endif %}.</p>
+
+<p style="color: #777; font-style: italic;">
+  No action needed &mdash; this is a notice that we batched alerts rather than send them individually.
+</p>
+{% endblock %}

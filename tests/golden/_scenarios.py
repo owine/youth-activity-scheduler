@@ -322,6 +322,52 @@ async def seed_crawl_failed(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     return a, [a]
 
 
+async def seed_no_matches_for_kid(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a per-kid no_matches_for_kid scenario.
+
+    Kid "Fia" was added 14 days before ``GOLDEN_NOW``; the alert payload
+    carries ``days_since_created`` (the key the enqueuer writes).
+    """
+    kid = Kid(name="Fia", dob=date(2019, 5, 1), created_at=GOLDEN_NOW - timedelta(days=14))
+    session.add(kid)
+    await session.flush()
+    a = Alert(
+        type=AlertType.no_matches_for_kid.value,
+        kid_id=kid.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="no_matches_for_kid-golden",
+        payload_json={"kid_name": kid.name, "days_since_created": 14},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
+async def seed_push_cap(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a per-kid push_cap scenario with suppressed_count=5.
+
+    push_cap is push-only in default routing; this seed exercises the
+    (rare) email-rendered path so the renderer stays exercised.
+    """
+    kid = Kid(name="Gabe", dob=date(2019, 5, 1), created_at=GOLDEN_NOW - timedelta(days=30))
+    session.add(kid)
+    await session.flush()
+    a = Alert(
+        type=AlertType.push_cap.value,
+        kid_id=kid.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="push_cap-golden",
+        payload_json={"suppressed_count": 5, "hour_bucket": "2026-05-19T12"},
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]
+
+
 async def seed_site_stagnant(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     """Seed a site-scoped site_stagnant scenario.
 

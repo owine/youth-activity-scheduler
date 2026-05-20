@@ -20,6 +20,8 @@ from yas.email.payloads import (
     CrawlFailedPayload,
     DigestPayload,
     NewMatchPayload,
+    NoMatchesForKidPayload,
+    PushCapPayload,
     RegOpens1hPayload,
     RegOpens24hPayload,
     RegOpensNowPayload,
@@ -719,9 +721,122 @@ async def build_site_stagnant(
     )
 
 
+async def build_no_matches_for_kid(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> NoMatchesForKidPayload:
+    """Build a NoMatchesForKidPayload for a per-kid no_matches_for_kid alert.
+
+    Source-of-truth for fields (matches ``enqueue_no_matches_for_kid`` in
+    ``src/yas/alerts/enqueuer.py``):
+
+    * ``days_since_added`` <- ``payload_json["days_since_created"]`` (the
+      key the enqueuer writes). Also accepts ``days_since_added`` for
+      forward-compatibility. If neither key is present we fall back to
+      computing ``(lead.scheduled_for - kid.created_at).days``.
+
+    Kid-keyed alert; ``members`` is unused (not coalesced).
+    """
+    del members  # not coalesced
+    if lead.kid_id is None:
+        raise EmailRenderError(
+            "no_matches_for_kid alert has no kid_id", alert_id=lead.id
+        )
+    kid = (
+        await session.execute(select(Kid).where(Kid.id == lead.kid_id))
+    ).scalar_one_or_none()
+    if kid is None:
+        raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
+
+    pj = lead.payload_json or {}
+    days_raw = pj.get("days_since_created", pj.get("days_since_added"))
+    days_since_added: int
+    if days_raw is not None:
+        try:
+            days_since_added = int(days_raw)
+        except (TypeError, ValueError) as exc:
+            raise EmailRenderError(
+                f"no_matches_for_kid days value not int-coercible: {days_raw!r}",
+                alert_id=lead.id,
+            ) from exc
+    else:
+        # Fallback: compute from kid.created_at vs lead.scheduled_for.
+        scheduled_for = lead.scheduled_for
+        if scheduled_for is None:
+            raise EmailRenderError(
+                "no_matches_for_kid alert missing days_since_created and"
+                " has no scheduled_for to compute from",
+                alert_id=lead.id,
+            )
+        # SQLite strips tzinfo on read-back; normalize both sides.
+        sched_cmp = (
+            scheduled_for.replace(tzinfo=None)
+            if kid.created_at.tzinfo is None and scheduled_for.tzinfo is not None
+            else scheduled_for
+        )
+        days_since_added = (sched_cmp - kid.created_at).days
+
+    return NoMatchesForKidPayload(
+        kid_id=kid.id,
+        kid_name=kid.name,
+        days_since_added=days_since_added,
+    )
+
+
+async def build_push_cap(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> PushCapPayload:
+    """Build a PushCapPayload for a consolidated push_cap notice.
+
+    Source-of-truth for fields (matches ``enqueue_push_cap`` in
+    ``src/yas/alerts/enqueuer.py``):
+
+    * ``suppressed_count`` <- ``payload_json["suppressed_count"]``. Required:
+      the count is the whole point of this alert, so we raise
+      ``EmailRenderError`` when it is missing.
+    * ``kid_id`` <- ``lead.kid_id`` (may be None for system-wide caps).
+    * ``kid_name`` looked up from ``Kid`` when ``kid_id`` is non-None.
+
+    ``members`` is unused (not coalesced).
+    """
+    del members  # not coalesced
+    pj = lead.payload_json or {}
+    count_raw = pj.get("suppressed_count")
+    if count_raw is None:
+        raise EmailRenderError(
+            "push_cap alert missing suppressed_count", alert_id=lead.id
+        )
+    try:
+        suppressed_count = int(count_raw)
+    except (TypeError, ValueError) as exc:
+        raise EmailRenderError(
+            f"push_cap suppressed_count not int-coercible: {count_raw!r}",
+            alert_id=lead.id,
+        ) from exc
+
+    kid_name: str | None = None
+    if lead.kid_id is not None:
+        kid = (
+            await session.execute(select(Kid).where(Kid.id == lead.kid_id))
+        ).scalar_one_or_none()
+        if kid is not None:
+            kid_name = kid.name
+
+    return PushCapPayload(
+        kid_id=lead.kid_id,
+        kid_name=kid_name,
+        suppressed_count=suppressed_count,
+    )
+
+
 __all__ = [
     "build_crawl_failed",
     "build_new_match",
+    "build_no_matches_for_kid",
+    "build_push_cap",
     "build_reg_opens_1h",
     "build_reg_opens_24h",
     "build_reg_opens_now",

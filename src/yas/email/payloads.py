@@ -118,6 +118,29 @@ class SiteStagnantPayload:
 
 
 @dataclass(frozen=True)
+class NoMatchesForKidPayload:
+    """Per-kid ``no_matches_for_kid`` alert: still no matches after N days."""
+
+    kid_id: int
+    kid_name: str
+    days_since_added: int
+
+
+@dataclass(frozen=True)
+class PushCapPayload:
+    """Consolidated ``push_cap`` notice when per-hour push cap is hit.
+
+    ``kid_id`` / ``kid_name`` may be None for system-wide caps. This kind is
+    push-only in default routing; the renderer exists for registry completeness
+    and the rare case where someone routes it to email.
+    """
+
+    kid_id: int | None
+    kid_name: str | None
+    suppressed_count: int
+
+
+@dataclass(frozen=True)
 class RegOpens24hPayload:
     """Per-offering reg_opens_24h alert. Not coalesced.
 
@@ -137,6 +160,8 @@ __all__ = [
     "CrawlFailedPayload",
     "DigestPayload",
     "NewMatchPayload",
+    "NoMatchesForKidPayload",
+    "PushCapPayload",
     "RegOpens1hPayload",
     "RegOpens24hPayload",
     "RegOpensNowPayload",
