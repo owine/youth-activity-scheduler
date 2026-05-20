@@ -60,6 +60,64 @@ def _offering_to_dict(
     return d
 
 
+def _program_label(program_type: str) -> str:
+    """Human display label for a ProgramType value. `unknown` -> 'Other'."""
+    if program_type == "unknown":
+        return "Other"
+    return program_type.replace("_", " ").title()
+    # Note: acronyms like 'stem' render as 'Stem'. Acceptable; do not special-case.
+
+
+def _group_matches_by_site(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group a score-sorted flat match list into site -> program -> offerings.
+
+    Pure reorganization of the same dicts (no DB). Ordering:
+      - sites by their best (max) offering score, descending
+      - programs within a site by their best offering score, descending
+      - offerings within a program preserve the input order (score desc)
+
+    `matches` is expected pre-sorted by score desc (as gather_digest_payload
+    produces). Offerings without a 'score' key sort last within their bucket.
+    """
+
+    def _score(o: dict[str, Any]) -> float:
+        s = o.get("score")
+        return s if isinstance(s, (int, float)) else float("-inf")
+
+    # Preserve first-seen order while bucketing so we can sort buckets by max score.
+    sites: dict[int, dict[str, Any]] = {}
+    for m in matches:
+        site_id = m["site_id"]
+        site = sites.setdefault(
+            site_id,
+            {"site_id": site_id, "site_name": m.get("site_name", ""), "_programs": {}},
+        )
+        pt = m.get("program_type", "unknown")
+        prog = site["_programs"].setdefault(
+            pt, {"program_type": pt, "program_label": _program_label(pt), "offerings": []}
+        )
+        prog["offerings"].append(m)
+
+    result: list[dict[str, Any]] = []
+    for site in sites.values():
+        programs = list(site["_programs"].values())
+        # offerings already score-sorted from input; sort programs by their best score.
+        programs.sort(key=lambda p: max(_score(o) for o in p["offerings"]), reverse=True)
+        result.append(
+            {
+                "site_id": site["site_id"],
+                "site_name": site["site_name"],
+                "programs": programs,
+            }
+        )
+    # sites by their best offering score across all programs.
+    result.sort(
+        key=lambda s: max(_score(o) for p in s["programs"] for o in p["offerings"]),
+        reverse=True,
+    )
+    return result
+
+
 async def gather_digest_payload(
     session: AsyncSession,
     kid: Kid,
