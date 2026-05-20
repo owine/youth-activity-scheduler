@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+import structlog.testing
 from sqlalchemy import select
 
 from tests.fakes.llm import FakeLLMClient
@@ -102,11 +103,15 @@ async def _patched_digest_loop(engine: Any, settings: Settings, llm: Any, fake_s
 
 
 @pytest.mark.asyncio
-async def test_digest_empty_day_skipped_but_logs_debug(tmp_path, capsys):  # type: ignore[no-untyped-def]
+async def test_digest_empty_day_skipped_but_logs_debug(tmp_path):  # type: ignore[no-untyped-def]
     """Empty-day kid: no Alert inserted and DEBUG log contains digest.skipped.empty.
 
-    structlog uses PrintLoggerFactory (writes to stderr) rather than the stdlib
-    logging module, so we capture with capsys rather than caplog.
+    Uses ``structlog.testing.capture_logs`` rather than ``capsys`` so the
+    assertion is robust to test ordering: capsys captures stdout/stderr at
+    the process level, which gets polluted by aiosqlite teardown noise from
+    earlier async tests in the full suite. capture_logs swaps in a list-based
+    processor for the duration of the context manager and is unaffected by
+    sibling tests.
     """
     engine = await _make_engine(tmp_path)
 
@@ -117,7 +122,8 @@ async def test_digest_empty_day_skipped_but_logs_debug(tmp_path, capsys):  # typ
 
     settings = _settings(alert_digest_empty_skip=True, alert_no_matches_kid_days=7)
 
-    await _run_one_tick(engine, settings, FakeLLMClient())
+    with structlog.testing.capture_logs() as logs:
+        await _run_one_tick(engine, settings, FakeLLMClient())
 
     async with session_scope(engine) as s:
         alerts = (
@@ -127,12 +133,9 @@ async def test_digest_empty_day_skipped_but_logs_debug(tmp_path, capsys):  # typ
         )
     assert alerts == [], "Empty-day digest must NOT be enqueued"
 
-    captured = capsys.readouterr()
-    # structlog is configured with PrintLoggerFactory (writes to stdout in tests).
-    combined = captured.out + captured.err
-    assert "digest.skipped.empty" in combined, (
-        "Expected a log line containing 'digest.skipped.empty'; "
-        f"got stdout={captured.out!r} stderr={captured.err!r}"
+    events = [entry.get("event") for entry in logs]
+    assert "digest.skipped.empty" in events, (
+        f"Expected a log event 'digest.skipped.empty'; got events={events!r}"
     )
 
 
