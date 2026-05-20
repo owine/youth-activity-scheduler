@@ -1,0 +1,15 @@
+{% extends "base.html.j2" %}
+
+{% block title %}Crawl failed: {{ payload.site_name }}{% endblock %}
+{% block heading %}Crawl failed: {{ payload.site_name }}{% endblock %}
+
+{% block body %}
+<p><strong>{{ payload.site_name }}</strong></p>
+
+<p style="margin: 4px 0;">Last successful crawl:
+{% if payload.last_success_at %}{{ payload.last_success_at | fmt }}{% else %}never{% endif %}</p>
+<p style="margin: 4px 0;">Failure count: {{ payload.failure_count }}</p>
+
+<p style="margin: 12px 0 4px 0;">Error:</p>
+<code style="display: block; background: #fff5f5; border: 1px solid #f5c2c2; border-radius: 4px; padding: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; color: #7a1d1d; white-space: pre-wrap; word-break: break-word;">{{ payload.error_summary }}</code>
+{% endblock %}

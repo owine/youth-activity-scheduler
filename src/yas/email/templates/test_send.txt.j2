@@ -1,0 +1,11 @@
+{% extends "base.txt.j2" %}
+
+{% block subject %}YAS {{ payload.channel }} test{% endblock %}
+
+{% block body %}
+This is a test notification.
+
+If you're reading this, the {{ payload.channel }} channel is wired up correctly.
+
+Sent: {{ payload.now }}
+{% endblock %}

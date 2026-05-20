@@ -1,0 +1,19 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html %}
+
+{% block title %}New match — {{ payload.kid_name }}{% endblock %}
+{% block heading %}New {% if payload.matches | length > 1 %}matches{% else %}match{% endif %} for {{ payload.kid_name }}{% endblock %}
+
+{% block body %}
+<ul>
+  {% for m in payload.matches %}{{ offering_row_html(m) }}{% endfor %}
+</ul>
+{% if payload.matches | length == 1 and payload.matches[0].registration_url %}
+<p style="margin-top: 16px;">
+  <a href="{{ payload.matches[0].registration_url }}"
+     style="background: #2a6df4; color: #fff; padding: 10px 16px; border-radius: 4px; text-decoration: none;">
+    Register
+  </a>
+</p>
+{% endif %}
+{% endblock %}

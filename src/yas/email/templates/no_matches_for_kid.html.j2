@@ -1,0 +1,14 @@
+{% extends "base.html.j2" %}
+
+{% block title %}Still searching for {{ payload.kid_name }}{% endblock %}
+{% block heading %}Still searching for activities for {{ payload.kid_name }}{% endblock %}
+
+{% block body %}
+<p>We're still on the lookout for activities that match <strong>{{ payload.kid_name }}</strong>.</p>
+
+<p>It's been <strong>{{ payload.days_since_added }} days</strong> since you added them, and we haven't found a strong match yet. We're scanning new schedules as they're posted &mdash; we'll alert you the moment something fits.</p>
+
+<p style="color: #555;">
+  In the meantime, you can review and tune {{ payload.kid_name }}'s preferences from the dashboard.
+</p>
+{% endblock %}

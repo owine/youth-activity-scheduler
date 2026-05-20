@@ -1,0 +1,14 @@
+{% extends "base.html.j2" %}
+
+{% block title %}YAS {{ payload.channel }} test{% endblock %}
+{% block heading %}{{ payload.channel | capitalize }} channel test{% endblock %}
+
+{% block body %}
+<p style="background: #f0f7ff; border-left: 4px solid #2a6df4; padding: 12px;">
+  <strong>This is a test notification.</strong>
+  <br>
+  If you're reading this, the <code>{{ payload.channel }}</code> channel is wired up correctly.
+</p>
+
+<p style="color: #777; font-size: 0.85em; margin-top: 16px;">Sent: {{ payload.now }}</p>
+{% endblock %}

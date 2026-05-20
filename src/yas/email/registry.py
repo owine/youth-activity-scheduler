@@ -1,0 +1,112 @@
+"""Email type to renderer registry.
+
+A single explicit dict is the type-to-renderer mapping for kinds rendered
+through ``render_email``. Membership is asserted by
+``tests/unit/test_email_registry.py``; a missing entry is a CI failure, not a
+runtime fallback.
+
+Note on the digest: ``AlertType.digest`` is deliberately NOT in this registry.
+Digest payloads are assembled outside the Alert lifecycle by
+``yas.worker.digest_loop`` and rendered via ``render_digest_payload``. The
+completeness test special-cases digest accordingly.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
+
+from yas.db.models._types import AlertType
+from yas.email.builders import (
+    build_crawl_failed,
+    build_new_match,
+    build_no_matches_for_kid,
+    build_push_cap,
+    build_reg_opens_1h,
+    build_reg_opens_24h,
+    build_reg_opens_now,
+    build_schedule_posted,
+    build_site_stagnant,
+    build_test_send,
+    build_watchlist_hit,
+)
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from yas.db.models import Alert
+
+EmailKind = AlertType | Literal["test_send"]
+
+
+@dataclass(frozen=True)
+class TypeRenderer:
+    """How one outbound email kind is built and rendered."""
+
+    build: Callable[[AsyncSession, Alert, list[Alert]], Awaitable[object]]
+    html_template: str
+    txt_template: str
+
+
+# Populated incrementally across Tasks 5-14. Task 1 shipped it empty; Task 14
+# completes the registry (every AlertType except digest, plus the "test_send"
+# literal). Membership is asserted (strict, not xfail) by
+# ``tests/unit/test_email_registry.py``.
+RENDERERS: dict[EmailKind, TypeRenderer] = {
+    AlertType.new_match: TypeRenderer(
+        build=build_new_match,
+        html_template="new_match.html.j2",
+        txt_template="new_match.txt.j2",
+    ),
+    AlertType.reg_opens_now: TypeRenderer(
+        build=build_reg_opens_now,
+        html_template="reg_opens_now.html.j2",
+        txt_template="reg_opens_now.txt.j2",
+    ),
+    AlertType.reg_opens_1h: TypeRenderer(
+        build=build_reg_opens_1h,
+        html_template="reg_opens_1h.html.j2",
+        txt_template="reg_opens_1h.txt.j2",
+    ),
+    AlertType.reg_opens_24h: TypeRenderer(
+        build=build_reg_opens_24h,
+        html_template="reg_opens_24h.html.j2",
+        txt_template="reg_opens_24h.txt.j2",
+    ),
+    AlertType.watchlist_hit: TypeRenderer(
+        build=build_watchlist_hit,
+        html_template="watchlist_hit.html.j2",
+        txt_template="watchlist_hit.txt.j2",
+    ),
+    AlertType.schedule_posted: TypeRenderer(
+        build=build_schedule_posted,
+        html_template="schedule_posted.html.j2",
+        txt_template="schedule_posted.txt.j2",
+    ),
+    AlertType.crawl_failed: TypeRenderer(
+        build=build_crawl_failed,
+        html_template="crawl_failed.html.j2",
+        txt_template="crawl_failed.txt.j2",
+    ),
+    AlertType.site_stagnant: TypeRenderer(
+        build=build_site_stagnant,
+        html_template="site_stagnant.html.j2",
+        txt_template="site_stagnant.txt.j2",
+    ),
+    AlertType.no_matches_for_kid: TypeRenderer(
+        build=build_no_matches_for_kid,
+        html_template="no_matches_for_kid.html.j2",
+        txt_template="no_matches_for_kid.txt.j2",
+    ),
+    AlertType.push_cap: TypeRenderer(
+        build=build_push_cap,
+        html_template="push_cap.html.j2",
+        txt_template="push_cap.txt.j2",
+    ),
+    "test_send": TypeRenderer(
+        build=build_test_send,
+        html_template="test_send.html.j2",
+        txt_template="test_send.txt.j2",
+    ),
+}

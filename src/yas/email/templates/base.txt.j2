@@ -1,0 +1,9 @@
+{# Every concrete kind MUST override {% block subject %}; the default here is
+   deliberately payload-free so StrictUndefined never raises on a forgotten
+   override. A test asserts the override exists per kind. #}
+{% block subject %}YAS Update{% endblock %}
+
+{% block body %}{% endblock %}
+
+---
+Youth Activity Scheduler

@@ -1,0 +1,15 @@
+{% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
+
+{% block subject %}Registration opens tomorrow: {{ payload.offering.offering_name }}{% endblock %}
+
+{% block body %}
+Registration opens tomorrow for {{ payload.kid_name }}:
+
+{{ offering_row_text(payload.offering) }}
+
+Opens: {{ payload.opens_at | fmt }}
+Register: {{ payload.registration_url }}
+
+Add this to your calendar so you don't miss the opening.
+{% endblock %}

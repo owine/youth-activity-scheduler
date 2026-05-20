@@ -1,0 +1,12 @@
+{% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
+
+{% block subject %}Register now: {{ payload.offering.offering_name }} for {{ payload.kid_name }}{% endblock %}
+
+{% block body %}
+Registration is OPEN for {{ payload.kid_name }}:
+
+{{ offering_row_text(payload.offering) }}
+
+Register: {{ payload.registration_url }}
+{% endblock %}

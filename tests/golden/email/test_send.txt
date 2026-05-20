@@ -1,0 +1,9 @@
+YAS email test
+This is a test notification.
+
+If you're reading this, the email channel is wired up correctly.
+
+Sent: 2026-05-19 12:00:00+00:00
+
+---
+Youth Activity Scheduler

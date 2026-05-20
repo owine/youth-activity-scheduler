@@ -1,0 +1,20 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html, reg_countdown_html %}
+
+{% block title %}Register now: {{ payload.offering.offering_name }}{% endblock %}
+{% block heading %}Register now: {{ payload.offering.offering_name }}{% endblock %}
+
+{% block body %}
+{{ reg_countdown_html(payload.opens_at, "Registration is open now") }}
+
+<ul>
+  {{ offering_row_html(payload.offering) }}
+</ul>
+
+<p style="margin-top: 16px;">
+  <a href="{{ payload.registration_url }}"
+     style="background: #d9534f; color: #fff; padding: 14px 24px; font-size: 1.1em; font-weight: bold; border-radius: 4px; text-decoration: none; display: inline-block;">
+    Register now
+  </a>
+</p>
+{% endblock %}

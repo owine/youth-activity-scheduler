@@ -1,0 +1,11 @@
+{% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
+
+{% block subject %}{% if payload.matches | length > 1 %}{{ payload.matches | length }} new matches for {{ payload.kid_name }}{% else %}New match for {{ payload.kid_name }}: {{ payload.matches[0].offering_name }}{% endif %}{% endblock %}
+
+{% block body %}
+{% if payload.matches | length > 1 %}{{ payload.matches | length }} new activities matched {{ payload.kid_name }}:{% else %}New activity for {{ payload.kid_name }}:{% endif %}
+
+{% for m in payload.matches %}{{ offering_row_text(m) }}
+{% endfor %}
+{% endblock %}

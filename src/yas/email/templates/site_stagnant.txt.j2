@@ -1,0 +1,14 @@
+{% extends "base.txt.j2" %}
+
+{% block subject %}{{ payload.site_name }} hasn't changed in {{ payload.days_since_change }} days{% endblock %}
+
+{% block body %}
+{{ payload.site_name }} hasn't shown any changes in {{ payload.days_since_change }} days.
+
+{{ payload.site_base_url }}
+
+{% if payload.last_change_at %}Last change detected: {{ payload.last_change_at | fmt }}
+
+{% endif %}
+Want us to keep watching?
+{% endblock %}

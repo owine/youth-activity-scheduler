@@ -1,0 +1,18 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html %}
+
+{% block title %}New schedule posted: {{ payload.site_name }}{% endblock %}
+{% block heading %}New schedule posted: {{ payload.site_name }}{% endblock %}
+
+{% block body %}
+<p>{{ payload.site_name }} just posted
+{% if payload.new_offerings | length > 1 %}{{ payload.new_offerings | length }} new offerings{% else %}a new offering{% endif %}:</p>
+
+<ul>
+  {% for o in payload.new_offerings %}{{ offering_row_html(o) }}{% endfor %}
+</ul>
+
+{% if payload.notes %}
+<p style="color: #555; font-style: italic;">{{ payload.notes }}</p>
+{% endif %}
+{% endblock %}

@@ -9,10 +9,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.alerts.digest.builder import gather_digest_payload, render_digest
-from yas.alerts.digest.llm_summary import generate_top_line
 from yas.db.models import HouseholdSettings, Kid
 from yas.db.session import session_scope
+from yas.email import render_digest_payload
+from yas.email.builders import gather_digest_payload
+from yas.email.llm_summary import generate_top_line
 from yas.web.routes.digest_preview_schemas import DigestPreviewOut
 
 router = APIRouter(prefix="/api/digest", tags=["digest"])
@@ -69,12 +70,14 @@ async def preview_digest(
             cost_cap_remaining_usd=cost_cap,
         )
 
-        # Render digest
-        body_plain, body_html = render_digest(payload, top_line)
+        # Render digest. Subject matches the format the worker writes to the
+        # Alert.payload_json (see yas.worker.digest_loop) so preview and delivery
+        # agree.
+        rendered = render_digest_payload(payload, top_line)
         subject = f"Daily digest — {kid.name} — {now.date().isoformat()}"
 
         return DigestPreviewOut(
             subject=subject,
-            body_plain=body_plain,
-            body_html=body_html,
+            body_plain=rendered.body_plain,
+            body_html=rendered.body_html,
         )

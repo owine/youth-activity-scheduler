@@ -1,0 +1,11 @@
+{% extends "base.txt.j2" %}
+
+{% block subject %}Still searching for activities for {{ payload.kid_name }}{% endblock %}
+
+{% block body %}
+We're still on the lookout for activities that match {{ payload.kid_name }}.
+
+It's been {{ payload.days_since_added }} days since you added them, and we haven't found a strong match yet. We're scanning new schedules as they're posted -- we'll alert you the moment something fits.
+
+In the meantime, you can review and tune {{ payload.kid_name }}'s preferences from the dashboard.
+{% endblock %}

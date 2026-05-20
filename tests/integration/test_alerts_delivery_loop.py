@@ -21,8 +21,8 @@ from yas.alerts.rate_limit import coalesce
 from yas.alerts.routing import seed_default_routing
 from yas.config import Settings
 from yas.db.base import Base
-from yas.db.models import Alert, AlertRouting, HouseholdSettings, Kid
-from yas.db.models._types import AlertType
+from yas.db.models import Alert, AlertRouting, HouseholdSettings, Kid, Match, Offering, Page, Site
+from yas.db.models._types import AlertType, PageKind
 from yas.db.session import create_engine_for, session_scope
 from yas.worker.delivery_loop import alert_delivery_loop
 
@@ -87,6 +87,47 @@ async def _make_engine(tmp_path):  # type: ignore[no-untyped-def]
     return engine
 
 
+async def _seed_offering_with_match(
+    session,  # type: ignore[no-untyped-def]
+    *,
+    name: str = "Soccer Camp",
+    kid_id: int = 1,
+    with_registration_url: bool = True,
+    registration_opens_at: datetime | None = None,
+) -> int:
+    """Seed Site + Page + Offering + Match so build_new_match/watchlist_hit/reg_opens_*
+    have rows to join against. Returns the new offering id."""
+    from datetime import date
+
+    site = Site(name="Park", base_url="https://p.example.com", active=True)
+    session.add(site)
+    await session.flush()
+    page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+    session.add(page)
+    await session.flush()
+    off = Offering(
+        site_id=site.id,
+        page_id=page.id,
+        name=name,
+        normalized_name=name.lower(),
+        start_date=date(2026, 6, 1),
+        price_cents=15000,
+        registration_url="https://p.example.com/r/10" if with_registration_url else None,
+        registration_opens_at=registration_opens_at,
+    )
+    session.add(off)
+    await session.flush()
+    m = Match(
+        kid_id=kid_id,
+        offering_id=off.id,
+        score=0.9,
+        computed_at=datetime.now(UTC),
+    )
+    session.add(m)
+    await session.flush()
+    return off.id
+
+
 async def _seed_household(
     session,  # type: ignore[no-untyped-def]
     quiet_start: str | None = None,
@@ -123,9 +164,11 @@ async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-
 
     async with session_scope(engine) as s:
         household = await _seed_household(s, quiet_start="00:00", quiet_end="23:59")
+        opens_at = datetime.now(UTC)
+        off_id = await _seed_offering_with_match(s, registration_opens_at=opens_at)
         a = _alert(
             alert_type=AlertType.reg_opens_now.value,
-            payload={"offering_name": "Soccer Camp", "registration_url": "http://example.com"},
+            payload={"offering_id": off_id, "registration_url": "http://example.com"},
         )
         s.add(a)
         await s.flush()
@@ -163,6 +206,7 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
     now = datetime.now(UTC)
     # Seed 5 already-sent alerts so the cap is hit.
     async with session_scope(engine) as s:
+        off_id = await _seed_offering_with_match(s)
         for i in range(5):
             a = Alert(
                 type=AlertType.new_match.value,
@@ -181,6 +225,7 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
             alert_type=AlertType.new_match.value,
             kid_id=1,
             scheduled_for=now,
+            payload={"offering_id": off_id, "kid_name": "Alice"},
         )
         s.add(capped)
         await s.flush()
@@ -293,8 +338,13 @@ async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ig
 
     async with session_scope(engine) as s:
         await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
         # new_match routes to ["email"] by default.
-        a = _alert(alert_type=AlertType.new_match.value, scheduled_for=now - timedelta(seconds=1))
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
+        )
         s.add(a)
         await s.flush()
 
@@ -332,9 +382,11 @@ async def test_transient_failure_retries_with_backoff(tmp_path):  # type: ignore
 
     async with session_scope(engine) as s:
         await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -370,9 +422,11 @@ async def test_non_transient_failure_marks_skipped(tmp_path):  # type: ignore[no
 
     async with session_scope(engine) as s:
         await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -409,10 +463,11 @@ async def test_quiet_hours_suppresses_push_but_not_email(tmp_path):  # type: ign
 
     async with session_scope(engine) as s:
         household = await _seed_household(s, quiet_start="00:00", quiet_end="23:59")
+        off_id = await _seed_offering_with_match(s, name="Tennis Camp")
         a = _alert(
             alert_type=AlertType.watchlist_hit.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_name": "Tennis Camp"},
+            payload={"offering_id": off_id, "kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -495,10 +550,11 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         row.enabled = True
 
     async with session_scope(engine) as s:
+        off_id = await _seed_offering_with_match(s, name="Tennis Camp")
         a = _alert(
             alert_type=AlertType.watchlist_hit.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_name": "Tennis Camp"},
+            payload={"offering_id": off_id, "kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -569,3 +625,73 @@ async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[
     assert len(alerts) == 1
     assert alerts[0].sent_at is None  # not delivered
     assert email_notifier.call_count == 0  # notifier never called
+
+
+# ---------------------------------------------------------------------------
+# Task 15: render_email integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_immediate_alert_body_is_branded_html(tmp_path):  # type: ignore[no-untyped-def]
+    """new_match through the delivery loop produces real HTML, not <pre>."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s, name="Soccer Camp")
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
+        )
+        s.add(a)
+        await s.flush()
+
+        email_notifier = _email_notifier("email")
+        groups = coalesce([a], window_s=600)
+        assert len(groups) == 1
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    assert len(email_notifier.records) == 1
+    msg = email_notifier.records[0]
+    assert "<pre>" not in (msg.body_html or "")
+    assert "<!DOCTYPE html>" in (msg.body_html or "")
+    assert "Soccer Camp" in (msg.body_html or "")
+    assert "Soccer Camp" in msg.body_plain
+    assert msg.subject.startswith("New match for ")
+
+
+@pytest.mark.asyncio
+async def test_immediate_alert_render_failure_marks_skipped(tmp_path):  # type: ignore[no-untyped-def]
+    """When render_email fails (missing offering), members are marked skipped
+    with reason 'render failed: ...', no notifier is called, no retry scheduled."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        # Payload references a non-existent offering id → build_new_match raises EmailRenderError.
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": 99999, "kid_name": "Alice"},
+        )
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+
+        email_notifier = _email_notifier("email")
+        groups = coalesce([a], window_s=600)
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is True, "member must be marked skipped on render failure"
+        assert updated.sent_at is None
+        reason = updated.payload_json.get("_skipped_reason") or ""
+        assert "render failed" in reason, f"unexpected reason: {reason!r}"
+
+    assert email_notifier.records == [], "notifier must not be called on render failure"
+    assert email_notifier.call_count == 0

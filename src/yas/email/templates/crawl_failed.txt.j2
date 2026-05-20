@@ -1,0 +1,14 @@
+{% extends "base.txt.j2" %}
+
+{% block subject %}Crawl failed: {{ payload.site_name }}{% endblock %}
+
+{% block body %}
+{{ payload.site_name }}
+
+Last successful crawl: {% if payload.last_success_at %}{{ payload.last_success_at | fmt }}{% else %}never{% endif %}
+
+Failure count: {{ payload.failure_count }}
+
+Error:
+> {{ payload.error_summary }}
+{% endblock %}

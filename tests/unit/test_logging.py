@@ -1,6 +1,8 @@
 import json
 import logging
 
+import structlog
+
 from yas.logging import configure_logging, get_logger
 
 
@@ -36,7 +38,14 @@ def test_get_logger_returns_structlog():
 
 
 def teardown_function():
-    # reset logging between tests
+    # Reset stdlib logging handlers between tests.
     for name in list(logging.root.manager.loggerDict):
         logging.getLogger(name).handlers.clear()
     logging.root.handlers.clear()
+    # Also reset structlog: configure_logging() installs a filtering
+    # wrapper_class baked at a specific level (e.g. WARNING in
+    # test_log_level_respected). The wrapper filters BEFORE any processor
+    # runs, so leaving it in place silently drops DEBUG events in any later
+    # test in the suite -- including unrelated integration tests that assert
+    # on debug-level log events.
+    structlog.reset_defaults()
