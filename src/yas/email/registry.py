@@ -24,6 +24,7 @@ from yas.email.builders import (
     build_reg_opens_24h,
     build_reg_opens_now,
     build_schedule_posted,
+    build_site_stagnant,
     build_watchlist_hit,
 )
 
@@ -81,5 +82,10 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {
         build=build_crawl_failed,
         html_template="crawl_failed.html.j2",
         txt_template="crawl_failed.txt.j2",
+    ),
+    AlertType.site_stagnant: TypeRenderer(
+        build=build_site_stagnant,
+        html_template="site_stagnant.html.j2",
+        txt_template="site_stagnant.txt.j2",
     ),
 }

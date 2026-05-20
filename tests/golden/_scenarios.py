@@ -320,3 +320,33 @@ async def seed_crawl_failed(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     session.add(a)
     await session.flush()
     return a, [a]
+
+
+async def seed_site_stagnant(session: AsyncSession) -> tuple[Alert, list[Alert]]:
+    """Seed a site-scoped site_stagnant scenario.
+
+    Site "Hilldale Center" was last seen changing on 2026-04-28. The lead's
+    ``payload_json`` carries ``days_since_change`` (the builder also accepts
+    the legacy ``days_silent`` key produced by the current enqueuer).
+    """
+    site = Site(
+        name="Hilldale Center", base_url="https://h.example.com", active=True
+    )
+    session.add(site)
+    await session.flush()
+    a = Alert(
+        type=AlertType.site_stagnant.value,
+        kid_id=None,
+        site_id=site.id,
+        channels=[],
+        scheduled_for=GOLDEN_NOW,
+        dedup_key="site_stagnant-golden",
+        payload_json={
+            "days_since_change": 21,
+            "last_change_at": "2026-04-28T00:00:00+00:00",
+        },
+        skipped=False,
+    )
+    session.add(a)
+    await session.flush()
+    return a, [a]

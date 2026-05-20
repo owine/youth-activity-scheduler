@@ -24,6 +24,7 @@ from yas.email.payloads import (
     RegOpens24hPayload,
     RegOpensNowPayload,
     SchedulePostedPayload,
+    SiteStagnantPayload,
     WatchlistHitPayload,
 )
 
@@ -652,6 +653,72 @@ async def build_crawl_failed(
     )
 
 
+async def build_site_stagnant(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+) -> SiteStagnantPayload:
+    """Build a SiteStagnantPayload for a site-scoped site_stagnant alert.
+
+    Source-of-truth for fields (matches ``enqueue_site_stagnant`` in
+    ``src/yas/alerts/enqueuer.py`` and the site_stagnant detector):
+
+    * ``days_since_change`` <- ``payload_json["days_silent"]`` (also accepts
+      ``days_since_change`` for forward-compatibility). Required: if missing
+      we raise ``EmailRenderError`` so a half-rendered email never ships.
+    * ``last_change_at`` <- ``payload_json["last_change_at"]`` ISO string when
+      present; otherwise None (detector does not currently supply it).
+
+    Site-keyed alert; ``members`` is unused (one alert per site dedup key).
+    """
+    del members  # site-scoped, not coalesced
+    if lead.site_id is None:
+        raise EmailRenderError(
+            "site_stagnant alert has no site_id", alert_id=lead.id
+        )
+
+    site = (
+        await session.execute(select(Site).where(Site.id == lead.site_id))
+    ).scalar_one_or_none()
+    if site is None:
+        raise EmailRenderError(f"site {lead.site_id} not found", alert_id=lead.id)
+
+    pj = lead.payload_json or {}
+    days_raw = pj.get("days_since_change", pj.get("days_silent"))
+    if days_raw is None:
+        raise EmailRenderError(
+            "site_stagnant alert missing days_since_change/days_silent",
+            alert_id=lead.id,
+        )
+    try:
+        days_since_change = int(days_raw)
+    except (TypeError, ValueError) as exc:
+        raise EmailRenderError(
+            f"site_stagnant days value not int-coercible: {days_raw!r}",
+            alert_id=lead.id,
+        ) from exc
+
+    last_change_at: datetime | None = None
+    raw_lca = pj.get("last_change_at")
+    if isinstance(raw_lca, str) and raw_lca:
+        try:
+            last_change_at = datetime.fromisoformat(raw_lca)
+        except ValueError:
+            last_change_at = None
+    elif isinstance(raw_lca, datetime):
+        last_change_at = raw_lca
+    if last_change_at is not None and last_change_at.tzinfo is None:
+        last_change_at = last_change_at.replace(tzinfo=UTC)
+
+    return SiteStagnantPayload(
+        site_id=site.id,
+        site_name=site.name,
+        site_base_url=site.base_url,
+        days_since_change=days_since_change,
+        last_change_at=last_change_at,
+    )
+
+
 __all__ = [
     "build_crawl_failed",
     "build_new_match",
@@ -659,6 +726,7 @@ __all__ = [
     "build_reg_opens_24h",
     "build_reg_opens_now",
     "build_schedule_posted",
+    "build_site_stagnant",
     "build_watchlist_hit",
     "gather_digest_payload",
 ]

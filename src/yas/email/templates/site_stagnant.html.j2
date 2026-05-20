@@ -1,0 +1,18 @@
+{% extends "base.html.j2" %}
+
+{% block title %}{{ payload.site_name }} hasn't changed in {{ payload.days_since_change }} days{% endblock %}
+{% block heading %}{{ payload.site_name }} looks stagnant{% endblock %}
+
+{% block body %}
+<p><strong>{{ payload.site_name }}</strong> hasn't shown any changes in
+{{ payload.days_since_change }} days.</p>
+
+{% if payload.last_change_at %}
+<p style="color: #555; margin: 4px 0;">Last change detected: {{ payload.last_change_at | fmt }}</p>
+{% endif %}
+
+<div style="background: #fff8e1; border: 1px solid #f0d875; border-radius: 4px; padding: 12px; margin: 16px 0;">
+  <p style="margin: 0 0 8px 0;">Want us to keep watching?</p>
+  <p style="margin: 0;"><a href="{{ payload.site_base_url }}" style="color: #7a5c00;">View site</a></p>
+</div>
+{% endblock %}

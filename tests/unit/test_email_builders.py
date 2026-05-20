@@ -19,6 +19,7 @@ from yas.email.builders import (
     build_reg_opens_24h,
     build_reg_opens_now,
     build_schedule_posted,
+    build_site_stagnant,
     build_watchlist_hit,
 )
 from yas.email.payloads import (
@@ -28,6 +29,7 @@ from yas.email.payloads import (
     RegOpens24hPayload,
     RegOpensNowPayload,
     SchedulePostedPayload,
+    SiteStagnantPayload,
     WatchlistHitPayload,
 )
 
@@ -798,3 +800,67 @@ async def test_build_crawl_failed_truncates_long_error(tmp_path: Any) -> None:
     assert payload.error_summary.endswith("…")
     assert payload.last_success_at is None  # no successful CrawlRun seeded
     assert payload.failure_count == 7
+
+
+# ---------------------------------------------------------------------------
+# build_site_stagnant
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_build_site_stagnant_happy_path(tmp_path: Any) -> None:
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Hilldale Center", base_url="https://h.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        a = Alert(
+            type=AlertType.site_stagnant.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="ss-happy",
+            payload_json={
+                "days_since_change": 21,
+                "last_change_at": "2026-04-28T00:00:00+00:00",
+            },
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+
+        payload = await build_site_stagnant(s, a, [a])
+
+    assert isinstance(payload, SiteStagnantPayload)
+    assert payload.site_name == "Hilldale Center"
+    assert payload.site_base_url == "https://h.example.com"
+    assert payload.days_since_change == 21
+    assert payload.last_change_at is not None
+    assert payload.last_change_at.year == 2026
+    assert payload.last_change_at.month == 4
+    assert payload.last_change_at.day == 28
+
+
+@pytest.mark.asyncio
+async def test_build_site_stagnant_missing_days_raises(tmp_path: Any) -> None:
+    """No days_since_change/days_silent key -> EmailRenderError."""
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Hilldale Center", base_url="https://h.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        a = Alert(
+            type=AlertType.site_stagnant.value,
+            kid_id=None,
+            site_id=site.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="ss-nodays",
+            payload_json={"site_name": "Hilldale Center"},  # missing days
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
+        with pytest.raises(EmailRenderError):
+            await build_site_stagnant(s, a, [a])

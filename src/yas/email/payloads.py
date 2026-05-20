@@ -101,6 +101,23 @@ class CrawlFailedPayload:
 
 
 @dataclass(frozen=True)
+class SiteStagnantPayload:
+    """Site-scoped ``site_stagnant`` alert: site has shown no changes for a while.
+
+    Site-keyed (``Alert.site_id``, ``kid_id`` is None). ``days_since_change``
+    is set by the detector / enqueuer (``days_silent`` key); the builder
+    raises ``EmailRenderError`` if it is missing so silent half-rendered
+    emails never go out.
+    """
+
+    site_id: int
+    site_name: str
+    site_base_url: str
+    days_since_change: int
+    last_change_at: datetime | None
+
+
+@dataclass(frozen=True)
 class RegOpens24hPayload:
     """Per-offering reg_opens_24h alert. Not coalesced.
 
@@ -124,5 +141,6 @@ __all__ = [
     "RegOpens24hPayload",
     "RegOpensNowPayload",
     "SchedulePostedPayload",
+    "SiteStagnantPayload",
     "WatchlistHitPayload",
 ]
