@@ -27,12 +27,34 @@ class RenderedEmail:
     body_html: str
 
 
-def _render_pair(html_template: str, txt_template: str, ctx: dict[str, Any]) -> RenderedEmail:
-    """Render one kind's two templates and pull the subject out of the .txt block."""
+def _render_pair(
+    html_template: str,
+    txt_template: str,
+    *,
+    payload: Any,
+    **extras: Any,
+) -> RenderedEmail:
+    """Render one kind's two templates and pull the subject out of the .txt block.
+
+    The render context is always ``{"payload": payload, **extras}`` — callers
+    pass ``payload`` as a frozen dataclass and any additional well-known keys
+    (today only ``top_line`` for the digest) as keyword arguments. This keeps
+    the call sites in this module the single place that builds the context
+    dict, so future kinds can't drift by inventing ad-hoc keys.
+    """
+    ctx: dict[str, Any] = {"payload": payload, **extras}
     txt_tpl = env.get_template(txt_template)
     html_tpl = env.get_template(html_template)
     # Subject lives in {% block subject %} in the .txt template.
     subject = "".join(txt_tpl.blocks["subject"](txt_tpl.new_context(ctx))).strip()
+    # Email subject headers must be a single line. A subject block that renders
+    # with an embedded newline (typically from a multi-line ``{% block subject %}``
+    # body) would produce an RFC-violating header. Fail loud here rather than
+    # let the SMTP/HTTP transport see it.
+    if "\n" in subject or "\r" in subject:
+        raise EmailRenderError(
+            f"subject block rendered with embedded newline: {subject!r}"
+        )
     body_plain = txt_tpl.render(ctx)
     body_html = html_tpl.render(ctx)
     return RenderedEmail(subject=subject, body_plain=body_plain, body_html=body_html)
@@ -53,7 +75,7 @@ async def render_email(
             alert_id=lead.id if lead else None,
         ) from exc
     payload = await renderer.build(session, lead, members)
-    return _render_pair(renderer.html_template, renderer.txt_template, {"payload": payload})
+    return _render_pair(renderer.html_template, renderer.txt_template, payload=payload)
 
 
 def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmail:
@@ -67,7 +89,8 @@ def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmai
     return _render_pair(
         _DIGEST_HTML_TEMPLATE,
         _DIGEST_TXT_TEMPLATE,
-        {"payload": payload, "top_line": top_line},
+        payload=payload,
+        top_line=top_line,
     )
 
 

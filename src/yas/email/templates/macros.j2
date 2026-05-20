@@ -1,4 +1,18 @@
-{# Reusable fragments shared by digest and immediate alerts. #}
+{# Reusable fragments shared by digest and immediate alerts.
+
+   Whitespace note: the inline `{% if %}` guards inside `offering_row_html`/
+   `offering_row_text` are tight on purpose so the rendered row is a single
+   readable line per offering. Goldens depend on this exact layout; do not
+   "fix" the indentation or split the inline conditions across lines without
+   re-baselining the goldens.
+
+   Score guards:
+   - `m.score is defined` catches the case where the dict simply lacks the key
+     (e.g. schedule_posted, where there's no Match join).
+   - `m.score is not none` additionally guards a caller that *sets* the key to
+     None — `"%.2f" | format(None)` raises. Always omit-or-set-a-float for the
+     score field; the macros tolerate omission, not None.
+#}
 
 {% macro offering_row_html(m) %}
 <li>
@@ -6,13 +20,13 @@
   {% if m.site_name %} @ {{ m.site_name }}{% endif %}
   {% if m.start_date %}&middot; {{ m.start_date | rel_date }}{% endif %}
   {% if m.price_cents is not none %}&middot; {{ m.price_cents | price }}{% endif %}
-  {% if m.score is defined %}&middot; score {{ "%.2f" | format(m.score) }}{% endif %}
+  {% if m.score is defined and m.score is not none %}&middot; score {{ "%.2f" | format(m.score) }}{% endif %}
   {% if m.registration_url %}&middot; <a href="{{ m.registration_url }}">Register</a>{% endif %}
 </li>
 {% endmacro %}
 
 {% macro offering_row_text(m) -%}
-  - {{ m.offering_name }}{% if m.site_name %} @ {{ m.site_name }}{% endif %}{% if m.start_date %} · {{ m.start_date | rel_date }}{% endif %}{% if m.price_cents is not none %} · {{ m.price_cents | price }}{% endif %}{% if m.score is defined %} · score {{ "%.2f" | format(m.score) }}{% endif %}{% if m.registration_url %} · {{ m.registration_url }}{% endif %}
+  - {{ m.offering_name }}{% if m.site_name %} @ {{ m.site_name }}{% endif %}{% if m.start_date %} · {{ m.start_date | rel_date }}{% endif %}{% if m.price_cents is not none %} · {{ m.price_cents | price }}{% endif %}{% if m.score is defined and m.score is not none %} · score {{ "%.2f" | format(m.score) }}{% endif %}{% if m.registration_url %} · {{ m.registration_url }}{% endif %}
 {%- endmacro %}
 
 {% macro reg_countdown_html(opens_at, label) %}
