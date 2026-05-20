@@ -17,13 +17,14 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.alerts.digest.builder import gather_digest_payload, render_digest
 from yas.alerts.digest.llm_summary import generate_top_line
 from yas.alerts.enqueuer import enqueue_digest
 from yas.config import Settings
 from yas.db.models import HouseholdSettings
 from yas.db.models.kid import Kid
 from yas.db.session import session_scope
+from yas.email import render_digest_payload
+from yas.email.builders import gather_digest_payload
 from yas.llm.client import LLMClient
 from yas.logging import get_logger
 from yas.worker.sweep import _parse_hhmm
@@ -115,7 +116,12 @@ async def daily_digest_loop(
                             llm,
                             cost_cap_remaining_usd=cost_cap,
                         )
-                        body_plain, body_html = render_digest(payload, top_line)
+                        rendered = render_digest_payload(payload, top_line)
+                        # Delivery reads subject from payload_json directly. We keep
+                        # the previous "Daily digest — {kid} — {date}" format here
+                        # rather than using rendered.subject (which is just top_line)
+                        # so the migration off render_digest is behavior-preserving;
+                        # changing the digest subject is a separate, deliberate call.
                         subject = f"Daily digest — {kid.name} — {today.isoformat()}"
 
                         await enqueue_digest(
@@ -124,8 +130,8 @@ async def daily_digest_loop(
                             for_date=today,
                             payload={
                                 "subject": subject,
-                                "body_plain": body_plain,
-                                "body_html": body_html,
+                                "body_plain": rendered.body_plain,
+                                "body_html": rendered.body_html,
                                 "top_line": top_line,
                             },
                         )

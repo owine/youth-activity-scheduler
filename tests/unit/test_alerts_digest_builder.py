@@ -1,4 +1,9 @@
-"""Tests for digest builder: gather_digest_payload and render_digest."""
+"""Tests for digest builder: gather_digest_payload and render_digest_payload.
+
+Lives under tests/unit/ with the historical filename; the code under test moved
+to yas.email in the email-template-layer refactor. A future cleanup pass can
+rename this to test_email_digest_builder.py.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +12,19 @@ from typing import Any
 
 import pytest
 
-from yas.alerts.digest.builder import DigestPayload, gather_digest_payload, render_digest
 from yas.db.base import Base
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
 from yas.db.session import create_engine_for, session_scope
+from yas.email import render_digest_payload
+from yas.email.builders import gather_digest_payload
+from yas.email.payloads import DigestPayload
+
+
+def render_digest(payload: DigestPayload, top_line: str) -> tuple[str, str]:
+    """Test helper: keep the (plain, html) tuple shape these tests were written against."""
+    rendered = render_digest_payload(payload, top_line)
+    return rendered.body_plain, rendered.body_html
 
 # ---------------------------------------------------------------------------
 # Engine / schema helper

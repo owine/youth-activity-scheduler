@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from yas.alerts.digest.builder import DigestPayload
+from yas.email.payloads import DigestPayload
 from yas.llm.client import LLMClient
 from yas.logging import get_logger
 

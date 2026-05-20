@@ -11,7 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from yas.alerts.digest.builder import DigestPayload, render_digest
+from yas.email import render_digest_payload
+from yas.email.payloads import DigestPayload
+
+
+def render_digest(payload: DigestPayload, top_line: str) -> tuple[str, str]:
+    """Test helper: keep the (plain, html) tuple shape these goldens were captured against."""
+    rendered = render_digest_payload(payload, top_line)
+    return rendered.body_plain, rendered.body_html
 
 _GOLDEN_DIR = Path(__file__).parent.parent / "golden" / "digest"
 

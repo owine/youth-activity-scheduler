@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from yas.alerts.digest.filters import fmt, price, rel_date
+from yas.email.filters import fmt, price, rel_date
 
 # ---------------------------------------------------------------------------
 # price filter
