@@ -15,7 +15,12 @@ from yas.db.models.match import Match
 from yas.db.models.offering import Offering
 from yas.db.models.site import Site
 from yas.email._errors import EmailRenderError
-from yas.email.payloads import DigestPayload, NewMatchPayload, RegOpensNowPayload
+from yas.email.payloads import (
+    DigestPayload,
+    NewMatchPayload,
+    RegOpens1hPayload,
+    RegOpensNowPayload,
+)
 
 
 def _offering_to_dict(
@@ -364,4 +369,34 @@ async def build_reg_opens_now(
     )
 
 
-__all__ = ["build_new_match", "build_reg_opens_now", "gather_digest_payload"]
+async def build_reg_opens_1h(
+    session: AsyncSession,
+    lead: Alert,
+    members: list[Alert],
+    *,
+    now: datetime | None = None,
+) -> RegOpens1hPayload:
+    """Build a RegOpens1hPayload for a "registration opens in ~1 hour" alert.
+
+    Same shape/joins as :func:`build_reg_opens_now`. ``now`` is a test seam so
+    goldens stay deterministic — defaults to ``datetime.now(UTC)``. The
+    registry calls this with no kwargs and ``now`` defaults at call time.
+    """
+    base = await build_reg_opens_now(session, lead, members)
+    now_val = now if now is not None else datetime.now(UTC)
+    return RegOpens1hPayload(
+        kid_id=base.kid_id,
+        kid_name=base.kid_name,
+        offering=base.offering,
+        opens_at=base.opens_at,
+        registration_url=base.registration_url,
+        now=now_val,
+    )
+
+
+__all__ = [
+    "build_new_match",
+    "build_reg_opens_1h",
+    "build_reg_opens_now",
+    "gather_digest_payload",
+]

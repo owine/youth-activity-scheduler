@@ -43,4 +43,25 @@ class RegOpensNowPayload:
     registration_url: str
 
 
-__all__ = ["DigestPayload", "NewMatchPayload", "RegOpensNowPayload"]
+@dataclass(frozen=True)
+class RegOpens1hPayload:
+    """Per-offering reg_opens_1h alert. Not coalesced.
+
+    ``now`` is captured at build time and passed into templates so any
+    time-to-open computation is deterministic for goldens.
+    """
+
+    kid_id: int
+    kid_name: str
+    offering: dict[str, Any]
+    opens_at: datetime
+    registration_url: str
+    now: datetime
+
+
+__all__ = [
+    "DigestPayload",
+    "NewMatchPayload",
+    "RegOpens1hPayload",
+    "RegOpensNowPayload",
+]

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.golden._scenarios import seed_new_match, seed_reg_opens_now
+from tests.golden._scenarios import seed_new_match, seed_reg_opens_1h, seed_reg_opens_now
 from yas.db.base import Base
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
@@ -28,7 +28,8 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
     [
         (AlertType.new_match, seed_new_match),
         (AlertType.reg_opens_now, seed_reg_opens_now),
-        # Tasks 7-14 append more entries here.
+        (AlertType.reg_opens_1h, seed_reg_opens_1h),
+        # Tasks 8-14 append more entries here.
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )

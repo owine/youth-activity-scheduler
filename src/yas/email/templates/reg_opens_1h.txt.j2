@@ -1,0 +1,15 @@
+{% extends "base.txt.j2" %}
+{% from "macros.j2" import offering_row_text %}
+
+{% block subject %}Registration opens in 1h: {{ payload.offering.offering_name }}{% endblock %}
+
+{% block body %}
+Registration opens in about 1 hour for {{ payload.kid_name }}:
+
+{{ offering_row_text(payload.offering) }}
+
+Opens at: {{ payload.opens_at }}
+Register: {{ payload.registration_url }}
+
+Tip: Have your account logged in before the link goes live.
+{% endblock %}

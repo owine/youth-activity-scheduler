@@ -1,0 +1,24 @@
+{% extends "base.html.j2" %}
+{% from "macros.j2" import offering_row_html, reg_countdown_html %}
+
+{% block title %}Registration opens in 1h: {{ payload.offering.offering_name }}{% endblock %}
+{% block heading %}Registration opens in ~1 hour: {{ payload.offering.offering_name }}{% endblock %}
+
+{% block body %}
+{{ reg_countdown_html(payload.opens_at, "Registration opens in ~1 hour") }}
+
+<ul>
+  {{ offering_row_html(payload.offering) }}
+</ul>
+
+<p style="background: #f8f8f8; padding: 12px; border-radius: 4px; color: #555;">
+  <strong>Tip:</strong> Have your account logged in before the link goes live so you can submit instantly.
+</p>
+
+<p style="margin-top: 16px;">
+  <a href="{{ payload.registration_url }}"
+     style="background: #2a6df4; color: #fff; padding: 10px 16px; border-radius: 4px; text-decoration: none;">
+    View registration page
+  </a>
+</p>
+{% endblock %}
