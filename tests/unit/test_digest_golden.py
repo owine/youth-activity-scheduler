@@ -138,3 +138,36 @@ def test_digest_golden(name: str, factory, top_line: str) -> None:
     expected_html = (_GOLDEN_DIR / f"{name}.html").read_text()
     assert txt == expected_txt, f"text diverges for {name}"
     assert html == expected_html, f"html diverges for {name}"
+
+
+def test_unknown_program_type_renders_as_other_header() -> None:
+    """A match with program_type 'unknown' renders under an 'Other' program
+    header in both formats (validates the label mapping in rendered output,
+    not just in the helper unit test). Kept off the goldens to avoid churn."""
+    new_matches = [
+        {
+            "offering_id": 99,
+            "offering_name": "Mystery Program",
+            "score": 0.5,
+            "site_id": 9,
+            "site_name": "Some Site",
+            "program_type": "unknown",
+            "start_date": date(2026, 7, 1),
+            "price_cents": 5000,
+            "registration_opens_at": None,
+            "registration_url": "https://example.com/reg/99",
+        }
+    ]
+    payload = DigestPayload(
+        kid_id=1,
+        kid_name="Ada",
+        for_date=date(2026, 5, 19),
+        new_matches=new_matches,
+        new_match_groups=_group_matches_by_site(new_matches),
+    )
+    txt, html = render_digest(payload, "Ada — 1 new match")
+    assert "Other" in txt
+    assert "Other" in html
+    # And not the raw enum value.
+    assert "unknown" not in txt
+    assert "unknown" not in html

@@ -93,7 +93,10 @@ def _group_matches_by_site(matches: list[dict[str, Any]]) -> list[dict[str, Any]
             site_id,
             {"site_id": site_id, "site_name": m.get("site_name", ""), "_programs": {}},
         )
-        pt = m.get("program_type", "unknown")
+        # Coerce missing / None / empty program_type to "unknown" so the label
+        # mapping never sees None (offerings always carry a value in practice
+        # since the column defaults to "unknown", but be defensive).
+        pt = m.get("program_type") or "unknown"
         prog = site["_programs"].setdefault(
             pt, {"program_type": pt, "program_label": _program_label(pt), "offerings": []}
         )

@@ -60,3 +60,41 @@ def test_missing_site_name_groups_under_blank():
     groups = _group_matches_by_site([_m(5, "", "art", "Painting", 0.5)])
     assert groups[0]["site_id"] == 5
     assert groups[0]["site_name"] == ""
+
+
+def test_none_program_type_buckets_as_unknown():
+    """An explicit None program_type coerces to 'unknown' / 'Other' (not a crash)."""
+    groups = _group_matches_by_site([_m(1, "Park", None, "Mystery Camp", 0.5)])
+    prog = groups[0]["programs"][0]
+    assert prog["program_type"] == "unknown"
+    assert prog["program_label"] == "Other"
+
+
+def test_absent_program_type_buckets_as_unknown():
+    """A match dict with no program_type key at all also buckets as 'unknown'."""
+    m = {"site_id": 1, "site_name": "Park", "offering_name": "Mystery", "score": 0.5}
+    groups = _group_matches_by_site([m])
+    prog = groups[0]["programs"][0]
+    assert prog["program_type"] == "unknown"
+    assert prog["program_label"] == "Other"
+
+
+def test_offerings_preserve_input_order_within_program():
+    """The helper does NOT re-sort offerings within a program; it preserves the
+    input order (callers pass a score-desc list). This documents the contract."""
+    first = _m(1, "Park", "soccer", "First In", 0.4)
+    second = _m(1, "Park", "soccer", "Second In", 0.9)
+    groups = _group_matches_by_site([first, second])
+    offerings = groups[0]["programs"][0]["offerings"]
+    assert [o["offering_name"] for o in offerings] == ["First In", "Second In"]
+
+
+def test_scoreless_only_program_sorts_after_scored_program():
+    """_score's -inf default sends a program whose offerings all lack scores to
+    the end of the program ordering, without crashing."""
+    scoreless = _m(1, "Park", "art", "Open Studio", 0.0)
+    del scoreless["score"]
+    scored = _m(1, "Park", "soccer", "Soccer Camp", 0.9)
+    # Scoreless program listed first in input to prove the program sort reorders.
+    groups = _group_matches_by_site([scoreless, scored])
+    assert [p["program_type"] for p in groups[0]["programs"]] == ["soccer", "art"]

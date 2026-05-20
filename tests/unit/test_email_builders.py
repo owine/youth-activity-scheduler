@@ -1115,3 +1115,11 @@ async def test_gather_digest_populates_site_name_and_groups(tmp_path: Any) -> No
     assert [g["site_name"] for g in payload.new_match_groups] == ["Park District", "YMCA"]
     park = payload.new_match_groups[0]
     assert [p["program_type"] for p in park["programs"]] == ["soccer", "swim"]
+    # Program labels are wired through (templates render these).
+    assert [p["program_label"] for p in park["programs"]] == ["Soccer", "Swim"]
+    # The actual offerings land under the right program, not just the type list.
+    assert [o["offering_name"] for o in park["programs"][0]["offerings"]] == ["Soccer Camp"]
+    assert [o["offering_name"] for o in park["programs"][1]["offerings"]] == ["Summer Swim"]
+    ymca = payload.new_match_groups[1]
+    assert [p["program_label"] for p in ymca["programs"]] == ["Dance"]
+    assert [o["offering_name"] for o in ymca["programs"][0]["offerings"]] == ["Ballet I"]
