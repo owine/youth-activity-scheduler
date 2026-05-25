@@ -17,8 +17,6 @@ x-build: &yas-build
   image: yas-local:dev   # local-only tag; not pushed
 
 services:
-  yas-migrate:
-    <<: *yas-build
   yas-worker:
     <<: *yas-build
   yas-api:

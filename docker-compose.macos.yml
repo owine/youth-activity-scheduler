@@ -14,10 +14,6 @@
 #       exec yas-api sqlite3 /data/activities.db '.tables'
 
 services:
-  yas-migrate:
-    volumes:
-      - yas-data:/data
-
   yas-worker:
     volumes:
       - yas-data:/data

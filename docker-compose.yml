@@ -2,33 +2,16 @@ x-image: &yas-image
   image: ghcr.io/owine/youth-activity-scheduler:latest
 
 services:
-  yas-migrate:
-    <<: *yas-image
-    command: ["uv", "run", "alembic", "upgrade", "head"]
-    env_file: .env
-    volumes:
-      - ./data:/data
-    restart: "no"
-    # The Dockerfile's baked HEALTHCHECK probes localhost:8080/healthz, which
-    # only makes sense for the API service. This container is a one-shot
-    # alembic runner — disable the inherited check so it doesn't report
-    # "unhealthy" before exiting.
-    healthcheck:
-      disable: true
-
   yas-worker:
     <<: *yas-image
     command: ["python", "-m", "yas", "worker"]
     env_file: .env
     volumes:
       - ./data:/data
-    depends_on:
-      yas-migrate:
-        condition: service_completed_successfully
     restart: unless-stopped
-    # Same reason as yas-migrate: the worker doesn't run an HTTP server, so
-    # the inherited Dockerfile HEALTHCHECK fails forever and breaks
-    # `depends_on: service_healthy` chains in deploy scripts.
+    # Disable the inherited Dockerfile HEALTHCHECK: this container doesn't
+    # run an HTTP server, so the curl probe would fail forever and break
+    # `depends_on: service_healthy` chains.
     healthcheck:
       disable: true
 
@@ -41,8 +24,6 @@ services:
     volumes:
       - ./data:/data
     depends_on:
-      yas-migrate:
-        condition: service_completed_successfully
       yas-worker:
         condition: service_started
     restart: unless-stopped
