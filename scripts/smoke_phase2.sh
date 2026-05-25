@@ -14,8 +14,7 @@ if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTH
 fi
 
 rm -f data/activities.db data/activities.db-shm data/activities.db-wal
-docker compose up -d yas-migrate
-docker compose logs yas-migrate | tail -5
+# yas-worker and yas-api apply migrations themselves on startup.
 docker compose up -d yas-worker yas-api
 sleep 10
 

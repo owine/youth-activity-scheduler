@@ -13,7 +13,6 @@ if [ "$(uname)" = "Darwin" ]; then
 fi
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d yas-migrate
 $COMPOSE up -d yas-worker yas-api
 sleep 10
 

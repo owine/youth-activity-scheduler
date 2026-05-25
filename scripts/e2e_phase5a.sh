@@ -10,8 +10,7 @@ COMPOSE="docker compose -f docker-compose.yml"
 [ "$(uname)" = "Darwin" ] && COMPOSE="$COMPOSE -f docker-compose.macos.yml"
 
 $COMPOSE down -v 2>/dev/null || true
-$COMPOSE build yas-api yas-worker yas-migrate
-$COMPOSE up -d yas-migrate
+$COMPOSE build yas-api yas-worker
 $COMPOSE up -d yas-worker yas-api
 sleep 8
 
