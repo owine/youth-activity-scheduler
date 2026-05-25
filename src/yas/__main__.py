@@ -20,8 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="yas", description="Youth Activity Scheduler")
     p.add_argument(
         "mode",
-        choices=["api", "worker", "all"],
-        help="which process to run: api (FastAPI), worker (crawler+alerts), all (both)",
+        choices=["api", "worker", "all", "migrate"],
+        help="which process to run: api (FastAPI), worker (crawler+alerts), all (both), migrate (apply schema and exit)",
     )
     return p
 
@@ -70,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_logging(level=settings.log_level)
     log = get_logger("yas.main")
+
+    from yas.db.migrations import upgrade_to_head
+
+    upgrade_to_head(settings.database_url)
+
+    if args.mode == "migrate":
+        log.info("mode.migrate.done")
+        return 0
+
     engine = create_engine_for(settings.database_url)
 
     if args.mode == "api":

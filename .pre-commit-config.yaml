@@ -20,11 +20,5 @@ repos:
     rev: v1.50.4
     hooks:
       - id: ggshield
-        # Scans staged changes for secrets before commit. Free for individuals
-        # (1000 commits/month). Repo is public, so we also rely on GitHub
-        # native secret scanning + push protection for defence-in-depth.
         language_version: python3
         stages: [pre-commit]
-        # ggshield decides what to scan internally (staged ranges); don't
-        # let pre-commit pass file paths as CLI args.
-        pass_filenames: false

@@ -14,7 +14,6 @@ fi
 COMPOSE="$COMPOSE -f docker-compose.smoke.yml"
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d yas-migrate
 $COMPOSE up -d yas-worker yas-api
 sleep 10
 

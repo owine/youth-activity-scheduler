@@ -34,8 +34,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Prefer a URL explicitly injected by a programmatic caller (e.g.
+# yas.db.migrations) via config.attributes["sqlalchemy.url"]; fall back
+# to settings for `alembic …` CLI invocations.
+#
+# The propagation step (set_main_option) is required because Alembic's
+# runners read sqlalchemy.url from the INI section, not from attributes.
+# alembic.ini hardcodes a default URL, so we cannot gate on get_main_option.
+if "sqlalchemy.url" in config.attributes:
+    config.set_main_option("sqlalchemy.url", config.attributes["sqlalchemy.url"])
+else:
+    settings = get_settings()
+    config.set_main_option("sqlalchemy.url", settings.database_url)
 
 target_metadata = Base.metadata
 
