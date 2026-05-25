@@ -63,7 +63,6 @@ uv sync
 cp .env.example .env
 echo "YAS_ANTHROPIC_API_KEY=sk-ant-…" >> .env
 mkdir -p data
-uv run alembic upgrade head
 uv run python -m yas all
 ```
 
