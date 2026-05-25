@@ -116,9 +116,12 @@ jobs:
         run: pnpm run build
         working-directory: frontend
       - name: Apply migrations
+        # Runtime `python -m yas api` also migrates on startup, but the seed
+        # step below writes rows and needs the schema in place before the API
+        # boots. Use the `migrate` mode so this path stays canonical.
         run: |
           mkdir -p data
-          uv run alembic upgrade head
+          uv run python -m yas migrate
       - name: Seed e2e fixtures
         run: uv run python scripts/seed_e2e.py "$YAS_DATABASE_URL"
       - name: Install Playwright browsers
