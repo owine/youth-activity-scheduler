@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, date
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,17 +34,20 @@ def _render_pair(
     txt_template: str,
     *,
     payload: Any,
+    today: date,
     **extras: Any,
 ) -> RenderedEmail:
     """Render one kind's two templates and pull the subject out of the .txt block.
 
-    The render context is always ``{"payload": payload, **extras}`` — callers
-    pass ``payload`` as a frozen dataclass and any additional well-known keys
-    (today only ``top_line`` for the digest) as keyword arguments. This keeps
-    the call sites in this module the single place that builds the context
-    dict, so future kinds can't drift by inventing ad-hoc keys.
+    The render context is always ``{"payload": payload, "today": today, **extras}`` —
+    callers pass ``payload`` as a frozen dataclass, ``today`` as the reference
+    date for relative date formatting (``rel_date`` filter), and any additional
+    well-known keys (e.g. ``top_line`` for the digest) as keyword arguments.
+    Threading ``today`` explicitly keeps rendered output deterministic: it
+    reflects what was true when the alert was scheduled or the digest assembled,
+    not whenever the template happens to render.
     """
-    ctx: dict[str, Any] = {"payload": payload, **extras}
+    ctx: dict[str, Any] = {"payload": payload, "today": today, **extras}
     txt_tpl = env.get_template(txt_template)
     html_tpl = env.get_template(html_template)
     # Subject lives in {% block subject %} in the .txt template.
@@ -74,7 +78,10 @@ async def render_email(
             alert_id=lead.id if lead else None,
         ) from exc
     payload = await renderer.build(session, lead, members)
-    return _render_pair(renderer.html_template, renderer.txt_template, payload=payload)
+    today = lead.scheduled_for.astimezone(UTC).date()
+    return _render_pair(
+        renderer.html_template, renderer.txt_template, payload=payload, today=today
+    )
 
 
 def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmail:
@@ -89,6 +96,7 @@ def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmai
         _DIGEST_HTML_TEMPLATE,
         _DIGEST_TXT_TEMPLATE,
         payload=payload,
+        today=payload.for_date,
         top_line=top_line,
     )
 

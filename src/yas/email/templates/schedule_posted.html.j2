@@ -1,5 +1,5 @@
 {% extends "base.html.j2" %}
-{% from "macros.j2" import offering_row_html %}
+{% from "macros.j2" import offering_row_html with context %}
 
 {% block title %}New schedule posted: {{ payload.site_name }}{% endblock %}
 {% block heading %}New schedule posted: {{ payload.site_name }}{% endblock %}

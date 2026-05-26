@@ -1,5 +1,5 @@
 {% extends "base.txt.j2" %}
-{% from "macros.j2" import offering_row_text %}
+{% from "macros.j2" import offering_row_text with context %}
 
 {% block subject %}{% if payload.matches | length > 1 %}{{ payload.matches | length }} watchlist matches for {{ payload.kid_name }}{% else %}Watchlist hit for {{ payload.kid_name }}: {{ payload.matches[0].offering_name }}{% endif %}{% endblock %}
 

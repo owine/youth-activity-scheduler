@@ -1,5 +1,5 @@
 {% extends "base.txt.j2" %}
-{% from "macros.j2" import offering_row_text %}
+{% from "macros.j2" import offering_row_text with context %}
 
 {% block subject %}Register now: {{ payload.offering.offering_name }} for {{ payload.kid_name }}{% endblock %}
 
