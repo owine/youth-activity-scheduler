@@ -18,7 +18,7 @@
 <li>
   <strong>{{ m.offering_name }}</strong>
   {% if show_site and m.site_name %} @ {{ m.site_name }}{% endif %}
-  {% if m.start_date %}&middot; {{ m.start_date | rel_date }}{% endif %}
+  {% if m.start_date %}&middot; {{ m.start_date | rel_date(today=today|default(none)) }}{% endif %}
   {% if m.price_cents is not none %}&middot; {{ m.price_cents | price }}{% endif %}
   {% if m.score is defined and m.score is not none %}&middot; score {{ "%.2f" | format(m.score) }}{% endif %}
   {% if m.registration_url %}&middot; <a href="{{ m.registration_url }}">Register</a>{% endif %}
@@ -26,7 +26,7 @@
 {% endmacro %}
 
 {% macro offering_row_text(m, show_site=true) -%}
-  - {{ m.offering_name }}{% if show_site and m.site_name %} @ {{ m.site_name }}{% endif %}{% if m.start_date %} · {{ m.start_date | rel_date }}{% endif %}{% if m.price_cents is not none %} · {{ m.price_cents | price }}{% endif %}{% if m.score is defined and m.score is not none %} · score {{ "%.2f" | format(m.score) }}{% endif %}{% if m.registration_url %} · {{ m.registration_url }}{% endif %}
+  - {{ m.offering_name }}{% if show_site and m.site_name %} @ {{ m.site_name }}{% endif %}{% if m.start_date %} · {{ m.start_date | rel_date(today=today|default(none)) }}{% endif %}{% if m.price_cents is not none %} · {{ m.price_cents | price }}{% endif %}{% if m.score is defined and m.score is not none %} · score {{ "%.2f" | format(m.score) }}{% endif %}{% if m.registration_url %} · {{ m.registration_url }}{% endif %}
 {%- endmacro %}
 
 {% macro reg_countdown_html(opens_at, label) %}

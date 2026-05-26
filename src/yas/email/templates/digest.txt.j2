@@ -1,5 +1,5 @@
 {% extends "base.txt.j2" %}
-{% from "macros.j2" import offering_row_text %}
+{% from "macros.j2" import offering_row_text with context %}
 {% block subject %}{{ top_line }}{% endblock %}
 {% block body %}
 {% if payload.under_no_matches_threshold -%}
@@ -24,7 +24,7 @@ NEW MATCHES ({{ payload.new_matches|length }}):
 {% if payload.starting_soon -%}
 STARTING SOON:
 {% for o in payload.starting_soon -%}
-  - {{ o.offering_name }} starts {{ o.start_date|rel_date }}
+  - {{ o.offering_name }} starts {{ o.start_date|rel_date(today=today) }}
 {% endfor %}
 {%- endif %}
 {% if payload.registration_calendar -%}

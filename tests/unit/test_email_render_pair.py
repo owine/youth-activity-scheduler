@@ -28,7 +28,7 @@ def test_subject_with_embedded_newline_raises(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(env, "get_template", fake_get_template)
 
     with pytest.raises(EmailRenderError, match="embedded newline"):
-        _render_pair("x.html.j2", "x.txt.j2", payload=object())
+        _render_pair("x.html.j2", "x.txt.j2", payload=object(), today=date(2026, 5, 19))
 
 
 def test_render_pair_passes_extras_into_context(monkeypatch) -> None:
@@ -39,7 +39,9 @@ def test_render_pair_passes_extras_into_context(monkeypatch) -> None:
     html = env.from_string("{{ top_line }}")
     monkeypatch.setattr(env, "get_template", lambda name: txt if name.endswith(".txt.j2") else html)
 
-    rendered = _render_pair("x.html.j2", "x.txt.j2", payload=object(), top_line="Hello there")
+    rendered = _render_pair(
+        "x.html.j2", "x.txt.j2", payload=object(), today=date(2026, 5, 19), top_line="Hello there"
+    )
     assert rendered.subject == "Hello there"
     assert "Hello there" in rendered.body_html
 

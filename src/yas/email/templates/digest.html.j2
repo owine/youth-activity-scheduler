@@ -1,5 +1,5 @@
 {% extends "base.html.j2" %}
-{% from "macros.j2" import offering_row_html %}
+{% from "macros.j2" import offering_row_html with context %}
 {% block title %}Activity Digest — {{ payload.for_date }}{% endblock %}
 {% block heading %}Daily digest — {{ payload.kid_name }}{% endblock %}
 {% block body %}
@@ -29,7 +29,7 @@ We're still scanning sites and will be in touch as soon as we find something. Ba
 <h1 style="font-size: 1em; border-bottom: 1px solid #ccc;">Starting Soon</h1>
 <ul>
   {% for o in payload.starting_soon %}
-  <li><strong>{{ o.offering_name }}</strong> starts {{ o.start_date|rel_date }}</li>
+  <li><strong>{{ o.offering_name }}</strong> starts {{ o.start_date|rel_date(today=today) }}</li>
   {% endfor %}
 </ul>
 {% endif %}

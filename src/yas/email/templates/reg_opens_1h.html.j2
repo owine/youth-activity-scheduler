@@ -1,5 +1,5 @@
 {% extends "base.html.j2" %}
-{% from "macros.j2" import offering_row_html, reg_countdown_html %}
+{% from "macros.j2" import offering_row_html, reg_countdown_html with context %}
 
 {% block title %}Registration opens in 1h: {{ payload.offering.offering_name }}{% endblock %}
 {% block heading %}Registration opens in ~1 hour: {{ payload.offering.offering_name }}{% endblock %}
