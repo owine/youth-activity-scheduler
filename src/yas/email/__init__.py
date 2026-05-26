@@ -79,9 +79,7 @@ async def render_email(
         ) from exc
     payload = await renderer.build(session, lead, members)
     today = lead.scheduled_for.astimezone(UTC).date()
-    return _render_pair(
-        renderer.html_template, renderer.txt_template, payload=payload, today=today
-    )
+    return _render_pair(renderer.html_template, renderer.txt_template, payload=payload, today=today)
 
 
 def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmail:
