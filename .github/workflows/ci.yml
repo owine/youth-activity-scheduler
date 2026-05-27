@@ -351,3 +351,32 @@ jobs:
           IMAGE: ${{ steps.image.outputs.name }}
         run: |
           docker buildx imagetools inspect "${IMAGE}:latest"
+
+  # Stable-named aggregator so the branch ruleset can require a single
+  # `ci-pass` check regardless of the matrix dimensions (the per-axis
+  # `docker-build (linux/amd64, ubuntu-24.04, amd64)` names disappear
+  # whenever a runner image rotates, and a job-level `if:` on the matrix
+  # parent means the axis check names are never created at all — leaving
+  # docs-only PRs permanently BLOCKED with "expected check not reported").
+  # Treats SKIPPED as success: docs-only PRs skip docker-build via
+  # `changes`, and the aggregator must not block those merges.
+  # Pattern: owine/house-manager#191 (aggregator) + owine/trip-tracker
+  # ci.yml `docker-build` (skipped-as-success).
+  ci-pass:
+    needs: [changes, check, frontend-check, e2e, docker-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed or were appropriately skipped
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          # Log only the per-job `result` field, never the full `needs` blob.
+          # `outputs` declared by upstream jobs can carry sensitive values
+          # if anyone adds one in the future; restricting the dump to results
+          # keeps the diagnostic ("which job failed?") without the leak risk.
+          echo "$NEEDS_JSON" | jq 'map_values({result})'
+          if echo "$NEEDS_JSON" | jq -e 'any(.[].result; . == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::One or more required jobs failed or were cancelled."
+            exit 1
+          fi
