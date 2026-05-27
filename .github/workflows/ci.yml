@@ -376,7 +376,9 @@ jobs:
           # if anyone adds one in the future; restricting the dump to results
           # keeps the diagnostic ("which job failed?") without the leak risk.
           echo "$NEEDS_JSON" | jq 'map_values({result})'
-          if echo "$NEEDS_JSON" | jq -e 'any(.[].result; . == "failure" or . == "cancelled")' >/dev/null; then
-            echo "::error::One or more required jobs failed or were cancelled."
+          # Whitelist acceptable results so future result types ('neutral',
+          # 'action_required', etc.) fail closed instead of silently passing.
+          if echo "$NEEDS_JSON" | jq -e 'any(.[].result; . != "success" and . != "skipped")' >/dev/null; then
+            echo "::error::One or more required jobs did not succeed or skip."
             exit 1
           fi
