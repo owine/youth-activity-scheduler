@@ -25,7 +25,13 @@ class _Offering:
     first_seen: datetime | None = None
 
 
+# Arbitrary but fixed reference date. Several tests below hardcode dates relative
+# to it (e.g. the registration-timing tests use 2026-04-01 / 2026-04-15), so if you
+# change TODAY you must update those expectations too.
 TODAY = date(2026, 4, 22)
+# Anchor "now" to TODAY so freshness tests stay deterministic regardless of the
+# wall clock; mixing datetime.now() with a frozen TODAY drifts as real time passes.
+NOW = datetime.combine(TODAY, time(12, 0), tzinfo=UTC)
 
 
 def test_score_breakdown_weighted_sum():
@@ -226,7 +232,7 @@ def test_registration_timing_unknown_defaults_half():
 
 def test_freshness_recent_full():
     kid = _Kid()
-    offering = _Offering(first_seen=datetime.now(UTC))
+    offering = _Offering(first_seen=NOW)
     _score, reasons = compute_score(
         kid,
         offering,
@@ -239,7 +245,7 @@ def test_freshness_recent_full():
 
 def test_freshness_old_zero():
     kid = _Kid()
-    offering = _Offering(first_seen=datetime.now(UTC) - timedelta(days=120))
+    offering = _Offering(first_seen=NOW - timedelta(days=120))
     _score, reasons = compute_score(
         kid,
         offering,
@@ -252,7 +258,7 @@ def test_freshness_old_zero():
 
 def test_score_is_weighted_combination():
     kid = _Kid(max_distance_mi=10.0)
-    offering = _Offering(first_seen=datetime.now(UTC))
+    offering = _Offering(first_seen=NOW)
     score, _reasons = compute_score(
         kid,
         offering,
