@@ -25,6 +25,9 @@ class _Offering:
     first_seen: datetime | None = None
 
 
+# Arbitrary but fixed reference date. Several tests below hardcode dates relative
+# to it (e.g. the registration-timing tests use 2026-04-01 / 2026-04-15), so if you
+# change TODAY you must update those expectations too.
 TODAY = date(2026, 4, 22)
 # Anchor "now" to TODAY so freshness tests stay deterministic regardless of the
 # wall clock; mixing datetime.now() with a frozen TODAY drifts as real time passes.
