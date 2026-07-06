@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -25,6 +25,28 @@ from yas.db.models._types import (
 from yas.db.session import create_engine_for, session_scope
 from yas.matching.matcher import rematch_kid, rematch_offering
 
+# Dates are anchored to today rather than hardcoded so these tests never become
+# time-bombs: the matcher's hard gates compare offering end_date and kid age
+# against date.today(), so a fixed calendar date would silently flip a passing
+# test to failing once wall-clock time crossed it.
+TODAY = date.today()
+# An offering that is currently active: started a month ago, ends two months out.
+ACTIVE_START = TODAY - timedelta(days=30)
+ACTIVE_END = TODAY + timedelta(days=60)
+
+
+def _years_before(d: date, years: int) -> date:
+    """Same month/day as ``d`` but ``years`` earlier (clamps Feb 29 -> Feb 28)."""
+    try:
+        return d.replace(year=d.year - years)
+    except ValueError:
+        return d.replace(year=d.year - years, day=28)
+
+
+def _dob_for_age(years: int) -> date:
+    """A DOB that makes a kid exactly ``years`` old as of today."""
+    return _years_before(TODAY, years)
+
 
 async def _setup(tmp_path):
     engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/m.db")
@@ -39,7 +61,7 @@ async def _setup(tmp_path):
 
 
 async def _kid(session, **kwargs):
-    defaults = dict(name="Sam", dob=date(2019, 5, 1), interests=["soccer"], active=True)
+    defaults = dict(name="Sam", dob=_dob_for_age(7), interests=["soccer"], active=True)
     defaults.update(kwargs)
     k = Kid(**defaults)
     session.add(k)
@@ -56,8 +78,8 @@ async def _offering(session, **kwargs):
         program_type=ProgramType.soccer.value,
         age_min=6,
         age_max=8,
-        start_date=date(2026, 5, 1),
-        end_date=date(2026, 6, 30),
+        start_date=ACTIVE_START,
+        end_date=ACTIVE_END,
         days_of_week=["sat"],
         time_start=time(9, 0),
         time_end=time(10, 0),
@@ -93,9 +115,10 @@ async def test_rematch_kid_writes_matching_row(tmp_path):
 async def test_age_gate_uses_start_date(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
-        # kid is 4 today but turns 5 on 2026-05-01
-        await _kid(s, dob=date(2021, 5, 1), interests=["soccer"])
-        await _offering(s, age_min=5, start_date=date(2026, 5, 15))
+        # kid is 4 today but turns 5 (in ~15 days) before the offering starts (in 30)
+        young_dob = _years_before(TODAY + timedelta(days=15), 5)
+        await _kid(s, dob=young_dob, interests=["soccer"])
+        await _offering(s, age_min=5, start_date=TODAY + timedelta(days=30))
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
@@ -108,7 +131,7 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["soccer"])
-        # school block covers 2026-09..2027-06
+        # school block starts after the summer offering ends (no date overlap)
         s.add(
             UnavailabilityBlock(
                 kid_id=kid.id,
@@ -116,14 +139,14 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
                 days_of_week=["mon", "tue", "wed", "thu", "fri"],
                 time_start=time(8, 0),
                 time_end=time(15, 0),
-                date_start=date(2026, 9, 2),
-                date_end=date(2027, 6, 14),
+                date_start=ACTIVE_END + timedelta(days=30),
+                date_end=ACTIVE_END + timedelta(days=300),
             )
         )
         await _offering(
             s,
-            start_date=date(2026, 6, 15),
-            end_date=date(2026, 8, 15),
+            start_date=ACTIVE_START,
+            end_date=ACTIVE_END,
             days_of_week=["mon", "wed"],
             time_start=time(9, 0),
             time_end=time(12, 0),
@@ -165,7 +188,7 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         kid_a = await _kid(s, interests=["soccer"])
-        kid_b = await _kid(s, name="Kid B", dob=date(2019, 5, 1), interests=["soccer"])
+        kid_b = await _kid(s, name="Kid B", dob=_dob_for_age(7), interests=["soccer"])
         sat_9 = await _offering(s, name="Sat 9am Soccer")
         sat_9_other = await _offering(s, name="Sat 9am Other Soccer")
         s.add(
@@ -186,8 +209,8 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
                 days_of_week=["sat"],
                 time_start=time(9, 0),
                 time_end=time(10, 0),
-                date_start=date(2026, 5, 1),
-                date_end=date(2026, 6, 30),
+                date_start=ACTIVE_START,
+                date_end=ACTIVE_END,
             )
         )
     async with session_scope(engine) as s:
@@ -213,7 +236,7 @@ async def test_failed_gate_removes_existing_match(tmp_path):
     async with session_scope(engine) as s:
         # change the kid to a different age so the match should drop
         kid = (await s.execute(select(Kid))).scalar_one()
-        kid.dob = date(2010, 1, 1)  # kid is ~16
+        kid.dob = _dob_for_age(16)  # too old for the age 6-8 offering
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
