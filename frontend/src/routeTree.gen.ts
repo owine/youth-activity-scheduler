@@ -9,35 +9,25 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as OfferingsRouteImport } from './routes/offerings'
-import { Route as CalendarRouteImport } from './routes/calendar'
-import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SitesIndexRouteImport } from './routes/sites.index'
+import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as CalendarRouteImport } from './routes/calendar'
+import { Route as OfferingsRouteImport } from './routes/offerings'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as KidsIndexRouteImport } from './routes/kids.index'
-import { Route as SitesNewRouteImport } from './routes/sites.new'
-import { Route as SitesIdRouteImport } from './routes/sites.$id'
 import { Route as KidsNewRouteImport } from './routes/kids.new'
-import { Route as KidsIdWatchlistRouteImport } from './routes/kids.$id.watchlist'
-import { Route as KidsIdMatchesRouteImport } from './routes/kids.$id.matches'
-import { Route as KidsIdEnrollmentsRouteImport } from './routes/kids.$id.enrollments'
-import { Route as KidsIdEditRouteImport } from './routes/kids.$id.edit'
+import { Route as SitesIndexRouteImport } from './routes/sites.index'
+import { Route as SitesIdRouteImport } from './routes/sites.$id'
+import { Route as SitesNewRouteImport } from './routes/sites.new'
 import { Route as KidsIdCalendarRouteImport } from './routes/kids.$id.calendar'
+import { Route as KidsIdEditRouteImport } from './routes/kids.$id.edit'
+import { Route as KidsIdEnrollmentsRouteImport } from './routes/kids.$id.enrollments'
+import { Route as KidsIdMatchesRouteImport } from './routes/kids.$id.matches'
+import { Route as KidsIdWatchlistRouteImport } from './routes/kids.$id.watchlist'
 
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OfferingsRoute = OfferingsRouteImport.update({
-  id: '/offerings',
-  path: '/offerings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CalendarRoute = CalendarRouteImport.update({
-  id: '/calendar',
-  path: '/calendar',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsRoute = AlertsRouteImport.update({
@@ -45,14 +35,19 @@ const AlertsRoute = AlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SitesIndexRoute = SitesIndexRouteImport.update({
-  id: '/sites/',
-  path: '/sites/',
+const OfferingsRoute = OfferingsRouteImport.update({
+  id: '/offerings',
+  path: '/offerings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KidsIndexRoute = KidsIndexRouteImport.update({
@@ -60,9 +55,14 @@ const KidsIndexRoute = KidsIndexRouteImport.update({
   path: '/kids/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SitesNewRoute = SitesNewRouteImport.update({
-  id: '/sites/new',
-  path: '/sites/new',
+const KidsNewRoute = KidsNewRouteImport.update({
+  id: '/kids/new',
+  path: '/kids/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitesIndexRoute = SitesIndexRouteImport.update({
+  id: '/sites/',
+  path: '/sites/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SitesIdRoute = SitesIdRouteImport.update({
@@ -70,24 +70,14 @@ const SitesIdRoute = SitesIdRouteImport.update({
   path: '/sites/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KidsNewRoute = KidsNewRouteImport.update({
-  id: '/kids/new',
-  path: '/kids/new',
+const SitesNewRoute = SitesNewRouteImport.update({
+  id: '/sites/new',
+  path: '/sites/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KidsIdWatchlistRoute = KidsIdWatchlistRouteImport.update({
-  id: '/kids/$id/watchlist',
-  path: '/kids/$id/watchlist',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KidsIdMatchesRoute = KidsIdMatchesRouteImport.update({
-  id: '/kids/$id/matches',
-  path: '/kids/$id/matches',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KidsIdEnrollmentsRoute = KidsIdEnrollmentsRouteImport.update({
-  id: '/kids/$id/enrollments',
-  path: '/kids/$id/enrollments',
+const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
+  id: '/kids/$id/calendar',
+  path: '/kids/$id/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KidsIdEditRoute = KidsIdEditRouteImport.update({
@@ -95,9 +85,19 @@ const KidsIdEditRoute = KidsIdEditRouteImport.update({
   path: '/kids/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const KidsIdCalendarRoute = KidsIdCalendarRouteImport.update({
-  id: '/kids/$id/calendar',
-  path: '/kids/$id/calendar',
+const KidsIdEnrollmentsRoute = KidsIdEnrollmentsRouteImport.update({
+  id: '/kids/$id/enrollments',
+  path: '/kids/$id/enrollments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KidsIdMatchesRoute = KidsIdMatchesRouteImport.update({
+  id: '/kids/$id/matches',
+  path: '/kids/$id/matches',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KidsIdWatchlistRoute = KidsIdWatchlistRouteImport.update({
+  id: '/kids/$id/watchlist',
+  path: '/kids/$id/watchlist',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -227,25 +227,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/offerings': {
-      id: '/offerings'
-      path: '/offerings'
-      fullPath: '/offerings'
-      preLoaderRoute: typeof OfferingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/calendar': {
-      id: '/calendar'
-      path: '/calendar'
-      fullPath: '/calendar'
-      preLoaderRoute: typeof CalendarRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -255,18 +241,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sites/': {
-      id: '/sites/'
-      path: '/sites'
-      fullPath: '/sites/'
-      preLoaderRoute: typeof SitesIndexRouteImport
+    '/offerings': {
+      id: '/offerings'
+      path: '/offerings'
+      fullPath: '/offerings'
+      preLoaderRoute: typeof OfferingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/kids/': {
@@ -276,11 +269,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KidsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/sites/new': {
-      id: '/sites/new'
-      path: '/sites/new'
-      fullPath: '/sites/new'
-      preLoaderRoute: typeof SitesNewRouteImport
+    '/kids/new': {
+      id: '/kids/new'
+      path: '/kids/new'
+      fullPath: '/kids/new'
+      preLoaderRoute: typeof KidsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sites/': {
+      id: '/sites/'
+      path: '/sites'
+      fullPath: '/sites/'
+      preLoaderRoute: typeof SitesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sites/$id': {
@@ -290,32 +290,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/kids/new': {
-      id: '/kids/new'
-      path: '/kids/new'
-      fullPath: '/kids/new'
-      preLoaderRoute: typeof KidsNewRouteImport
+    '/sites/new': {
+      id: '/sites/new'
+      path: '/sites/new'
+      fullPath: '/sites/new'
+      preLoaderRoute: typeof SitesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/kids/$id/watchlist': {
-      id: '/kids/$id/watchlist'
-      path: '/kids/$id/watchlist'
-      fullPath: '/kids/$id/watchlist'
-      preLoaderRoute: typeof KidsIdWatchlistRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kids/$id/matches': {
-      id: '/kids/$id/matches'
-      path: '/kids/$id/matches'
-      fullPath: '/kids/$id/matches'
-      preLoaderRoute: typeof KidsIdMatchesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kids/$id/enrollments': {
-      id: '/kids/$id/enrollments'
-      path: '/kids/$id/enrollments'
-      fullPath: '/kids/$id/enrollments'
-      preLoaderRoute: typeof KidsIdEnrollmentsRouteImport
+    '/kids/$id/calendar': {
+      id: '/kids/$id/calendar'
+      path: '/kids/$id/calendar'
+      fullPath: '/kids/$id/calendar'
+      preLoaderRoute: typeof KidsIdCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/kids/$id/edit': {
@@ -325,11 +311,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KidsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/kids/$id/calendar': {
-      id: '/kids/$id/calendar'
-      path: '/kids/$id/calendar'
-      fullPath: '/kids/$id/calendar'
-      preLoaderRoute: typeof KidsIdCalendarRouteImport
+    '/kids/$id/enrollments': {
+      id: '/kids/$id/enrollments'
+      path: '/kids/$id/enrollments'
+      fullPath: '/kids/$id/enrollments'
+      preLoaderRoute: typeof KidsIdEnrollmentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kids/$id/matches': {
+      id: '/kids/$id/matches'
+      path: '/kids/$id/matches'
+      fullPath: '/kids/$id/matches'
+      preLoaderRoute: typeof KidsIdMatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kids/$id/watchlist': {
+      id: '/kids/$id/watchlist'
+      path: '/kids/$id/watchlist'
+      fullPath: '/kids/$id/watchlist'
+      preLoaderRoute: typeof KidsIdWatchlistRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
