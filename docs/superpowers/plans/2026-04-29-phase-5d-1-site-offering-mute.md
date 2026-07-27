@@ -142,9 +142,7 @@ async def test_new_match_skipped_when_offering_muted(tmp_path):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     async with session_scope(engine) as s:
-        result = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={}
-        )
+        result = await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={})
     assert result is None
     async with session_scope(engine) as s:
         alerts = (await s.execute(select(Alert))).scalars().all()
@@ -157,9 +155,7 @@ async def test_new_match_skipped_when_site_muted(tmp_path):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
-        result = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={}
-        )
+        result = await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={})
     assert result is None
 
 
@@ -168,9 +164,7 @@ async def test_new_match_enqueues_when_both_unmuted(tmp_path):
     engine = await _make_engine(tmp_path)
     await _seed(engine)
     async with session_scope(engine) as s:
-        result = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={}
-        )
+        result = await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={})
     assert result is not None
 
 
@@ -180,9 +174,7 @@ async def test_new_match_enqueues_when_mute_in_past(tmp_path):
     past = datetime.now(UTC) - timedelta(days=1)
     await _seed(engine, offering_muted_until=past)
     async with session_scope(engine) as s:
-        result = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={}
-        )
+        result = await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={})
     assert result is not None
 
 
@@ -192,11 +184,7 @@ async def test_watchlist_hit_skipped_when_offering_muted(tmp_path):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     async with session_scope(engine) as s:
-        s.add(
-            WatchlistEntry(
-                id=99, kid_id=1, query="t-ball", active=True
-            )
-        )
+        s.add(WatchlistEntry(id=99, kid_id=1, query="t-ball", active=True))
     async with session_scope(engine) as s:
         # enqueue_watchlist_hit returns int (not Optional). With mute, the
         # spec says skip → return must signal "not enqueued". Per spec, we
@@ -243,9 +231,7 @@ async def test_schedule_posted_skipped_when_site_muted(tmp_path):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
-        result = await enqueue_schedule_posted(
-            s, page_id=1, site_id=1, summary="3 new offerings"
-        )
+        result = await enqueue_schedule_posted(s, page_id=1, site_id=1, summary="3 new offerings")
     assert result is None
 
 
@@ -397,14 +383,13 @@ Append a test to `tests/integration/test_alerts_enqueuer_mute.py`:
 async def test_reg_opens_countdowns_skipped_when_offering_muted(tmp_path):
     """All three reg-opens variants are gated by a single mute check."""
     from yas.alerts.enqueuer import enqueue_registration_countdowns
+
     engine = await _make_engine(tmp_path)
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     # Set offering's registration_opens_at so the function would normally fire.
     async with session_scope(engine) as s:
-        offering = (
-            await s.execute(select(Offering).where(Offering.id == 1))
-        ).scalar_one()
+        offering = (await s.execute(select(Offering).where(Offering.id == 1))).scalar_one()
         offering.registration_opens_at = datetime.now(UTC) + timedelta(hours=2)
     async with session_scope(engine) as s:
         result = await enqueue_registration_countdowns(s, kid_id=1, offering_id=1)
@@ -807,18 +792,18 @@ from sqlalchemy import or_, select
 b. In the `if include_matches:` block, extend the `select(Match, Offering)` query (the existing query already joins Offering; it also needs to join Site for the mute check, OR use a scalar subquery on Site.muted_until — joining is simpler):
 
 ```python
-            match_rows = (
-                await s.execute(
-                    select(Match, Offering)
-                    .join(Offering, Offering.id == Match.offering_id)
-                    .join(Site, Site.id == Offering.site_id)            # add
-                    .where(Match.kid_id == kid_id)
-                    .where(Match.score >= _MATCH_THRESHOLD)
-                    .where(~Match.offering_id.in_(committed_offering_ids))
-                    .where(or_(Offering.muted_until.is_(None), Offering.muted_until <= now))   # add
-                    .where(or_(Site.muted_until.is_(None), Site.muted_until <= now))           # add
-                )
-            ).all()
+match_rows = (
+    await s.execute(
+        select(Match, Offering)
+        .join(Offering, Offering.id == Match.offering_id)
+        .join(Site, Site.id == Offering.site_id)  # add
+        .where(Match.kid_id == kid_id)
+        .where(Match.score >= _MATCH_THRESHOLD)
+        .where(~Match.offering_id.in_(committed_offering_ids))
+        .where(or_(Offering.muted_until.is_(None), Offering.muted_until <= now))  # add
+        .where(or_(Site.muted_until.is_(None), Site.muted_until <= now))  # add
+    )
+).all()
 ```
 
 `Site` should already be imported at the top of `kid_calendar.py` (it's used elsewhere in the file). If not, add it.

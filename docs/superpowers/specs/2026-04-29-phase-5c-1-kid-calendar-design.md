@@ -120,13 +120,13 @@ src/yas/calendar/
 ```python
 def expand_recurring(
     *,
-    days_of_week: list[str],   # e.g. ["mon", "wed", "fri"]
+    days_of_week: list[str],  # e.g. ["mon", "wed", "fri"]
     time_start: time | None,
     time_end: time | None,
-    date_start: date | None,    # inclusive lower bound on the source row (None = unbounded)
-    date_end: date | None,      # inclusive upper bound on the source row (None = unbounded)
-    range_from: date,           # inclusive lower bound of the request window
-    range_to: date,             # exclusive upper bound of the request window
+    date_start: date | None,  # inclusive lower bound on the source row (None = unbounded)
+    date_end: date | None,  # inclusive upper bound on the source row (None = unbounded)
+    range_from: date,  # inclusive lower bound of the request window
+    range_to: date,  # exclusive upper bound of the request window
 ) -> Iterator[OccurrenceTuple]:
     """Yield (date, time_start, time_end, all_day) tuples for each
     weekday in `days_of_week` falling within the intersection of

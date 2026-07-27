@@ -61,7 +61,7 @@ In `src/yas/web/routes/kid_calendar_schemas.py`:
 # Update the kind union
 class CalendarEventOut(BaseModel):
     id: str
-    kind: Literal["enrollment", "unavailability", "match"]   # add "match"
+    kind: Literal["enrollment", "unavailability", "match"]  # add "match"
     # ...existing fields unchanged...
     # add at the bottom alongside the other optional fields:
     score: float | None = None
@@ -229,13 +229,17 @@ async def test_match_overlay_excludes_interested_and_waitlisted(client):
         await s.flush()
         s.add(
             Enrollment(
-                id=20, kid_id=1, offering_id=2,
+                id=20,
+                kid_id=1,
+                offering_id=2,
                 status=EnrollmentStatus.interested.value,
             )
         )
         s.add(
             Enrollment(
-                id=21, kid_id=1, offering_id=3,
+                id=21,
+                kid_id=1,
+                offering_id=3,
                 status=EnrollmentStatus.waitlisted.value,
             )
         )
@@ -271,7 +275,9 @@ async def test_match_overlay_includes_offerings_with_only_cancelled_enrollment(c
         await s.flush()
         s.add(
             Enrollment(
-                id=22, kid_id=1, offering_id=2,
+                id=22,
+                kid_id=1,
+                offering_id=2,
                 status=EnrollmentStatus.cancelled.value,
             )
         )

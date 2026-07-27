@@ -233,6 +233,7 @@ Edit `tests/unit/test_models_import.py`. Find the existing test that asserts Str
 ```python
 def test_alerttype_has_phase4_additions():
     from yas.db.models._types import AlertType
+
     assert AlertType.site_stagnant.value == "site_stagnant"
     assert AlertType.no_matches_for_kid.value == "no_matches_for_kid"
 ```
@@ -326,18 +327,33 @@ async def _setup(tmp_path):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with session_scope(engine) as s:
-        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1),
-                  alert_on={"new_match": True, "reg_opens": True}))
-        s.add(Kid(id=2, name="Alex", dob=date(2018, 1, 1),
-                  alert_on={"new_match": False, "reg_opens": True}))
+        s.add(
+            Kid(
+                id=1,
+                name="Sam",
+                dob=date(2019, 5, 1),
+                alert_on={"new_match": True, "reg_opens": True},
+            )
+        )
+        s.add(
+            Kid(
+                id=2,
+                name="Alex",
+                dob=date(2018, 1, 1),
+                alert_on={"new_match": False, "reg_opens": True},
+            )
+        )
         s.add(Site(id=1, name="X", base_url="https://x"))
         await s.flush()
         s.add(Page(id=1, site_id=1, url="https://x/p"))
         await s.flush()
         s.add(
             Offering(
-                id=1, site_id=1, page_id=1,
-                name="Spring Soccer", normalized_name="spring soccer",
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Spring Soccer",
+                normalized_name="spring soccer",
                 program_type=ProgramType.soccer.value,
             )
         )
@@ -345,6 +361,7 @@ async def _setup(tmp_path):
 
 
 # --- dedup_key -----------------------------------------------------------------
+
 
 def test_dedup_key_new_match_has_kid_and_offering():
     key = dedup_key_for(AlertType.new_match, kid_id=1, offering_id=42)
@@ -373,12 +390,17 @@ def test_dedup_key_no_matches_for_kid():
 
 # --- enqueue_new_match ---------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_new_match_inserts_first_time(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         aid = await enqueue_new_match(
-            s, kid_id=1, offering_id=1, score=0.9, reasons={"k": "v"},
+            s,
+            kid_id=1,
+            offering_id=1,
+            score=0.9,
+            reasons={"k": "v"},
         )
     assert aid is not None
     async with session_scope(engine) as s:
@@ -398,8 +420,8 @@ async def test_enqueue_new_match_updates_on_dedup_hit(tmp_path):
         await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={"v": 2})
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
-        assert len(rows) == 1                              # no duplicate
-        assert rows[0].payload_json["score"] == 0.9         # updated
+        assert len(rows) == 1  # no duplicate
+        assert rows[0].payload_json["score"] == 0.9  # updated
 
 
 @pytest.mark.asyncio
@@ -416,18 +438,24 @@ async def test_enqueue_new_match_respects_kid_alert_on_toggle(tmp_path):
 
 # --- enqueue_watchlist_hit -----------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_watchlist_hit_always_inserts(tmp_path):
     engine = await _setup(tmp_path)
     # Even a kid with new_match=False should still get watchlist alerts.
     async with session_scope(engine) as s:
         aid = await enqueue_watchlist_hit(
-            s, kid_id=2, offering_id=1, watchlist_entry_id=7, reasons={"pattern": "soccer"},
+            s,
+            kid_id=2,
+            offering_id=1,
+            watchlist_entry_id=7,
+            reasons={"pattern": "soccer"},
         )
     assert aid is not None
 
 
 # --- enqueue_registration_countdowns ------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
@@ -435,7 +463,10 @@ async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
     opens_at = datetime.now(UTC) + timedelta(days=3)
     async with session_scope(engine) as s:
         ids = await enqueue_registration_countdowns(
-            s, offering_id=1, kid_id=1, opens_at=opens_at,
+            s,
+            offering_id=1,
+            kid_id=1,
+            opens_at=opens_at,
         )
     assert len(ids) == 3
     async with session_scope(engine) as s:
@@ -456,7 +487,10 @@ async def test_enqueue_registration_countdowns_skips_past_due(tmp_path):
     opens_at = datetime.now(UTC) + timedelta(minutes=30)
     async with session_scope(engine) as s:
         ids = await enqueue_registration_countdowns(
-            s, offering_id=1, kid_id=1, opens_at=opens_at,
+            s,
+            offering_id=1,
+            kid_id=1,
+            opens_at=opens_at,
         )
     assert len(ids) == 1
     async with session_scope(engine) as s:
@@ -484,6 +518,7 @@ async def test_enqueue_registration_countdowns_rewrites_on_date_change(tmp_path)
 
 # --- enqueue_crawl_failed ------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
     engine = await _setup(tmp_path)
@@ -499,13 +534,14 @@ async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
 
 # --- enqueue_site_stagnant + enqueue_no_matches_for_kid -----------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_site_stagnant_one_per_site(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         await enqueue_site_stagnant(s, site_id=1, days_silent=31)
     async with session_scope(engine) as s:
-        await enqueue_site_stagnant(s, site_id=1, days_silent=32)    # next day
+        await enqueue_site_stagnant(s, site_id=1, days_silent=32)  # next day
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 1
@@ -526,6 +562,7 @@ async def test_enqueue_no_matches_for_kid_one_per_kid(tmp_path):
 
 # --- enqueue_digest ------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_enqueue_digest_dedups_per_day(tmp_path):
     engine = await _setup(tmp_path)
@@ -534,8 +571,7 @@ async def test_enqueue_digest_dedups_per_day(tmp_path):
     async with session_scope(engine) as s:
         await enqueue_digest(s, kid_id=1, for_date=today, payload=payload)
     async with session_scope(engine) as s:
-        await enqueue_digest(s, kid_id=1, for_date=today,
-                             payload={**payload, "subject": "updated"})
+        await enqueue_digest(s, kid_id=1, for_date=today, payload={**payload, "subject": "updated"})
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 1
@@ -825,11 +861,13 @@ async def enqueue_registration_countdowns(
         delete(Alert).where(
             Alert.kid_id == kid_id,
             Alert.offering_id == offering_id,
-            Alert.type.in_([
-                AlertType.reg_opens_24h.value,
-                AlertType.reg_opens_1h.value,
-                AlertType.reg_opens_now.value,
-            ]),
+            Alert.type.in_(
+                [
+                    AlertType.reg_opens_24h.value,
+                    AlertType.reg_opens_1h.value,
+                    AlertType.reg_opens_now.value,
+                ]
+            ),
             Alert.sent_at.is_(None),
             Alert.skipped.is_(False),
         )
@@ -848,7 +886,9 @@ async def enqueue_registration_countdowns(
         if scheduled_for < now:
             continue
         dk = dedup_key_for(
-            alert_type, kid_id=kid_id, offering_id=offering_id,
+            alert_type,
+            kid_id=kid_id,
+            offering_id=offering_id,
             scheduled_for=scheduled_for,
         )
         aid = await _upsert_alert(
@@ -1003,12 +1043,15 @@ class _FakeAlert:
 
 def _a(id_, kid, atype, offset_s: int) -> _FakeAlert:
     return _FakeAlert(
-        id=id_, kid_id=kid, type=atype.value,
+        id=id_,
+        kid_id=kid,
+        type=atype.value,
         scheduled_for=datetime(2026, 5, 5, 10, 0, tzinfo=UTC) + timedelta(seconds=offset_s),
     )
 
 
 # --- coalesce -----------------------------------------------------------------
+
 
 def test_coalesce_single_alert_single_group():
     alerts = [_a(1, 1, AlertType.new_match, 0)]
@@ -1031,7 +1074,7 @@ def test_coalesce_merges_same_kid_type_within_window():
 def test_coalesce_does_not_merge_across_window():
     alerts = [
         _a(1, 1, AlertType.new_match, 0),
-        _a(2, 1, AlertType.new_match, 700),   # 700s > 600s window
+        _a(2, 1, AlertType.new_match, 700),  # 700s > 600s window
     ]
     groups = coalesce(alerts, window_s=600)
     assert len(groups) == 2
@@ -1081,17 +1124,22 @@ def test_coalesce_stable_ordering_by_scheduled_for():
 
 # --- should_rate_limit_push ---------------------------------------------------
 
-@pytest.mark.parametrize("sent,cap,expected", [
-    (0, 5, False),
-    (4, 5, False),
-    (5, 5, True),
-    (10, 5, True),
-])
+
+@pytest.mark.parametrize(
+    "sent,cap,expected",
+    [
+        (0, 5, False),
+        (4, 5, False),
+        (5, 5, True),
+        (10, 5, True),
+    ],
+)
 def test_should_rate_limit_push(sent, cap, expected):
     assert should_rate_limit_push(sent, cap) is expected
 
 
 # --- is_in_quiet_hours --------------------------------------------------------
+
 
 def test_quiet_hours_same_day_window():
     now = datetime(2026, 5, 5, 14, 0, tzinfo=UTC)  # 14:00 UTC
@@ -1138,18 +1186,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
 
-_NEVER_COALESCE = frozenset({
-    AlertType.reg_opens_now.value,
-    AlertType.reg_opens_1h.value,
-    AlertType.watchlist_hit.value,
-    AlertType.crawl_failed.value,
-    AlertType.digest.value,
-})
+_NEVER_COALESCE = frozenset(
+    {
+        AlertType.reg_opens_now.value,
+        AlertType.reg_opens_1h.value,
+        AlertType.watchlist_hit.value,
+        AlertType.crawl_failed.value,
+        AlertType.digest.value,
+    }
+)
 
 
 @dataclass(frozen=True)
 class AlertGroup:
-    lead: Any              # the earliest-scheduled member
+    lead: Any  # the earliest-scheduled member
     members: list[Any] = field(default_factory=list)
     kid_id: int | None = None
     alert_type: str = ""
@@ -1168,12 +1218,14 @@ def coalesce(due: list[Any], *, window_s: int) -> list[AlertGroup]:
         members = pending.pop(key, [])
         if not members:
             return
-        groups.append(AlertGroup(
-            lead=members[0],
-            members=members,
-            kid_id=key[0],
-            alert_type=key[1],
-        ))
+        groups.append(
+            AlertGroup(
+                lead=members[0],
+                members=members,
+                kid_id=key[0],
+                alert_type=key[1],
+            )
+        )
 
     for a in sorted_alerts:
         if a.type in _NEVER_COALESCE:
@@ -1206,7 +1258,9 @@ def should_rate_limit_push(sent_count: int, max_per_hour: int) -> bool:
 
 
 async def count_pushes_sent_in_last_hour(
-    session: AsyncSession, kid_id: int, push_channels: list[str],
+    session: AsyncSession,
+    kid_id: int,
+    push_channels: list[str],
 ) -> int:
     """Count alerts.sent_at >= now-1h where any configured push channel was
     used. Channels is a list of notifier.name values."""
@@ -1229,14 +1283,18 @@ async def count_pushes_sent_in_last_hour(
     if rows == 0:
         return 0
     alerts = (
-        await session.execute(
-            select(Alert).where(
-                Alert.kid_id == kid_id,
-                Alert.sent_at.isnot(None),
-                Alert.sent_at >= window_start,
+        (
+            await session.execute(
+                select(Alert).where(
+                    Alert.kid_id == kid_id,
+                    Alert.sent_at.isnot(None),
+                    Alert.sent_at >= window_start,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return sum(1 for a in alerts if any(c in push_channels for c in (a.channels or [])))
 
 
@@ -1328,7 +1386,7 @@ async def test_seed_idempotent(tmp_path):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
     async with session_scope(engine) as s:
-        await seed_default_routing(s)   # second call is a no-op
+        await seed_default_routing(s)  # second call is a no-op
     async with session_scope(engine) as s:
         rows = (await s.execute(select(AlertRouting))).scalars().all()
         assert len(rows) == len(AlertType)
@@ -1350,9 +1408,11 @@ async def test_get_routing_respects_disabled_flag(tmp_path):
     engine = await _engine(tmp_path)
     async with session_scope(engine) as s:
         await seed_default_routing(s)
-        row = (await s.execute(
-            select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
-        )).scalar_one()
+        row = (
+            await s.execute(
+                select(AlertRouting).where(AlertRouting.type == AlertType.new_match.value)
+            )
+        ).scalar_one()
         row.enabled = False
     async with session_scope(engine) as s:
         _channels, enabled = await get_routing(s, AlertType.new_match)
@@ -1396,37 +1456,38 @@ DEFAULT_ROUTING: dict[str, list[str]] = {
     AlertType.reg_opens_24h.value: ["email"],
     AlertType.reg_opens_1h.value: ["push"],
     AlertType.reg_opens_now.value: ["push", "email"],
-    AlertType.schedule_posted.value: [],         # digest only
+    AlertType.schedule_posted.value: [],  # digest only
     AlertType.crawl_failed.value: ["email"],
     AlertType.digest.value: ["email"],
-    AlertType.site_stagnant.value: [],            # digest only
-    AlertType.no_matches_for_kid.value: [],       # digest only
+    AlertType.site_stagnant.value: [],  # digest only
+    AlertType.no_matches_for_kid.value: [],  # digest only
 }
 
 
 async def seed_default_routing(session: AsyncSession) -> None:
     """Ensure alert_routing has a row for every AlertType. Idempotent."""
-    existing_types = set(
-        (await session.execute(select(AlertRouting.type))).scalars().all()
-    )
+    existing_types = set((await session.execute(select(AlertRouting.type))).scalars().all())
     for alert_type, channels in DEFAULT_ROUTING.items():
         if alert_type in existing_types:
             continue
-        session.add(AlertRouting(
-            type=alert_type, channels=channels, enabled=True,
-        ))
+        session.add(
+            AlertRouting(
+                type=alert_type,
+                channels=channels,
+                enabled=True,
+            )
+        )
     await session.flush()
 
 
 async def get_routing(
-    session: AsyncSession, alert_type: AlertType,
+    session: AsyncSession,
+    alert_type: AlertType,
 ) -> tuple[list[str], bool]:
     """Return (channels, enabled) for the given alert type. Falls back to
     DEFAULT_ROUTING + enabled=True if the row is missing."""
     row = (
-        await session.execute(
-            select(AlertRouting).where(AlertRouting.type == alert_type.value)
-        )
+        await session.execute(select(AlertRouting).where(AlertRouting.type == alert_type.value))
     ).scalar_one_or_none()
     if row is None:
         return (DEFAULT_ROUTING.get(alert_type.value, []), True)
@@ -1493,8 +1554,10 @@ def test_send_result_shape():
 
 def test_notifier_message_urgent_default_false():
     m = NotifierMessage(
-        kid_id=1, alert_type=AlertType.new_match,
-        subject="Sub", body_plain="body",
+        kid_id=1,
+        alert_type=AlertType.new_match,
+        subject="Sub",
+        body_plain="body",
     )
     assert m.urgent is False
     assert m.body_html is None
@@ -1502,6 +1565,7 @@ def test_notifier_message_urgent_default_false():
 
 def test_fake_notifier_records_sends():
     from tests.fakes.notifier import FakeNotifier
+
     f = FakeNotifier(name="fake", capabilities={NotifierCapability.email})
     assert f.name == "fake"
     assert NotifierCapability.email in f.capabilities
@@ -1532,7 +1596,7 @@ from yas.db.models._types import AlertType
 class NotifierCapability(StrEnum):
     email = "email"
     push = "push"
-    push_emergency = "push_emergency"   # retry-until-ack (Pushover priority=2)
+    push_emergency = "push_emergency"  # retry-until-ack (Pushover priority=2)
 
 
 @dataclass(frozen=True)
@@ -1641,11 +1705,13 @@ class _Handler:
 
     async def handle_DATA(self, server, session, envelope):
         msg = BytesParser(policy=default_policy).parsebytes(envelope.content)
-        self._sink.append(CapturedMessage(
-            from_addr=envelope.mail_from,
-            to_addrs=tuple(envelope.rcpt_tos),
-            message=msg,  # type: ignore[arg-type]
-        ))
+        self._sink.append(
+            CapturedMessage(
+                from_addr=envelope.mail_from,
+                to_addrs=tuple(envelope.rcpt_tos),
+                message=msg,  # type: ignore[arg-type]
+            )
+        )
         return "250 OK"
 
 
@@ -1848,16 +1914,25 @@ async def alert_delivery_loop(engine, settings, notifiers) -> None:
                 # Load the single household_settings row each tick — quiet-hours
                 # and rate-cap depend on its fields. Loaded fresh so config
                 # edits via API take effect without worker restart.
-                household = (await s.execute(
-                    select(HouseholdSettings).limit(1)
-                )).scalar_one_or_none()
-                due = (await s.execute(
-                    select(Alert).where(
-                        Alert.sent_at.is_(None),
-                        Alert.skipped.is_(False),
-                        Alert.scheduled_for <= datetime.now(UTC),
-                    ).order_by(Alert.scheduled_for).limit(100)
-                )).scalars().all()
+                household = (
+                    await s.execute(select(HouseholdSettings).limit(1))
+                ).scalar_one_or_none()
+                due = (
+                    (
+                        await s.execute(
+                            select(Alert)
+                            .where(
+                                Alert.sent_at.is_(None),
+                                Alert.skipped.is_(False),
+                                Alert.scheduled_for <= datetime.now(UTC),
+                            )
+                            .order_by(Alert.scheduled_for)
+                            .limit(100)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
                 # startup grace window → mark too-old skipped
                 groups = coalesce(due, window_s=settings.alert_coalesce_normal_s)
                 for g in groups:

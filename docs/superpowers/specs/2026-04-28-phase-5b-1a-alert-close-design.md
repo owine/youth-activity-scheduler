@@ -76,6 +76,7 @@ Two new routes added to `src/yas/web/routes/alerts.py`. Both follow the existing
 class AlertCloseIn(BaseModel):
     reason: CloseReason
 
+
 @router.post("/{alert_id}/close", response_model=AlertOut)
 async def close_alert(alert_id: int, body: AlertCloseIn, request: Request) -> AlertOut: ...
 ```
@@ -127,7 +128,7 @@ The existing `GET /api/alerts` list endpoint is not modified. It returns closed 
 ### 4.1 Query parameter
 
 ```python
-include_closed: Annotated[bool, Query()] = False,
+include_closed: Annotated[bool, Query()] = (False,)
 ```
 
 ### 4.2 Filter change

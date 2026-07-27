@@ -77,7 +77,7 @@ async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[
     task = asyncio.create_task(alert_delivery_loop(engine, settings, notifiers))
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=2.5)
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError, asyncio.CancelledError:
         pass
     finally:
         task.cancel()

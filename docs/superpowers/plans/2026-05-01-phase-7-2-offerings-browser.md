@@ -110,8 +110,8 @@ class OfferingSummary(BaseModel):
     registration_opens_at: datetime | None = None
     site_name: str
     muted_until: datetime | None = None
-    location_lat: float | None = None    # NEW
-    location_lon: float | None = None    # NEW
+    location_lat: float | None = None  # NEW
+    location_lon: float | None = None  # NEW
 ```
 
 ### Step 5: Populate fields in `matches.py`

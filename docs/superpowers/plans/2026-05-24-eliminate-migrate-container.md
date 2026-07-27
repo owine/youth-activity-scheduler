@@ -233,13 +233,13 @@ Add `"migrate"` as a CLI mode and call `upgrade_to_head` at the top of `main()` 
 In `build_parser()`, change the `choices` list from:
 
 ```python
-choices=["api", "worker", "all"],
+choices = (["api", "worker", "all"],)
 ```
 
 to:
 
 ```python
-choices=["api", "worker", "all", "migrate"],
+choices = (["api", "worker", "all", "migrate"],)
 ```
 
 Update the `help` string to mention `migrate` (e.g. `"migrate (apply schema only and exit)"`).

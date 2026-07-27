@@ -85,8 +85,8 @@ class HouseholdOut(BaseModel):
     home_location_id: int | None
     home_address: str | None
     home_location_name: str | None
-    home_lat: float | None      # NEW
-    home_lon: float | None      # NEW
+    home_lat: float | None  # NEW
+    home_lon: float | None  # NEW
     default_max_distance_mi: float | None
     digest_time: str
     quiet_hours_start: str | None
@@ -108,8 +108,8 @@ async def _to_out(s: AsyncSession, hh: HouseholdSettings) -> HouseholdOut:
         home_location_id=hh.home_location_id,
         home_address=loc.address if loc else None,
         home_location_name=loc.name if loc else None,
-        home_lat=loc.lat if loc else None,             # NEW
-        home_lon=loc.lon if loc else None,             # NEW
+        home_lat=loc.lat if loc else None,  # NEW
+        home_lon=loc.lon if loc else None,  # NEW
         default_max_distance_mi=hh.default_max_distance_mi,
         digest_time=hh.digest_time,
         quiet_hours_start=hh.quiet_hours_start,
@@ -134,6 +134,7 @@ Expected: all green. The two new fields default to `None` when no Location is se
 
 ```python
 """Tests for POST /api/notifiers/{channel}/test."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -268,6 +269,7 @@ Expected: 5 failures with "ModuleNotFoundError" or "404 Not Found" — endpoint 
 
 ```python
 """Schemas for POST /api/notifiers/{channel}/test."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
@@ -285,6 +287,7 @@ class TestSendOut(BaseModel):
 
 ```python
 """POST /api/notifiers/{channel}/test — send a fixed test message."""
+
 from __future__ import annotations
 
 from typing import Any

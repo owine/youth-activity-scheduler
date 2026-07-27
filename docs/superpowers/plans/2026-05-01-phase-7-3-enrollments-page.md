@@ -116,6 +116,7 @@ Expected: 1 failure with `KeyError: 'offering'` or pydantic validation error (un
 
 ```python
 """Pydantic models for /api/enrollments endpoints."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -163,8 +164,11 @@ from yas.db.models import Enrollment, Kid, Location, Offering, Site
 from yas.web.routes.matches_schemas import OfferingSummary
 from yas.db.models._types import EnrollmentStatus
 
+
 # Helper to build OfferingSummary from joined rows.
-def _build_offering_summary(offering: Offering, site_name: str, loc_lat: float | None, loc_lon: float | None) -> OfferingSummary:
+def _build_offering_summary(
+    offering: Offering, site_name: str, loc_lat: float | None, loc_lon: float | None
+) -> OfferingSummary:
     data = {
         k: getattr(offering, k)
         for k in OfferingSummary.model_fields
@@ -194,9 +198,13 @@ q = q.order_by(Enrollment.id)
 rows = (await s.execute(q)).all()
 return [
     EnrollmentOut(
-        id=e.id, kid_id=e.kid_id, offering_id=e.offering_id,
-        status=EnrollmentStatus(e.status), enrolled_at=e.enrolled_at,
-        notes=e.notes, created_at=e.created_at,
+        id=e.id,
+        kid_id=e.kid_id,
+        offering_id=e.offering_id,
+        status=EnrollmentStatus(e.status),
+        enrolled_at=e.enrolled_at,
+        notes=e.notes,
+        created_at=e.created_at,
         offering=_build_offering_summary(o, site_name, loc_lat, loc_lon),
     )
     for e, o, site_name, loc_lat, loc_lon in rows
@@ -207,17 +215,23 @@ For `get_enrollment` / `create_enrollment` / `patch_enrollment` (singleton retur
 1. After the mutation completes (or for GET, after fetching the enrollment), call `await s.refresh(enrollment)` if needed.
 2. Run a follow-up query keyed by `enrollment.offering_id`:
    ```python
-   row = (await s.execute(
-       select(Offering, Site.name, Location.lat, Location.lon)
-       .join(Site, Site.id == Offering.site_id)
-       .outerjoin(Location, Location.id == Offering.location_id)
-       .where(Offering.id == enrollment.offering_id)
-   )).first()
+   row = (
+       await s.execute(
+           select(Offering, Site.name, Location.lat, Location.lon)
+           .join(Site, Site.id == Offering.site_id)
+           .outerjoin(Location, Location.id == Offering.location_id)
+           .where(Offering.id == enrollment.offering_id)
+       )
+   ).first()
    offering, site_name, loc_lat, loc_lon = row
    return EnrollmentOut(
-       id=enrollment.id, kid_id=enrollment.kid_id, offering_id=enrollment.offering_id,
-       status=EnrollmentStatus(enrollment.status), enrolled_at=enrollment.enrolled_at,
-       notes=enrollment.notes, created_at=enrollment.created_at,
+       id=enrollment.id,
+       kid_id=enrollment.kid_id,
+       offering_id=enrollment.offering_id,
+       status=EnrollmentStatus(enrollment.status),
+       enrolled_at=enrollment.enrolled_at,
+       notes=enrollment.notes,
+       created_at=enrollment.created_at,
        offering=_build_offering_summary(offering, site_name, loc_lat, loc_lon),
    )
    ```

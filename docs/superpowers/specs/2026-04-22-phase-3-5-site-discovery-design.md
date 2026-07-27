@@ -107,10 +107,14 @@ class HeadInfo:
     title: str
     meta_description: str | None
     kind: Literal["html", "pdf"]
-    anchor_text: str | None = None   # populated only when URL came via link extraction
+    anchor_text: str | None = None  # populated only when URL came via link extraction
+
 
 async def scrape_head(
-    url: str, *, http_client: httpx.AsyncClient, timeout_s: int,
+    url: str,
+    *,
+    http_client: httpx.AsyncClient,
+    timeout_s: int,
     anchor_text: str | None = None,
 ) -> HeadInfo | None:
     """Return HeadInfo or None on any failure (4xx/5xx/timeout/parse error).
@@ -129,9 +133,11 @@ class ScoredCandidate(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     reason: str
 
+
 class ClassificationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidates: list[ScoredCandidate]
+
 
 async def classify_candidates(
     candidates: list[HeadInfo],
@@ -168,6 +174,7 @@ class DiscoveryStats:
     classified: int
     returned: int
 
+
 @dataclass(frozen=True)
 class DiscoveryCandidate:
     url: str
@@ -176,12 +183,14 @@ class DiscoveryCandidate:
     score: float
     reason: str
 
+
 @dataclass(frozen=True)
 class DiscoveryResult:
     site_id: int
     seed_url: str
     stats: DiscoveryStats
     candidates: list[DiscoveryCandidate]
+
 
 async def discover_site(
     *,
@@ -212,12 +221,14 @@ class DiscoverRequest(BaseModel):
     min_score: float | None = Field(default=None, ge=0.0, le=1.0)
     max_candidates: int | None = Field(default=None, ge=1, le=50)
 
+
 class CandidateOut(BaseModel):
     url: str
     title: str
     kind: Literal["html", "pdf"]
     score: float
     reason: str
+
 
 class DiscoveryStatsOut(BaseModel):
     sitemap_urls: int
@@ -226,6 +237,7 @@ class DiscoveryStatsOut(BaseModel):
     fetched_heads: int
     classified: int
     returned: int
+
 
 class DiscoveryResultOut(BaseModel):
     site_id: int
@@ -255,8 +267,8 @@ Status codes:
 ```python
 # src/yas/config.py
 discovery_enabled: bool = True
-discovery_max_candidates: int = 50       # cap BEFORE LLM classification
-discovery_max_returned: int = 20         # cap AFTER filter
+discovery_max_candidates: int = 50  # cap BEFORE LLM classification
+discovery_max_returned: int = 20  # cap AFTER filter
 discovery_min_score: float = 0.5
 discovery_head_fetch_concurrency: int = 10
 discovery_head_fetch_timeout_s: int = 10

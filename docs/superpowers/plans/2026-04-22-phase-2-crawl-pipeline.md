@@ -387,9 +387,8 @@ def normalize(html: str) -> str:
     for node in tree.css("*"):
         attrs = dict(node.attributes or {})
         for name in list(attrs.keys()):
-            if (
-                name in _NOISE_ATTRS
-                or any(name.startswith(prefix) for prefix in _NOISE_ATTR_PREFIXES)
+            if name in _NOISE_ATTRS or any(
+                name.startswith(prefix) for prefix in _NOISE_ATTR_PREFIXES
             ):
                 del node.attrs[name]
     # 4. Emit visible text only.
@@ -520,8 +519,20 @@ def test_prompt_contains_site_and_url_and_html():
 
 def test_prompt_mentions_fixed_program_vocabulary():
     system, _ = build_extraction_prompt(html="", url="", site_name="x")
-    for tag in ("soccer", "swim", "martial_arts", "art", "music", "stem", "dance",
-                "gym", "multisport", "outdoor", "academic", "camp_general"):
+    for tag in (
+        "soccer",
+        "swim",
+        "martial_arts",
+        "art",
+        "music",
+        "stem",
+        "dance",
+        "gym",
+        "multisport",
+        "outdoor",
+        "academic",
+        "camp_general",
+    ):
         assert tag in system
 
 
@@ -611,8 +622,19 @@ message carries the (normalized) HTML, URL, and site name."""
 from __future__ import annotations
 
 _PROGRAM_TYPES = (
-    "soccer", "swim", "martial_arts", "art", "music", "stem", "dance",
-    "gym", "multisport", "outdoor", "academic", "camp_general", "unknown",
+    "soccer",
+    "swim",
+    "martial_arts",
+    "art",
+    "music",
+    "stem",
+    "dance",
+    "gym",
+    "multisport",
+    "outdoor",
+    "academic",
+    "camp_general",
+    "unknown",
 )
 
 _SYSTEM = f"""You extract youth activity offerings from a single web page into a
@@ -644,12 +666,7 @@ Strict rules:
 def build_extraction_prompt(*, html: str, url: str, site_name: str) -> tuple[str, str]:
     """Return (system_prompt, user_prompt) for the extraction call."""
     user = (
-        f"Site: {site_name}\n"
-        f"URL: {url}\n"
-        f"\n"
-        f"--- page content ---\n"
-        f"{html}\n"
-        f"--- end page content ---"
+        f"Site: {site_name}\nURL: {url}\n\n--- page content ---\n{html}\n--- end page content ---"
     )
     return _SYSTEM, user
 ```
@@ -700,8 +717,13 @@ from yas.llm.client import AnthropicClient, ExtractionResult
 class _FakeAnthropicMessages:
     """Mimics anthropic.AsyncAnthropic().messages.create() for unit tests."""
 
-    def __init__(self, tool_input: dict[str, Any], model: str = "claude-haiku-4-5-20251001",
-                 usage_in: int = 1000, usage_out: int = 200):
+    def __init__(
+        self,
+        tool_input: dict[str, Any],
+        model: str = "claude-haiku-4-5-20251001",
+        usage_in: int = 1000,
+        usage_out: int = 200,
+    ):
         self._tool_input = tool_input
         self._model = model
         self._usage_in = usage_in
@@ -878,9 +900,7 @@ class AnthropicClient:
 
             self._client = AsyncAnthropic(api_key=api_key)
 
-    async def extract_offerings(
-        self, *, html: str, url: str, site_name: str
-    ) -> ExtractionResult:
+    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
         tool = {
             "name": "report_offerings",
@@ -915,7 +935,10 @@ class AnthropicClient:
 
 def _find_tool_input(msg: Any) -> dict[str, Any] | None:
     for block in getattr(msg, "content", []) or []:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "report_offerings":
+        if (
+            getattr(block, "type", None) == "tool_use"
+            and getattr(block, "name", None) == "report_offerings"
+        ):
             inp = getattr(block, "input", None)
             if isinstance(inp, dict):
                 return inp
@@ -966,9 +989,7 @@ class FakeLLMClient:
     call_count: int = 0
     on_call: Callable[[str, str, str], None] | None = None
 
-    async def extract_offerings(
-        self, *, html: str, url: str, site_name: str
-    ) -> ExtractionResult:
+    async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         self.call_count += 1
         if self.on_call:
             self.on_call(html, url, site_name)
@@ -1067,7 +1088,7 @@ async def test_extract_returns_cached_on_hit(tmp_path):
     assert result.from_cache is True
     assert result.cost_usd == 0.0
     assert result.model is None
-    assert llm.call_count == 1   # not called again
+    assert llm.call_count == 1  # not called again
     assert [o.name for o in result.offerings] == ["Soccer"]
     await engine.dispose()
 
@@ -1079,6 +1100,7 @@ async def test_extract_propagates_extraction_error(tmp_path):
     class _BadLLM:
         async def extract_offerings(self, *, html, url, site_name):
             from yas.llm.client import ExtractionError
+
             raise ExtractionError(raw="{}", detail="nope")
 
     from yas.llm.client import ExtractionError
@@ -1127,8 +1149,8 @@ class ExtractionResult:
     offerings: list[ExtractedOffering]
     content_hash: str
     from_cache: bool
-    model: str | None        # None when from_cache=True
-    cost_usd: float          # 0.0 when from_cache=True
+    model: str | None  # None when from_cache=True
+    cost_usd: float  # 0.0 when from_cache=True
 
 
 async def extract(
@@ -1148,7 +1170,9 @@ async def extract(
             await s.execute(select(ExtractionCache).where(ExtractionCache.content_hash == h))
         ).scalar_one_or_none()
     if cached is not None:
-        offerings = [ExtractedOffering.model_validate(o) for o in cached.extracted_json.get("offerings", [])]
+        offerings = [
+            ExtractedOffering.model_validate(o) for o in cached.extracted_json.get("offerings", [])
+        ]
         return ExtractionResult(
             offerings=offerings,
             content_hash=h,
@@ -1166,9 +1190,7 @@ async def extract(
             ExtractionCache(
                 content_hash=h,
                 extracted_json={
-                    "offerings": [
-                        json.loads(o.model_dump_json()) for o in result.offerings
-                    ]
+                    "offerings": [json.loads(o.model_dump_json()) for o in result.offerings]
                 },
                 llm_model=result.model,
                 cost_usd=result.cost_usd,
@@ -1345,10 +1367,10 @@ async def test_withdrawn_reappearance_inserts_new_row(tmp_path):
         await reconcile(s, page, [o])
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
-        await reconcile(s, page, [])   # withdraw
+        await reconcile(s, page, [])  # withdraw
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
-        result = await reconcile(s, page, [o])   # reappear
+        result = await reconcile(s, page, [o])  # reappear
     assert len(result.new) == 1
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Offering))).scalars().all()
@@ -1359,8 +1381,12 @@ async def test_withdrawn_reappearance_inserts_new_row(tmp_path):
 @pytest.mark.asyncio
 async def test_location_name_creates_or_reuses_location(tmp_path):
     engine, site_id, page_id = await _setup(tmp_path)
-    o = _offering("Kickers", start_date=date(2026, 5, 1),
-                  location_name="Lincoln Park Rec", location_address="123 N Clark St")
+    o = _offering(
+        "Kickers",
+        start_date=date(2026, 5, 1),
+        location_name="Lincoln Park Rec",
+        location_address="123 N Clark St",
+    )
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
         await reconcile(s, page, [o])
@@ -1370,6 +1396,7 @@ async def test_location_name_creates_or_reuses_location(tmp_path):
         await reconcile(s, page, [o])
     async with session_scope(engine) as s:
         from yas.db.models import Location
+
         rows = (await s.execute(select(Location))).scalars().all()
         assert len(rows) == 1
         assert rows[0].name == "Lincoln Park Rec"
@@ -1403,9 +1430,20 @@ from yas.llm.schemas import ExtractedOffering
 
 # Fields compared for deciding "updated" vs "unchanged".
 _COMPARE_FIELDS = (
-    "name", "description", "age_min", "age_max", "program_type",
-    "start_date", "end_date", "days_of_week", "time_start", "time_end",
-    "location_id", "price_cents", "registration_opens_at", "registration_url",
+    "name",
+    "description",
+    "age_min",
+    "age_max",
+    "program_type",
+    "start_date",
+    "end_date",
+    "days_of_week",
+    "time_start",
+    "time_end",
+    "location_id",
+    "price_cents",
+    "registration_opens_at",
+    "registration_url",
 )
 
 
@@ -1426,13 +1464,17 @@ async def reconcile(
 
     Does NOT commit. Caller controls the transaction."""
     existing_rows = (
-        await session.execute(
-            select(Offering).where(
-                Offering.page_id == page.id,
-                Offering.status == OfferingStatus.active,
+        (
+            await session.execute(
+                select(Offering).where(
+                    Offering.page_id == page.id,
+                    Offering.status == OfferingStatus.active,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing_by_key: dict[tuple[str, Any], Offering] = {
         (r.normalized_name, r.start_date): r for r in existing_rows
     }
@@ -1465,8 +1507,7 @@ async def reconcile(
         else:
             # Compare the subset of fields we treat as user-visible.
             differs = any(
-                getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS
-                if f in desired
+                getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS if f in desired
             )
             existing.raw_json = _raw_json(e)
             existing.last_seen = now
@@ -1509,6 +1550,7 @@ def _offering_fields(e: ExtractedOffering, norm: str, location_id: int | None) -
 
 def _raw_json(e: ExtractedOffering) -> dict[str, Any]:
     import json
+
     return json.loads(e.model_dump_json())
 
 
@@ -1517,16 +1559,14 @@ async def _location_id(session: AsyncSession, site_id: int, e: ExtractedOffering
         return None
     norm = normalize_name(e.location_name)
     existing = (
-        await session.execute(
-            select(Location).where(Location.name == e.location_name)
-        )
-    ).scalars().first()
+        (await session.execute(select(Location).where(Location.name == e.location_name)))
+        .scalars()
+        .first()
+    )
     if existing is not None:
         return existing.id
     # Scope dedup loosely — same normalized name anywhere is "same" location.
-    any_norm = (
-        await session.execute(select(Location))
-    ).scalars().all()
+    any_norm = (await session.execute(select(Location))).scalars().all()
     for loc in any_norm:
         if normalize_name(loc.name) == norm:
             return loc.id
@@ -1743,13 +1783,14 @@ from yas.config import get_settings
 
 
 async def _mk_fetcher():
-    _ = get_settings   # typecheck — settings import exercised
+    _ = get_settings  # typecheck — settings import exercised
     return DefaultFetcher()
 
 
 class _Page:
     def __init__(self, url):
         self.url = url
+
 
 class _Site:
     def __init__(self, id, needs_browser=False, crawl_hints=None):
@@ -1761,7 +1802,9 @@ class _Site:
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetch_happy_path():
-    respx.get("https://example.com/p").mock(return_value=Response(200, html="<html><body>ok</body></html>"))
+    respx.get("https://example.com/p").mock(
+        return_value=Response(200, html="<html><body>ok</body></html>")
+    )
     fetcher = await _mk_fetcher()
     try:
         result = await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1))
@@ -1783,10 +1826,12 @@ def _fast_backoffs(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetch_retries_on_429_then_succeeds(_fast_backoffs):
-    route = respx.get("https://example.com/p").mock(side_effect=[
-        Response(429),
-        Response(200, html="<html>ok</html>"),
-    ])
+    route = respx.get("https://example.com/p").mock(
+        side_effect=[
+            Response(429),
+            Response(200, html="<html>ok</html>"),
+        ]
+    )
     fetcher = await _mk_fetcher()
     try:
         result = await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1))
@@ -1878,7 +1923,7 @@ import httpx
 _USER_AGENT = "yas/0.1 (+https://github.com/example/youth-activity-scheduler)"
 _TIMEOUT = httpx.Timeout(30.0)
 _RETRY_CODES = {429, 502, 503, 504}
-_BACKOFFS_S = (1.0, 4.0, 10.0)   # 3 attempts total (initial + 2 retries after the first wait)
+_BACKOFFS_S = (1.0, 4.0, 10.0)  # 3 attempts total (initial + 2 retries after the first wait)
 
 
 @dataclass(frozen=True)
@@ -2203,7 +2248,13 @@ async def test_crawl_page_happy_path(tmp_path):
     engine = await _init_db(tmp_path)
     async with fixture_site(pages={"/p": PAGE}) as fx:
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport, age_min=2, age_max=3)])
+        llm = FakeLLMClient(
+            default=[
+                ExtractedOffering(
+                    name="Tots Baseball", program_type=ProgramType.multisport, age_min=2, age_max=3
+                )
+            ]
+        )
         site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
         try:
             async with session_scope(engine) as s:
@@ -2233,7 +2284,9 @@ async def test_crawl_page_cache_hit_on_repeat(tmp_path):
     engine = await _init_db(tmp_path)
     async with fixture_site(pages={"/p": PAGE}) as fx:
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport)])
+        llm = FakeLLMClient(
+            default=[ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport)]
+        )
         site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
         try:
             async with session_scope(engine) as s:
@@ -2246,12 +2299,12 @@ async def test_crawl_page_cache_hit_on_repeat(tmp_path):
             await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page2, site=site2)
         finally:
             await fetcher.aclose()
-    assert llm.call_count == 1     # cache hit on second crawl
+    assert llm.call_count == 1  # cache hit on second crawl
     async with session_scope(engine) as s:
         runs = (await s.execute(select(CrawlRun).order_by(CrawlRun.id))).scalars().all()
         assert len(runs) == 2
         assert runs[1].status == CrawlStatus.ok
-        assert runs[1].llm_calls == 0          # short-circuited by unchanged hash
+        assert runs[1].llm_calls == 0  # short-circuited by unchanged hash
         assert runs[1].changes_detected == 0
     await engine.dispose()
 
@@ -2263,6 +2316,7 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
 
     async def server():
         from aiohttp import web
+
         app = web.Application()
 
         async def handler(_req):
@@ -2270,6 +2324,7 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
 
         app.router.add_get("/{tail:.*}", handler)
         from aiohttp.test_utils import TestServer
+
         s = TestServer(app, port=0)
         await s.start_server()
         return s
@@ -2400,28 +2455,42 @@ async def _do_crawl(
     except FetchError as exc:
         await _apply_failure(engine, page, site, error_text=str(exc))
         return CrawlResult(
-            status=CrawlStatus.failed, pages_fetched=0, changes_detected=0,
-            llm_calls=0, llm_cost_usd=0.0, error_text=str(exc),
+            status=CrawlStatus.failed,
+            pages_fetched=0,
+            changes_detected=0,
+            llm_calls=0,
+            llm_cost_usd=0.0,
+            error_text=str(exc),
         )
 
     # Short-circuit when content hasn't changed.
     from yas.crawl.change_detector import content_hash, normalize
+
     new_hash = content_hash(normalize(fetched.html))
     if page.content_hash is not None and page.content_hash == new_hash:
         await _apply_unchanged(engine, page, site)
         return CrawlResult(
-            status=CrawlStatus.ok, pages_fetched=1, changes_detected=0,
-            llm_calls=0, llm_cost_usd=0.0, error_text=None,
+            status=CrawlStatus.ok,
+            pages_fetched=1,
+            changes_detected=0,
+            llm_calls=0,
+            llm_cost_usd=0.0,
+            error_text=None,
         )
 
     # Extract + reconcile.
     try:
-        ex = await extract(engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name)
+        ex = await extract(
+            engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name
+        )
     except ExtractionError as exc:
         await _apply_next_check(engine, page, site)
         return CrawlResult(
-            status=CrawlStatus.failed, pages_fetched=1, changes_detected=0,
-            llm_calls=1, llm_cost_usd=0.0,
+            status=CrawlStatus.failed,
+            pages_fetched=1,
+            changes_detected=0,
+            llm_calls=1,
+            llm_cost_usd=0.0,
             error_text=f"extraction_failed: {exc.detail[:500]}",
         )
 
@@ -2442,9 +2511,13 @@ async def _do_crawl(
         log.info("offering.withdrawn", offering_id=oid, site_id=site.id)
     log.info("page.changed", page_id=page.id, site_id=site.id, new_hash=new_hash)
 
-    changes = len(reconcile_result.new) + len(reconcile_result.updated) + len(reconcile_result.withdrawn)
+    changes = (
+        len(reconcile_result.new) + len(reconcile_result.updated) + len(reconcile_result.withdrawn)
+    )
     return CrawlResult(
-        status=CrawlStatus.ok, pages_fetched=1, changes_detected=changes,
+        status=CrawlStatus.ok,
+        pages_fetched=1,
+        changes_detected=changes,
         llm_calls=0 if ex.from_cache else 1,
         llm_cost_usd=ex.cost_usd,
         error_text=None,
@@ -2456,8 +2529,10 @@ async def _apply_failure(engine: AsyncEngine, page: Page, site: Site, *, error_t
         row = (await s.execute(select(Page).where(Page.id == page.id))).scalar_one()
         row.consecutive_failures = (row.consecutive_failures or 0) + 1
         row.last_fetched = datetime.now(UTC)
-        backoff_mul = min(2 ** row.consecutive_failures, _MAX_BACKOFF_MULTIPLIER)
-        row.next_check_at = datetime.now(UTC) + timedelta(seconds=site.default_cadence_s * backoff_mul)
+        backoff_mul = min(2**row.consecutive_failures, _MAX_BACKOFF_MULTIPLIER)
+        row.next_check_at = datetime.now(UTC) + timedelta(
+            seconds=site.default_cadence_s * backoff_mul
+        )
 
 
 async def _apply_unchanged(engine: AsyncEngine, page: Page, site: Site) -> None:
@@ -2554,11 +2629,21 @@ async def test_scheduler_picks_due_page_and_runs_pipeline(tmp_path, monkeypatch)
             site = Site(name="Test", base_url=fx.base_url, default_cadence_s=3600)
             s.add(site)
             await s.flush()
-            s.add(Page(site_id=site.id, url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
+            s.add(
+                Page(
+                    site_id=site.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
 
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient(default=[ExtractedOffering(name="Baseball", program_type=ProgramType.multisport)])
-        task = asyncio.create_task(crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm))
+        llm = FakeLLMClient(
+            default=[ExtractedOffering(name="Baseball", program_type=ProgramType.multisport)]
+        )
+        task = asyncio.create_task(
+            crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
+        )
         try:
             # Wait until an offering shows up OR timeout.
             for _ in range(60):
@@ -2586,20 +2671,37 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
 
     async with fixture_site(pages={"/p": PAGE}) as fx:
         async with session_scope(engine) as s:
-            inactive = Site(name="Inactive", base_url=fx.base_url, active=False, default_cadence_s=3600)
+            inactive = Site(
+                name="Inactive", base_url=fx.base_url, active=False, default_cadence_s=3600
+            )
             muted = Site(
-                name="Muted", base_url=fx.base_url,
+                name="Muted",
+                base_url=fx.base_url,
                 muted_until=datetime.now(UTC) + timedelta(hours=1),
                 default_cadence_s=3600,
             )
             s.add_all([inactive, muted])
             await s.flush()
-            s.add(Page(site_id=inactive.id, url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
-            s.add(Page(site_id=muted.id,    url=fx.url("/p"), next_check_at=datetime.now(UTC) - timedelta(seconds=1)))
+            s.add(
+                Page(
+                    site_id=inactive.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
+            s.add(
+                Page(
+                    site_id=muted.id,
+                    url=fx.url("/p"),
+                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+                )
+            )
 
         fetcher = DefaultFetcher()
         llm = FakeLLMClient()
-        task = asyncio.create_task(crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm))
+        task = asyncio.create_task(
+            crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
+        )
         try:
             await asyncio.sleep(3)  # enough for ~3 ticks
         finally:
@@ -2657,8 +2759,11 @@ async def crawl_scheduler_loop(
     llm: LLMClient,
 ) -> None:
     """Forever: every tick, find due pages, run them, await completion."""
-    log.info("scheduler.start", tick_s=settings.crawl_scheduler_tick_s,
-             batch_size=settings.crawl_scheduler_batch_size)
+    log.info(
+        "scheduler.start",
+        tick_s=settings.crawl_scheduler_tick_s,
+        batch_size=settings.crawl_scheduler_batch_size,
+    )
     try:
         while True:
             await _tick(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
@@ -2828,6 +2933,7 @@ Replace the `_run_all` and the `mode == "all"` branch with plumbing that constru
 async def _run_all(settings: Settings, engine: AsyncEngine) -> None:
     from yas.crawl.fetcher import DefaultFetcher
     from yas.llm.client import AnthropicClient
+
     fetcher = DefaultFetcher()
     llm = AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_extraction_model)
     try:
@@ -2838,9 +2944,7 @@ async def _run_all(settings: Settings, engine: AsyncEngine) -> None:
             log_config=None,
         )
         server = uvicorn.Server(config)
-        worker_task = asyncio.create_task(
-            run_worker(engine, settings, fetcher=fetcher, llm=llm)
-        )
+        worker_task = asyncio.create_task(run_worker(engine, settings, fetcher=fetcher, llm=llm))
         try:
             await server.serve()
         finally:
@@ -2916,13 +3020,16 @@ async def client(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_create_and_list_site(client):
     c, _ = client
-    r = await c.post("/api/sites", json={
-        "name": "Lil Sluggers",
-        "base_url": "https://example.com/",
-        "needs_browser": True,
-        "default_cadence_s": 3600,
-        "pages": [{"url": "https://example.com/p", "kind": "schedule"}],
-    })
+    r = await c.post(
+        "/api/sites",
+        json={
+            "name": "Lil Sluggers",
+            "base_url": "https://example.com/",
+            "needs_browser": True,
+            "default_cadence_s": 3600,
+            "pages": [{"url": "https://example.com/p", "kind": "schedule"}],
+        },
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["id"] > 0
@@ -2936,10 +3043,14 @@ async def test_create_and_list_site(client):
 @pytest.mark.asyncio
 async def test_get_site_returns_pages(client):
     c, _ = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}, {"url": "https://x/b"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}, {"url": "https://x/b"}],
+        },
+    )
     site_id = created.json()["id"]
     r = await c.get(f"/api/sites/{site_id}")
     assert r.status_code == 200
@@ -2961,10 +3072,14 @@ async def test_patch_site(client):
 @pytest.mark.asyncio
 async def test_delete_site_cascades(client):
     c, engine = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}],
+        },
+    )
     sid = created.json()["id"]
     r = await c.delete(f"/api/sites/{sid}")
     assert r.status_code == 204
@@ -2988,23 +3103,33 @@ async def test_add_and_remove_page(client):
 @pytest.mark.asyncio
 async def test_crawl_now_resets_next_check_at(client):
     c, engine = client
-    created = await c.post("/api/sites", json={
-        "name": "X", "base_url": "https://x/",
-        "pages": [{"url": "https://x/a"}],
-    })
+    created = await c.post(
+        "/api/sites",
+        json={
+            "name": "X",
+            "base_url": "https://x/",
+            "pages": [{"url": "https://x/a"}],
+        },
+    )
     sid = created.json()["id"]
     # Simulate a future-scheduled page.
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page))).scalars().one()
         from datetime import UTC, datetime, timedelta
+
         page.next_check_at = datetime.now(UTC) + timedelta(days=1)
     r = await c.post(f"/api/sites/{sid}/crawl-now")
     assert r.status_code == 202
     async with session_scope(engine) as s:
         page = (await s.execute(select(Page))).scalars().one()
         from datetime import UTC, datetime
+
         # tz-aware comparison
-        next_check = page.next_check_at.replace(tzinfo=UTC) if page.next_check_at.tzinfo is None else page.next_check_at
+        next_check = (
+            page.next_check_at.replace(tzinfo=UTC)
+            if page.next_check_at.tzinfo is None
+            else page.next_check_at
+        )
         assert next_check <= datetime.now(UTC) + __import__("datetime").timedelta(seconds=1)
 
 
@@ -3127,12 +3252,16 @@ async def create_site(payload: SiteCreate, request: Request) -> SiteOut:
             s.add(Page(site_id=site.id, url=str(p.url), kind=p.kind, next_check_at=now))
         await s.flush()
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.get("", response_model=list[SiteOut])
@@ -3142,12 +3271,18 @@ async def list_sites(request: Request) -> list[SiteOut]:
         out: list[SiteOut] = []
         for site in sites:
             pages = (
-                await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id))
-            ).scalars().all()
-            out.append(SiteOut.model_validate({
-                **_site_attrs(site),
-                "pages": [PageOut.model_validate(p) for p in pages],
-            }))
+                (await s.execute(select(Page).where(Page.site_id == site.id).order_by(Page.id)))
+                .scalars()
+                .all()
+            )
+            out.append(
+                SiteOut.model_validate(
+                    {
+                        **_site_attrs(site),
+                        "pages": [PageOut.model_validate(p) for p in pages],
+                    }
+                )
+            )
         return out
 
 
@@ -3158,12 +3293,16 @@ async def get_site(site_id: int, request: Request) -> SiteOut:
         if site is None:
             raise HTTPException(status_code=404, detail=f"site {site_id} not found")
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.patch("/{site_id}", response_model=SiteOut)
@@ -3176,12 +3315,16 @@ async def update_site(site_id: int, patch: SiteUpdate, request: Request) -> Site
             setattr(site, field, value)
         await s.flush()
         pages = (
-            await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id))
-        ).scalars().all()
-        return SiteOut.model_validate({
-            **_site_attrs(site),
-            "pages": [PageOut.model_validate(p) for p in pages],
-        })
+            (await s.execute(select(Page).where(Page.site_id == site_id).order_by(Page.id)))
+            .scalars()
+            .all()
+        )
+        return SiteOut.model_validate(
+            {
+                **_site_attrs(site),
+                "pages": [PageOut.model_validate(p) for p in pages],
+            }
+        )
 
 
 @router.delete("/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -3256,8 +3399,9 @@ __all__ = ["sites_router"]
 Edit `src/yas/web/app.py` — at the bottom of `create_app`, before the shutdown hook:
 
 ```python
-    from yas.web.routes import sites_router
-    app.include_router(sites_router)
+from yas.web.routes import sites_router
+
+app.include_router(sites_router)
 ```
 
 - [ ] **Step 7: Run tests and gates**
