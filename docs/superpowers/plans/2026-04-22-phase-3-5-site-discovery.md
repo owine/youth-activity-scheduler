@@ -145,6 +145,7 @@ Open `src/yas/web/routes/sites_schemas.py`. Find `PageCreate`. Change its `kind`
 ```python
 from typing import Literal  # ensure imported
 
+
 class PageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: HttpUrl
@@ -527,7 +528,9 @@ def _extract_urls_from_urlset(root: ET.Element) -> list[str]:
     return urls
 
 
-async def _fetch_index_children(index_root: ET.Element, http_client: httpx.AsyncClient) -> list[str]:
+async def _fetch_index_children(
+    index_root: ET.Element, http_client: httpx.AsyncClient
+) -> list[str]:
     child_sitemap_urls: list[str] = []
     for sm in index_root.findall(f"{_SITEMAP_NS}sitemap"):
         loc = sm.find(f"{_SITEMAP_NS}loc")
@@ -675,7 +678,7 @@ def extract_internal_links(html: str, seed_url: str) -> list[tuple[str, str]]:
     seed_origin = (seed_parsed.scheme, seed_parsed.netloc)
 
     tree = HTMLParser(html)
-    seen: dict[str, str] = {}   # url -> longest anchor text so far
+    seen: dict[str, str] = {}  # url -> longest anchor text so far
 
     for a in tree.css("a"):
         href = (a.attributes.get("href") or "").strip()
@@ -752,7 +755,9 @@ async def test_scrape_head_preserves_anchor_text_when_provided():
     respx.get("https://ex.com/summer").mock(return_value=httpx.Response(200, text=_HTML))
     async with httpx.AsyncClient() as http:
         info = await scrape_head(
-            "https://ex.com/summer", http_client=http, timeout_s=5,
+            "https://ex.com/summer",
+            http_client=http,
+            timeout_s=5,
             anchor_text="Our Summer Camps",
         )
     assert info is not None
@@ -791,7 +796,9 @@ async def test_scrape_head_pdf_short_circuits():
     # No network call expected for PDFs.
     async with httpx.AsyncClient() as http:
         info = await scrape_head(
-            "https://ex.com/brochures/spring-2026.pdf", http_client=http, timeout_s=5,
+            "https://ex.com/brochures/spring-2026.pdf",
+            http_client=http,
+            timeout_s=5,
         )
     assert info is not None
     assert info.kind == "pdf"
@@ -831,7 +838,10 @@ async def test_scrape_heads_concurrently_respects_semaphore():
 
     async with httpx.AsyncClient() as http:
         results = await scrape_heads_concurrently(
-            [(u, None) for u in urls], http_client=http, timeout_s=5, concurrency=3,
+            [(u, None) for u in urls],
+            http_client=http,
+            timeout_s=5,
+            concurrency=3,
         )
     assert len(results) == 30
     assert all(r is not None for r in results)
@@ -935,7 +945,10 @@ async def scrape_heads_concurrently(
     async def _one(url: str, anchor: str | None) -> HeadInfo | None:
         async with sem:
             return await scrape_head(
-                url, http_client=http_client, timeout_s=timeout_s, anchor_text=anchor,
+                url,
+                http_client=http_client,
+                timeout_s=timeout_s,
+                anchor_text=anchor,
             )
 
     return list(
@@ -980,16 +993,23 @@ from yas.discovery.heads import HeadInfo
 from yas.llm.client import ExtractionResult
 
 
-def _head(url: str, title: str = "", meta: str | None = None, kind: str = "html",
-          anchor: str | None = None) -> HeadInfo:
+def _head(
+    url: str,
+    title: str = "",
+    meta: str | None = None,
+    kind: str = "html",
+    anchor: str | None = None,
+) -> HeadInfo:
     return HeadInfo(url=url, title=title, meta_description=meta, kind=kind, anchor_text=anchor)
 
 
 def test_prompt_mentions_html_and_pdf_and_anchor_text():
     system, user = build_classifier_prompt(
-        [_head("https://x/a", "Summer Camps"),
-         _head("https://x/b.pdf", "spring.pdf", kind="pdf"),
-         _head("https://x/c", "Programs", anchor="Our Programs")],
+        [
+            _head("https://x/a", "Summer Camps"),
+            _head("https://x/b.pdf", "spring.pdf", kind="pdf"),
+            _head("https://x/c", "Programs", anchor="Our Programs"),
+        ],
         site_name="X",
     )
     assert "report_candidates" in system
@@ -1009,7 +1029,9 @@ class _FakeClient:
     def __init__(self, canned_input: dict):
         self.canned = canned_input
 
-    async def call_tool(self, *, system: str, user: str, tool_schema: dict) -> tuple[dict, str, float]:
+    async def call_tool(
+        self, *, system: str, user: str, tool_schema: dict
+    ) -> tuple[dict, str, float]:
         # Return (tool_input, model_name, cost_usd)
         return self.canned, "fake-haiku", 0.002
 
@@ -1065,6 +1087,7 @@ async def test_classify_empty_input_returns_empty():
 
 def test_scored_candidate_validates_score_range():
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError):
         ScoredCandidate(url="https://x", score=1.5, reason="bad")
 ```
@@ -1109,7 +1132,9 @@ Minimal refactor pattern:
 
 ```python
 # Pseudo-code, apply to actual file:
-async def _call_messages(self, *, system, user, tool_name, tool_description, input_schema, max_tokens):
+async def _call_messages(
+    self, *, system, user, tool_name, tool_description, input_schema, max_tokens
+):
     tool = {"name": tool_name, "description": tool_description, "input_schema": input_schema}
     msg = await self._client.messages.create(
         model=self._model,
@@ -1127,12 +1152,17 @@ async def _call_messages(self, *, system, user, tool_name, tool_description, inp
     return tool_input, model, cost
 
 
-async def call_tool(self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096):
+async def call_tool(
+    self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096
+):
     # Public wrapper. Propagates _ToolMissingError as a generic ToolCallError.
     try:
         return await self._call_messages(...)
     except _ToolMissingError as exc:
-        raise ToolCallError(raw=exc.raw, detail=f"model stopped without calling {tool_name} (stop_reason={exc.stop_reason})") from exc
+        raise ToolCallError(
+            raw=exc.raw,
+            detail=f"model stopped without calling {tool_name} (stop_reason={exc.stop_reason})",
+        ) from exc
 ```
 
 `_find_tool_input` already exists; parameterize it to take the tool name. Add `ToolCallError` alongside `ExtractionError` in `client.py`. Update `extract_offerings` to call `_call_messages` with `tool_name="report_offerings"`, description, and `ExtractionResponse.model_json_schema()`; catch the same error shape and re-raise as `ExtractionError` for backwards compatibility.
@@ -1216,9 +1246,7 @@ Call `report_candidates` with your ranked list. Do not invent URLs not in
 the input."""
 
 
-def build_classifier_prompt(
-    candidates: list[HeadInfo], *, site_name: str
-) -> tuple[str, str]:
+def build_classifier_prompt(candidates: list[HeadInfo], *, site_name: str) -> tuple[str, str]:
     items = [
         {
             "url": c.url,
@@ -1354,7 +1382,9 @@ class _FakeLLM:
         self.scored = scored
         self.call_count = 0
 
-    async def call_tool(self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096):
+    async def call_tool(
+        self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096
+    ):
         self.call_count += 1
         return {"candidates": self.scored}, "fake-haiku", 0.005
 
@@ -1368,7 +1398,9 @@ async def _base_settings(monkeypatch) -> Settings:
 @respx.mock
 async def test_happy_path_with_pdf_and_link_union(monkeypatch):
     respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED_HTML))
-    respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(200, content=_FLAT_SITEMAP))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_FLAT_SITEMAP)
+    )
     # Head fetches (PDFs short-circuit without HTTP).
     for url, title, meta in [
         ("https://ysi.test/programs/summer/", "Summer Camps 2026", "Ages 5-12"),
@@ -1376,20 +1408,37 @@ async def test_happy_path_with_pdf_and_link_union(monkeypatch):
         ("https://ysi.test/about/", "About YSI", "Our mission"),
         ("https://ysi.test/programs/winter/", "Winter Camp 2026", "December"),
     ]:
-        respx.get(url).mock(return_value=httpx.Response(200, text=_PAGE_HTML.format(title=title, meta=meta)))
+        respx.get(url).mock(
+            return_value=httpx.Response(200, text=_PAGE_HTML.format(title=title, meta=meta))
+        )
 
     scored = [
-        {"url": "https://ysi.test/programs/summer/", "score": 0.95, "reason": "Clear program detail"},
-        {"url": "https://ysi.test/programs/fall/", "score": 0.80, "reason": "Program details with ages"},
+        {
+            "url": "https://ysi.test/programs/summer/",
+            "score": 0.95,
+            "reason": "Clear program detail",
+        },
+        {
+            "url": "https://ysi.test/programs/fall/",
+            "score": 0.80,
+            "reason": "Program details with ages",
+        },
         {"url": "https://ysi.test/programs/winter/", "score": 0.70, "reason": "Camp with dates"},
         {"url": "https://ysi.test/about/", "score": 0.10, "reason": "About page, not program"},
-        {"url": "https://ysi.test/brochures/spring-2026.pdf", "score": 0.65, "reason": "PDF brochure"},
+        {
+            "url": "https://ysi.test/brochures/spring-2026.pdf",
+            "score": 0.65,
+            "reason": "PDF brochure",
+        },
     ]
     llm = _FakeLLM(scored)
     settings = await _base_settings(monkeypatch)
     async with httpx.AsyncClient() as http:
         result = await discover_site(
-            site=_FakeSite(), http_client=http, llm_client=llm, settings=settings,
+            site=_FakeSite(),
+            http_client=http,
+            llm_client=llm,
+            settings=settings,
         )
     urls = {c.url for c in result.candidates}
     assert "https://ysi.test/programs/summer/" in urls
@@ -1414,7 +1463,10 @@ async def test_seed_fetch_failure_raises(monkeypatch):
     async with httpx.AsyncClient() as http:
         with pytest.raises(DiscoveryError):
             await discover_site(
-                site=_FakeSite(), http_client=http, llm_client=llm, settings=settings,
+                site=_FakeSite(),
+                http_client=http,
+                llm_client=llm,
+                settings=settings,
             )
 
 
@@ -1427,13 +1479,16 @@ async def test_sitemap_missing_still_works_from_links(monkeypatch):
     respx.get("https://ysi.test/programs/winter/").mock(
         return_value=httpx.Response(200, text=_PAGE_HTML.format(title="Winter", meta="cold"))
     )
-    llm = _FakeLLM([
-        {"url": "https://ysi.test/programs/winter/", "score": 0.9, "reason": "program"}
-    ])
+    llm = _FakeLLM(
+        [{"url": "https://ysi.test/programs/winter/", "score": 0.9, "reason": "program"}]
+    )
     settings = await _base_settings(monkeypatch)
     async with httpx.AsyncClient() as http:
         result = await discover_site(
-            site=_FakeSite(), http_client=http, llm_client=llm, settings=settings,
+            site=_FakeSite(),
+            http_client=http,
+            llm_client=llm,
+            settings=settings,
         )
     assert len(result.candidates) == 1
     assert result.candidates[0].url == "https://ysi.test/programs/winter/"
@@ -1442,14 +1497,19 @@ async def test_sitemap_missing_still_works_from_links(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_empty_after_threshold_still_200(monkeypatch):
-    respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text="<html><body></body></html>"))
+    respx.get("https://ysi.test/").mock(
+        return_value=httpx.Response(200, text="<html><body></body></html>")
+    )
     respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(404))
     respx.get("https://ysi.test/sitemap_index.xml").mock(return_value=httpx.Response(404))
     llm = _FakeLLM([])
     settings = await _base_settings(monkeypatch)
     async with httpx.AsyncClient() as http:
         result = await discover_site(
-            site=_FakeSite(), http_client=http, llm_client=llm, settings=settings,
+            site=_FakeSite(),
+            http_client=http,
+            llm_client=llm,
+            settings=settings,
         )
     assert result.candidates == []
     assert result.stats.returned == 0
@@ -1517,7 +1577,7 @@ class DiscoveryError(Exception):
 
 async def discover_site(
     *,
-    site: Any,        # duck-typed: needs .id, .name, .base_url
+    site: Any,  # duck-typed: needs .id, .name, .base_url
     http_client: httpx.AsyncClient,
     llm_client: Any,  # duck-typed: ClassifierLLMClient
     settings: Settings,
@@ -1537,9 +1597,7 @@ async def discover_site(
     seed_html = r.text
 
     # 2. Sitemap + link extraction in parallel.
-    sitemap_task = asyncio.create_task(
-        fetch_sitemap_urls(site.base_url, http_client=http_client)
-    )
+    sitemap_task = asyncio.create_task(fetch_sitemap_urls(site.base_url, http_client=http_client))
     link_pairs = extract_internal_links(seed_html, site.base_url)
     sitemap_urls = await sitemap_task
 
@@ -1587,21 +1645,21 @@ async def discover_site(
 
     # 8. Filter by min_score and cap.
     by_url = {h.url: h for h in heads}
-    enriched = [
-        (by_url[sc.url], sc) for sc in scored if sc.url in by_url
-    ]
+    enriched = [(by_url[sc.url], sc) for sc in scored if sc.url in by_url]
     enriched.sort(key=lambda pair: pair[1].score, reverse=True)
     out: list[DiscoveryCandidate] = []
     for head, sc in enriched:
         if sc.score < min_score_f:
             continue
-        out.append(DiscoveryCandidate(
-            url=head.url,
-            title=head.title,
-            kind=head.kind,
-            score=sc.score,
-            reason=sc.reason,
-        ))
+        out.append(
+            DiscoveryCandidate(
+                url=head.url,
+                title=head.title,
+                kind=head.kind,
+                score=sc.score,
+                reason=sc.reason,
+            )
+        )
         if len(out) >= max_out:
             break
 
@@ -1676,7 +1734,9 @@ class _FakeLLM:
         self.scored = scored
         self.call_count = 0
 
-    async def call_tool(self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096):
+    async def call_tool(
+        self, *, system, user, tool_name, tool_description, input_schema, max_tokens=4096
+    ):
         self.call_count += 1
         return {"candidates": self.scored}, "fake-haiku", 0.003
 
@@ -1692,11 +1752,13 @@ async def client(tmp_path, monkeypatch):
     async with session_scope(engine) as s:
         s.add(Site(id=1, name="YSI", base_url="https://ysi.test/"))
 
-    llm = _FakeLLM([
-        {"url": "https://ysi.test/programs/summer/", "score": 0.9, "reason": "program detail"},
-        {"url": "https://ysi.test/programs/", "score": 0.4, "reason": "router"},
-        {"url": "https://ysi.test/brochure.pdf", "score": 0.7, "reason": "pdf brochure"},
-    ])
+    llm = _FakeLLM(
+        [
+            {"url": "https://ysi.test/programs/summer/", "score": 0.9, "reason": "program detail"},
+            {"url": "https://ysi.test/programs/", "score": 0.4, "reason": "router"},
+            {"url": "https://ysi.test/brochure.pdf", "score": 0.7, "reason": "pdf brochure"},
+        ]
+    )
     app = create_app(engine=engine, llm=llm)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c, engine, llm
@@ -1708,8 +1770,12 @@ async def client(tmp_path, monkeypatch):
 async def test_discover_returns_candidates(client):
     c, _, llm = client
     respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED))
-    respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(200, content=_SITEMAP))
-    respx.get("https://ysi.test/programs/summer/").mock(return_value=httpx.Response(200, text=_PAGE))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_SITEMAP)
+    )
+    respx.get("https://ysi.test/programs/summer/").mock(
+        return_value=httpx.Response(200, text=_PAGE)
+    )
     respx.get("https://ysi.test/programs/").mock(return_value=httpx.Response(200, text=_PAGE))
 
     r = await c.post("/api/sites/1/discover")
@@ -1747,8 +1813,12 @@ async def test_discover_502_when_seed_fails(client):
 async def test_discover_accepts_min_score_override(client):
     c, _, _ = client
     respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED))
-    respx.get("https://ysi.test/sitemap.xml").mock(return_value=httpx.Response(200, content=_SITEMAP))
-    respx.get("https://ysi.test/programs/summer/").mock(return_value=httpx.Response(200, text=_PAGE))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_SITEMAP)
+    )
+    respx.get("https://ysi.test/programs/summer/").mock(
+        return_value=httpx.Response(200, text=_PAGE)
+    )
     respx.get("https://ysi.test/programs/").mock(return_value=httpx.Response(200, text=_PAGE))
     r = await c.post("/api/sites/1/discover", json={"min_score": 0.85})
     assert r.status_code == 200
@@ -1881,6 +1951,7 @@ Add a tiny local dataclass near the top of `sites.py`:
 
 ```python
 from dataclasses import dataclass
+
 
 @dataclass(frozen=True)
 class _SiteSnapshot:

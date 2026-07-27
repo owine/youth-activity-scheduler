@@ -143,7 +143,7 @@ This means the user gets a clear "config references env var X but X is unset" me
 ```python
 NotifierMessage(
     kid_id=None,
-    alert_type=AlertType.new_match,   # NOT reg_opens_now (would trigger Pushover emergency)
+    alert_type=AlertType.new_match,  # NOT reg_opens_now (would trigger Pushover emergency)
     subject="YAS test notification",
     body_plain="If you see this, the {channel} channel is working.",
 )
@@ -303,13 +303,15 @@ CHANNELS = {
     "pushover": (PushoverChannel, "pushover_config_json"),
 }
 
+
 def _test_message(channel: str) -> NotifierMessage:
     return NotifierMessage(
         kid_id=None,
-        alert_type=AlertType.new_match,   # NOT reg_opens_now — would trigger Pushover emergency
+        alert_type=AlertType.new_match,  # NOT reg_opens_now — would trigger Pushover emergency
         subject="YAS test notification",
         body_plain=f"If you see this, the {channel} channel is working.",
     )
+
 
 @router.post("/{channel}/test", response_model=TestSendOut)
 async def test_notifier(channel: str, request: Request) -> TestSendOut:

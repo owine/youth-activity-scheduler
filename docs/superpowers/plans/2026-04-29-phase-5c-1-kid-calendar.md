@@ -84,7 +84,9 @@ from datetime import date, time
 from yas.calendar.occurrences import Occurrence, expand_recurring
 
 
-def _occ(d: tuple[int, int, int], start: tuple[int, int] | None, end: tuple[int, int] | None) -> Occurrence:
+def _occ(
+    d: tuple[int, int, int], start: tuple[int, int] | None, end: tuple[int, int] | None
+) -> Occurrence:
     return Occurrence(
         date=date(*d),
         time_start=time(*start) if start else None,
@@ -311,11 +313,7 @@ def expand_recurring(
     all_day = time_start is None and time_end is None
 
     # Normalize weekday names; silently skip unknown values.
-    target_weekdays = {
-        _WEEKDAY[name.lower()]
-        for name in days_of_week
-        if name.lower() in _WEEKDAY
-    }
+    target_weekdays = {_WEEKDAY[name.lower()] for name in days_of_week if name.lower() in _WEEKDAY}
     if not target_weekdays:
         return
 
@@ -565,6 +563,7 @@ async def test_excludes_cancelled_enrollments(client):
     await _seed_kid_with_enrollment(engine)
     async with session_scope(engine) as s:
         from sqlalchemy import select
+
         e = (await s.execute(select(Enrollment).where(Enrollment.id == 10))).scalar_one()
         e.status = EnrollmentStatus.cancelled.value
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")

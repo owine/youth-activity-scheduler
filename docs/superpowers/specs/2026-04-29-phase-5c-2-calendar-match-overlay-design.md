@@ -57,7 +57,7 @@ When `include_matches=false` (default), behavior is unchanged from 5c-1.
 ```python
 class CalendarEventOut(BaseModel):
     # ...existing fields...
-    kind: Literal["enrollment", "unavailability", "match"]   # extended union
+    kind: Literal["enrollment", "unavailability", "match"]  # extended union
     # match-only:
     score: float | None = None
     registration_url: str | None = None

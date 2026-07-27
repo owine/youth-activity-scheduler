@@ -64,11 +64,12 @@ All new modules live under `src/yas/crawl/`, `src/yas/llm/`, and `src/yas/web/ro
 ```python
 @dataclass(frozen=True)
 class FetchResult:
-    url: str            # final URL after redirects
+    url: str  # final URL after redirects
     status_code: int
     html: str
     used_browser: bool
     elapsed_ms: int
+
 
 class Fetcher(Protocol):
     async def fetch(self, page: Page, site: Site) -> FetchResult: ...
@@ -122,11 +123,13 @@ class ExtractionResult:
     offerings: list[ExtractedOffering]
     content_hash: str
     from_cache: bool
-    model: str | None           # None when from_cache
-    cost_usd: float              # 0.0 when from_cache
+    model: str | None  # None when from_cache
+    cost_usd: float  # 0.0 when from_cache
+
 
 class ExtractionError(Exception):
     def __init__(self, raw_response: str, validation_errors: str): ...
+
 
 async def extract(
     engine: AsyncEngine,
@@ -146,10 +149,11 @@ Flow: normalize → hash → `extraction_cache` lookup (hit → return); on miss
 ```python
 @dataclass(frozen=True)
 class ReconcileResult:
-    new: list[int]             # offering IDs
+    new: list[int]  # offering IDs
     updated: list[int]
     withdrawn: list[int]
     unchanged: list[int]
+
 
 async def reconcile(
     session: AsyncSession,
@@ -250,6 +254,7 @@ class ExtractedOffering(BaseModel):
     registration_opens_at: datetime | None = None
     registration_url: str | None = None
 
+
 class ExtractionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     offerings: list[ExtractedOffering]
@@ -268,6 +273,7 @@ class LLMClient(Protocol):
     async def extract_offerings(
         self, *, html: str, url: str, site_name: str
     ) -> ExtractionResult: ...
+
 
 class AnthropicClient:
     def __init__(

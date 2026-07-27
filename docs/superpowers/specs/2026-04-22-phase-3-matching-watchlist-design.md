@@ -77,6 +77,7 @@ Five sync pure functions, each returning a `GateResult` namedtuple:
 ```python
 GateResult = NamedTuple("GateResult", [("passed", bool), ("code", str), ("detail", str)])
 
+
 def age_fits(kid, offering, *, today) -> GateResult: ...
 def distance_fits(kid, offering, *, distance_mi, household_default) -> GateResult: ...
 def interests_overlap(kid, offering, aliases) -> GateResult: ...
@@ -94,11 +95,12 @@ def no_conflict_with_unavailability(offering, blocks, school_holidays, *, today)
 ```python
 @dataclass(frozen=True)
 class ScoreBreakdown:
-    availability: float          # weight 0.4
-    distance: float              # weight 0.2
-    price: float                 # weight 0.1
-    registration_timing: float   # weight 0.2
-    freshness: float             # weight 0.1
+    availability: float  # weight 0.4
+    distance: float  # weight 0.2
+    price: float  # weight 0.1
+    registration_timing: float  # weight 0.2
+    freshness: float  # weight 0.1
+
     @property
     def score(self) -> float: ...
 ```
@@ -125,6 +127,7 @@ A single module-level `INTEREST_ALIASES: dict[str, list[str]]` covering every `P
 class WatchlistHit:
     entry: WatchlistEntry
     reason: Literal["substring", "glob"]
+
 
 def matches_watchlist(offering, entries, *, site_id) -> WatchlistHit | None: ...
 ```
@@ -154,11 +157,18 @@ gates = evaluate_all_gates(kid, offering, blocks, school_holidays, distance_mi, 
 score, breakdown = compute_score(kid, offering, ...)
 
 if watchlist or all(g.passed for g in gates):
-    upsert_match(kid_id, offering_id, score, reasons={
-        "gates": {g.code: {"passed": g.passed, "detail": g.detail} for g in gates},
-        "score_breakdown": breakdown.as_dict(),
-        "watchlist_hit": {"entry_id": ..., "pattern": ..., "match_type": ..., "priority": ...} if watchlist else None,
-    })
+    upsert_match(
+        kid_id,
+        offering_id,
+        score,
+        reasons={
+            "gates": {g.code: {"passed": g.passed, "detail": g.detail} for g in gates},
+            "score_breakdown": breakdown.as_dict(),
+            "watchlist_hit": {"entry_id": ..., "pattern": ..., "match_type": ..., "priority": ...}
+            if watchlist
+            else None,
+        },
+    )
 else:
     delete_match_if_exists(kid_id, offering_id)
 ```
@@ -192,12 +202,15 @@ class GeocodeResult:
     display_name: str
     provider: str  # "nominatim"
 
+
 class Geocoder(Protocol):
     async def geocode(self, address: str) -> GeocodeResult | None: ...
+
 
 class NominatimClient:
     BASE_URL = "https://nominatim.openstreetmap.org/search"
     USER_AGENT = "yas/0.1 (+https://github.com/example/youth-activity-scheduler)"
+
     def __init__(self, http_client=None, min_interval_s=1.0): ...
     async def geocode(self, address) -> GeocodeResult | None: ...
 ```
@@ -267,9 +280,9 @@ Phase 3 adds two new tasks to the worker's `asyncio.TaskGroup`:
 ```python
 async with asyncio.TaskGroup() as tg:
     tg.create_task(heartbeat_loop(...))
-    tg.create_task(crawl_scheduler_loop(...))    # Phase 2
-    tg.create_task(daily_sweep_loop(...))         # NEW
-    tg.create_task(geocode_enricher_loop(...))   # NEW
+    tg.create_task(crawl_scheduler_loop(...))  # Phase 2
+    tg.create_task(daily_sweep_loop(...))  # NEW
+    tg.create_task(geocode_enricher_loop(...))  # NEW
 ```
 
 ### 5.1 Daily sweep

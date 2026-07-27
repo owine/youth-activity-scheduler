@@ -962,7 +962,9 @@ class Offering(Base):
     time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    registration_opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    registration_opens_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     registration_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_json: Mapped[dict] = mapped_column(JSON, default=dict)
     first_seen: Mapped[datetime] = timestamp_column()
@@ -1080,7 +1082,9 @@ class UnavailabilityBlock(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kid_id: Mapped[int] = mapped_column(ForeignKey("kids.id", ondelete="CASCADE"), index=True)
-    source: Mapped[UnavailabilitySource] = mapped_column(String, default=UnavailabilitySource.manual.value)
+    source: Mapped[UnavailabilitySource] = mapped_column(
+        String, default=UnavailabilitySource.manual.value
+    )
     label: Mapped[str | None] = mapped_column(String, nullable=True)
     days_of_week: Mapped[list[str]] = mapped_column(JSON, default=list)
     time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
@@ -1157,15 +1161,15 @@ class Alert(Base):
         ForeignKey("sites.id", ondelete="SET NULL"), nullable=True
     )
     channels: Mapped[list[str]] = mapped_column(JSON, default=list)
-    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    scheduled_for: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     skipped: Mapped[bool] = mapped_column(default=False)
     dedup_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
-    __table_args__ = (
-        Index("ix_alerts_unsent_due", "scheduled_for", "sent_at"),
-    )
+    __table_args__ = (Index("ix_alerts_unsent_due", "scheduled_for", "sent_at"),)
 ```
 
 - [ ] **Step 14: Implement `alert_routing.py`**
@@ -1529,9 +1533,7 @@ async def test_alembic_upgrade_creates_all_tables(tmp_path, monkeypatch):
     }
     engine = create_engine_for(url)
     async with engine.connect() as conn:
-        rows = (
-            await conn.execute(text("select name from sqlite_master where type='table'"))
-        ).all()
+        rows = (await conn.execute(text("select name from sqlite_master where type='table'"))).all()
     tables = {r[0] for r in rows}
     missing = expected - tables
     assert not missing, f"missing tables after migration: {missing}"

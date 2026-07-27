@@ -68,6 +68,7 @@
 ```python
 # tests/unit/test_email_registry.py
 """Registry completeness: every AlertType plus test_send has a renderer."""
+
 from __future__ import annotations
 
 from yas.db.models._types import AlertType
@@ -77,9 +78,7 @@ from yas.email.registry import RENDERERS
 def test_every_alert_type_has_a_renderer() -> None:
     expected = {at.value for at in AlertType} | {"test_send"}
     actual = {str(k) for k in RENDERERS.keys()}
-    assert actual == expected, (
-        f"missing: {expected - actual}, extra: {actual - expected}"
-    )
+    assert actual == expected, f"missing: {expected - actual}, extra: {actual - expected}"
 ```
 
 - [ ] **Step 2: Run, expect ImportError / empty-dict fail**
@@ -96,6 +95,7 @@ Placed in its own module from the start so Task 4's registry can import it witho
 ```python
 # src/yas/email/_errors.py
 """Errors raised by the outbound-email layer."""
+
 from __future__ import annotations
 
 
@@ -116,6 +116,7 @@ A single explicit dict is the type-to-renderer mapping. Membership is
 asserted by tests/unit/test_email_registry.py — a missing entry is a CI
 failure, not a runtime fallback.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -147,6 +148,7 @@ RENDERERS: dict[EmailKind, TypeRenderer] = {}
 
 ```python
 """Outbound email rendering — see docs/superpowers/specs/2026-05-19-outbound-email-template-layer-design.md."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -191,9 +193,7 @@ from yas.email.registry import RENDERERS
 def test_every_alert_type_has_a_renderer() -> None:
     expected = {at.value for at in AlertType} | {"test_send"}
     actual = {str(k) for k in RENDERERS.keys()}
-    assert actual == expected, (
-        f"missing: {expected - actual}, extra: {actual - expected}"
-    )
+    assert actual == expected, f"missing: {expected - actual}, extra: {actual - expected}"
 ```
 
 `strict=True` means the moment the registry is complete (Task 14), the xfail flips to XPASS and *that* fails — forcing the executor to remove the marker. This is the registry's TDD ratchet.
@@ -232,6 +232,7 @@ to remove the marker."
 ```python
 # tests/unit/test_email_environment.py
 """Jinja Environment shared by all outbound-email templates."""
+
 from __future__ import annotations
 
 import pytest
@@ -280,6 +281,7 @@ doesn't have raises UndefinedError at render, which the delivery layer routes
 into the same skipped-alert + 'Delivery Issues' machinery as a permanent send
 failure. Silent half-rendered emails are the bug we're fixing.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -359,6 +361,7 @@ These goldens lock the current digest output BEFORE the shared-base
 refactor. After Task 4 lands, the `chrome` portions (DOCTYPE, <body>, footer)
 are re-baselined deliberately; section content must remain byte-identical.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -532,6 +535,7 @@ Then create the shim at the old path:
 ```python
 # src/yas/alerts/digest/filters.py
 """Re-export shim — filters moved to yas.email.filters."""
+
 from yas.email.filters import fmt, price, rel_date  # noqa: F401
 ```
 
@@ -554,6 +558,7 @@ Each payload is the typed contract between a builder and its templates.
 Templates render from these only — never from raw Alert.payload_json — so
 StrictUndefined catches drift at render time.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -670,6 +675,7 @@ The `{% block subject %}` content is what `render_email` extracts as the email s
 ```python
 # src/yas/email/builders.py
 """Async builders that turn Alert rows + DB joins into typed payloads."""
+
 from __future__ import annotations
 
 # (existing gather_digest_payload body, imports adjusted; copy verbatim from
@@ -680,6 +686,7 @@ Update `src/yas/alerts/digest/builder.py` to be a shim:
 
 ```python
 """Re-export shim — digest implementation moved to yas.email."""
+
 from yas.email import render_digest_payload as render_digest  # noqa: F401
 from yas.email.builders import gather_digest_payload  # noqa: F401
 from yas.email.payloads import DigestPayload  # noqa: F401
@@ -691,6 +698,7 @@ Update `src/yas/email/__init__.py`:
 
 ```python
 """Outbound email rendering — see spec 2026-05-19."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -776,6 +784,7 @@ If body_plain duplicating the subject feels wrong, an alternative is a `subject.
 
 from yas.email.builders import gather_digest_payload  # noqa: E402
 
+
 # `digest` uses render_digest_payload (sync) for the worker path; the registry
 # entry covers the AlertType="digest" branch should a future caller pass one
 # through render_email. build= adapter unwraps lead.payload_json into a payload.
@@ -784,6 +793,7 @@ async def _build_digest_from_alert(session, lead, members):
         "digest is rendered via render_digest_payload from worker/digest_loop.py, "
         "not via render_email; this branch should not be reached"
     )
+
 
 RENDERERS["digest"] = TypeRenderer(
     build=_build_digest_from_alert,
@@ -918,6 +928,7 @@ class NewMatchPayload:
 ```python
 # tests/unit/test_email_builders.py — new file
 """Per-kind builder tests: real DB joins, payload-shape assertions, failure modes."""
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
@@ -948,17 +959,39 @@ async def _engine(tmp_path: Any):
 async def test_build_new_match_single(tmp_path: Any) -> None:
     eng = await _engine(tmp_path)
     async with session_scope(eng) as s:
-        site = Site(name="Park", base_url="https://p.example.com", active=True); s.add(site); await s.flush()
-        page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule); s.add(page); await s.flush()
-        kid = Kid(name="Ada", created_at=NOW - timedelta(days=30)); s.add(kid); await s.flush()
-        off = Offering(site_id=site.id, page_id=page.id, name="Soccer Camp",
-                       start_date=date(2026, 6, 1), price_cents=15000,
-                       registration_url="https://p.example.com/r/10")
-        s.add(off); await s.flush()
-        m = Match(kid_id=kid.id, offering_id=off.id, score=0.9, computed_at=NOW); s.add(m); await s.flush()
-        a = Alert(type=AlertType.new_match.value, kid_id=kid.id, channels=[],
-                  scheduled_for=NOW, dedup_key="x", payload_json={"offering_id": off.id}, skipped=False)
-        s.add(a); await s.flush()
+        site = Site(name="Park", base_url="https://p.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+        s.add(page)
+        await s.flush()
+        kid = Kid(name="Ada", created_at=NOW - timedelta(days=30))
+        s.add(kid)
+        await s.flush()
+        off = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Soccer Camp",
+            start_date=date(2026, 6, 1),
+            price_cents=15000,
+            registration_url="https://p.example.com/r/10",
+        )
+        s.add(off)
+        await s.flush()
+        m = Match(kid_id=kid.id, offering_id=off.id, score=0.9, computed_at=NOW)
+        s.add(m)
+        await s.flush()
+        a = Alert(
+            type=AlertType.new_match.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="x",
+            payload_json={"offering_id": off.id},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
 
         payload = await build_new_match(s, a, [a])
 
@@ -983,10 +1016,20 @@ async def test_build_new_match_missing_offering(tmp_path: Any) -> None:
     """payload_json points at a non-existent offering → EmailRenderError."""
     eng = await _engine(tmp_path)
     async with session_scope(eng) as s:
-        kid = Kid(name="Ada", created_at=NOW); s.add(kid); await s.flush()
-        a = Alert(type=AlertType.new_match.value, kid_id=kid.id, channels=[],
-                  scheduled_for=NOW, dedup_key="x", payload_json={"offering_id": 999999}, skipped=False)
-        s.add(a); await s.flush()
+        kid = Kid(name="Ada", created_at=NOW)
+        s.add(kid)
+        await s.flush()
+        a = Alert(
+            type=AlertType.new_match.value,
+            kid_id=kid.id,
+            channels=[],
+            scheduled_for=NOW,
+            dedup_key="x",
+            payload_json={"offering_id": 999999},
+            skipped=False,
+        )
+        s.add(a)
+        await s.flush()
         with pytest.raises(EmailRenderError):
             await build_new_match(s, a, [a])
 ```
@@ -1033,7 +1076,9 @@ async def build_new_match(
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
-    offering_ids = [int(a.payload_json["offering_id"]) for a in members if "offering_id" in a.payload_json]
+    offering_ids = [
+        int(a.payload_json["offering_id"]) for a in members if "offering_id" in a.payload_json
+    ]
     if not offering_ids:
         raise EmailRenderError("new_match alert missing offering_id", alert_id=lead.id)
 
@@ -1052,11 +1097,14 @@ async def build_new_match(
     # Resolve site names in one query
     site_ids = list({o.site_id for o, _ in rows})
     from yas.db.models import Site
+
     site_rows = (await session.execute(select(Site).where(Site.id.in_(site_ids)))).scalars().all()
     site_names = {s.id: s.name for s in site_rows}
 
     matches = [_offering_to_dict(o, score, site_names.get(o.site_id, "")) for o, score in rows]
-    return NewMatchPayload(kid_id=kid.id, kid_name=kid.name, matches=matches, generated_at=datetime.now(UTC))
+    return NewMatchPayload(
+        kid_id=kid.id, kid_name=kid.name, matches=matches, generated_at=datetime.now(UTC)
+    )
 ```
 
 Run builder tests, expect PASS:
@@ -1144,6 +1192,7 @@ from datetime import UTC, date, datetime, timedelta
 ```python
 # tests/unit/test_email_render_golden.py — new file
 """End-to-end render goldens — every kind must produce a stable subject/txt/html."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -1161,10 +1210,13 @@ _G = Path(__file__).parent.parent / "golden" / "email"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind, seed", [
-    (AlertType.new_match, seed_new_match),
-    # ...more kinds appended in tasks 6–14
-])
+@pytest.mark.parametrize(
+    "kind, seed",
+    [
+        (AlertType.new_match, seed_new_match),
+        # ...more kinds appended in tasks 6–14
+    ],
+)
 async def test_render_golden(kind, seed, tmp_path: Any) -> None:
     eng = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/g.db")
     async with eng.begin() as c:
@@ -1333,11 +1385,14 @@ with:
 
 ```python
 from yas.email import EmailRenderError, render_email
+
 ...
 try:
     rendered = await render_email(session, AlertType(group.alert_type), lead, members)
 except EmailRenderError as exc:
-    log.warning("email.render_failed", alert_id=lead.id, alert_type=group.alert_type, reason=str(exc))
+    log.warning(
+        "email.render_failed", alert_id=lead.id, alert_type=group.alert_type, reason=str(exc)
+    )
     _mark_all_skipped(members, f"render failed: {exc}")
     return
 subject = rendered.subject

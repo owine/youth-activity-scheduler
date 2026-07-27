@@ -132,6 +132,7 @@ from datetime import UTC, datetime
 from yas.db.models import Kid, Match, Offering, Page, Site
 from yas.db.session import session_scope
 
+
 @pytest.mark.asyncio
 async def test_match_includes_offering_registration_opens_at_and_site_name(client):
     c, engine = client
@@ -142,11 +143,18 @@ async def test_match_includes_offering_registration_opens_at_and_site_name(clien
         await s.flush()
         s.add(Page(id=1, site_id=1, url="https://x/p", kind="schedule"))
         await s.flush()
-        s.add(Offering(
-            id=1, site_id=1, page_id=1, name="Spring T-Ball", normalized_name="spring t-ball",
-            program_type="other", status="active",
-            registration_opens_at=now,
-        ))
+        s.add(
+            Offering(
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Spring T-Ball",
+                normalized_name="spring t-ball",
+                program_type="other",
+                status="active",
+                registration_opens_at=now,
+            )
+        )
         await s.flush()
         s.add(Match(kid_id=1, offering_id=1, score=0.9, reasons={}, computed_at=now))
     r = await c.get("/api/matches?kid_id=1")
@@ -191,6 +199,7 @@ with:
 
 ```python
 from yas.db.models import Match, Offering, Site
+
 # ...
 q = (
     select(Match, Offering, Site.name)
@@ -204,10 +213,12 @@ In the loop that builds `MatchOut`, unpack `match, offering, site_name` from eac
 If `OfferingSummary` is constructed via `model_validate(offering)`, switch to a dict construction so you can inject `site_name`:
 
 ```python
-offering_summary = OfferingSummary.model_validate({
-    **{k: getattr(offering, k) for k in OfferingSummary.model_fields if k != "site_name"},
-    "site_name": site_name,
-})
+offering_summary = OfferingSummary.model_validate(
+    {
+        **{k: getattr(offering, k) for k in OfferingSummary.model_fields if k != "site_name"},
+        "site_name": site_name,
+    }
+)
 ```
 
 - [ ] **Step 6: Run the new test plus the full matches test file**
@@ -253,16 +264,24 @@ from datetime import datetime
 from yas.db.models import Kid, WatchlistEntry
 from yas.db.session import session_scope
 
+
 @pytest.mark.asyncio
 async def test_kid_detail_watchlist_includes_ignore_hard_gates(client):
     c, engine = client
     async with session_scope(engine) as s:
         s.add(Kid(id=1, name="Sam", dob=datetime(2019, 5, 1).date()))
         await s.flush()
-        s.add(WatchlistEntry(
-            kid_id=1, site_id=None, pattern="baseball", priority="normal",
-            notes=None, active=True, ignore_hard_gates=True,
-        ))
+        s.add(
+            WatchlistEntry(
+                kid_id=1,
+                site_id=None,
+                pattern="baseball",
+                priority="normal",
+                notes=None,
+                active=True,
+                ignore_hard_gates=True,
+            )
+        )
     r = await c.get("/api/kids/1")
     assert r.status_code == 200
     watchlist = r.json()["watchlist"]
@@ -500,16 +519,18 @@ async def test_list_crawls_returns_recent_first(client):
         s.add(Site(name="Test", base_url="https://t.example", needs_browser=False))
         await s.flush()
         for i in range(3):
-            s.add(CrawlRun(
-                site_id=1,
-                started_at=datetime(2026, 4, 24 - i, 12, 0, tzinfo=UTC),
-                finished_at=datetime(2026, 4, 24 - i, 12, 5, tzinfo=UTC),
-                status="ok",
-                pages_fetched=i + 1,
-                changes_detected=i,
-                llm_calls=0,
-                llm_cost_usd=0.0,
-            ))
+            s.add(
+                CrawlRun(
+                    site_id=1,
+                    started_at=datetime(2026, 4, 24 - i, 12, 0, tzinfo=UTC),
+                    finished_at=datetime(2026, 4, 24 - i, 12, 5, tzinfo=UTC),
+                    status="ok",
+                    pages_fetched=i + 1,
+                    changes_detected=i,
+                    llm_calls=0,
+                    llm_cost_usd=0.0,
+                )
+            )
     r = await c.get("/api/sites/1/crawls")
     assert r.status_code == 200
     body = r.json()
@@ -533,12 +554,17 @@ async def test_list_crawls_respects_limit(client):
         s.add(Site(name="Test", base_url="https://t.example", needs_browser=False))
         await s.flush()
         for i in range(20):
-            s.add(CrawlRun(
-                site_id=1,
-                started_at=datetime(2026, 4, 1 + i, 12, 0, tzinfo=UTC),
-                status="ok",
-                pages_fetched=0, changes_detected=0, llm_calls=0, llm_cost_usd=0.0,
-            ))
+            s.add(
+                CrawlRun(
+                    site_id=1,
+                    started_at=datetime(2026, 4, 1 + i, 12, 0, tzinfo=UTC),
+                    status="ok",
+                    pages_fetched=0,
+                    changes_detected=0,
+                    llm_calls=0,
+                    llm_cost_usd=0.0,
+                )
+            )
     r = await c.get("/api/sites/1/crawls?limit=5")
     assert r.status_code == 200
     assert len(r.json()) == 5
@@ -559,13 +585,18 @@ async def test_list_crawls_includes_error_text_for_failed_crawls(client):
     async with session_scope(engine) as s:
         s.add(Site(name="Test", base_url="https://t.example", needs_browser=False))
         await s.flush()
-        s.add(CrawlRun(
-            site_id=1,
-            started_at=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
-            status="failed",
-            pages_fetched=0, changes_detected=0, llm_calls=0, llm_cost_usd=0.0,
-            error_text="connection refused",
-        ))
+        s.add(
+            CrawlRun(
+                site_id=1,
+                started_at=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
+                status="failed",
+                pages_fetched=0,
+                changes_detected=0,
+                llm_calls=0,
+                llm_cost_usd=0.0,
+                error_text="connection refused",
+            )
+        )
     r = await c.get("/api/sites/1/crawls")
     body = r.json()
     assert body[0]["status"] == "failed"
@@ -616,13 +647,17 @@ async def list_crawls(
         if site is None:
             raise HTTPException(status_code=404, detail=f"site {site_id} not found")
         rows = (
-            await s.execute(
-                select(CrawlRun)
-                .where(CrawlRun.site_id == site_id)
-                .order_by(CrawlRun.started_at.desc())
-                .limit(limit)
+            (
+                await s.execute(
+                    select(CrawlRun)
+                    .where(CrawlRun.site_id == site_id)
+                    .order_by(CrawlRun.started_at.desc())
+                    .limit(limit)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [CrawlRunOut.model_validate(r) for r in rows]
 ```
 
@@ -766,6 +801,7 @@ def test_unknown_alert_type_falls_back_to_type_name():
     # Defensive: dispatch table must not raise on unexpected input
     class FakeType:
         value = "unknown_type"
+
     s = summarize_alert(FakeType(), kid_name=None, payload={})  # type: ignore[arg-type]
     assert "unknown_type" in s.lower() or "alert" in s.lower()
 ```
@@ -883,6 +919,7 @@ class InboxAlertOut(BaseModel):
     summary_text (server-composed). Existing /api/alerts endpoints continue
     to return the plain AlertOut.
     """
+
     model_config = ConfigDict(from_attributes=True)
     id: int
     type: str
@@ -931,7 +968,13 @@ from httpx import ASGITransport, AsyncClient
 
 from yas.db.base import Base
 from yas.db.models import (
-    Alert, CrawlRun, Kid, Match, Offering, Site, WatchlistEntry,
+    Alert,
+    CrawlRun,
+    Kid,
+    Match,
+    Offering,
+    Site,
+    WatchlistEntry,
 )
 from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.session import create_engine_for, session_scope
@@ -981,15 +1024,17 @@ async def test_inbox_includes_alert_with_kid_name_and_summary(client):
         s.add(Kid(id=1, name="Sam", dob=datetime(2019, 5, 1).date()))
         s.add(Site(id=1, name="Lil Sluggers", base_url="https://x", needs_browser=False))
         await s.flush()
-        s.add(Alert(
-            type=AlertType.watchlist_hit.value,
-            kid_id=1,
-            site_id=1,
-            channels=["email"],
-            scheduled_for=now - timedelta(hours=1),
-            dedup_key="k1",
-            payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
-        ))
+        s.add(
+            Alert(
+                type=AlertType.watchlist_hit.value,
+                kid_id=1,
+                site_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="k1",
+                payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
+            )
+        )
     r = await c.get(
         "/api/inbox/summary",
         params={"since": _iso(now - timedelta(days=1)), "until": _iso(now + timedelta(seconds=1))},
@@ -1011,21 +1056,37 @@ async def test_inbox_new_matches_grouped_by_kid_with_opening_soon_counts(client)
         await s.flush()
         # Two offerings: one opens tomorrow (counts as opening_soon),
         # one opens in 30 days (does not).
-        s.add(Offering(
-            id=1, site_id=1, name="Open soon",
-            start_date=(now + timedelta(days=20)).date(),
-            registration_opens_at=now + timedelta(days=1),
-            status="active",
-        ))
-        s.add(Offering(
-            id=2, site_id=1, name="Open later",
-            start_date=(now + timedelta(days=60)).date(),
-            registration_opens_at=now + timedelta(days=30),
-            status="active",
-        ))
+        s.add(
+            Offering(
+                id=1,
+                site_id=1,
+                name="Open soon",
+                start_date=(now + timedelta(days=20)).date(),
+                registration_opens_at=now + timedelta(days=1),
+                status="active",
+            )
+        )
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                name="Open later",
+                start_date=(now + timedelta(days=60)).date(),
+                registration_opens_at=now + timedelta(days=30),
+                status="active",
+            )
+        )
         await s.flush()
-        s.add(Match(kid_id=1, offering_id=1, score=0.9, reasons={}, computed_at=now - timedelta(hours=1)))
-        s.add(Match(kid_id=1, offering_id=2, score=0.8, reasons={}, computed_at=now - timedelta(hours=2)))
+        s.add(
+            Match(
+                kid_id=1, offering_id=1, score=0.9, reasons={}, computed_at=now - timedelta(hours=1)
+            )
+        )
+        s.add(
+            Match(
+                kid_id=1, offering_id=2, score=0.8, reasons={}, computed_at=now - timedelta(hours=2)
+            )
+        )
     r = await c.get(
         "/api/inbox/summary",
         params={"since": _iso(now - timedelta(days=1)), "until": _iso(now + timedelta(seconds=1))},
@@ -1048,16 +1109,28 @@ async def test_inbox_site_activity_counts(client):
             s.add(Site(id=i + 1, name=f"S{i}", base_url=f"https://s{i}", needs_browser=False))
         await s.flush()
         # Site 1: successful crawl in window
-        s.add(CrawlRun(
-            site_id=1, started_at=now - timedelta(hours=2), status=CrawlStatus.ok.value,
-            pages_fetched=1, changes_detected=0, llm_calls=0, llm_cost_usd=0.0,
-        ))
+        s.add(
+            CrawlRun(
+                site_id=1,
+                started_at=now - timedelta(hours=2),
+                status=CrawlStatus.ok.value,
+                pages_fetched=1,
+                changes_detected=0,
+                llm_calls=0,
+                llm_cost_usd=0.0,
+            )
+        )
         # Site 2: schedule_posted alert in window
-        s.add(Alert(
-            type=AlertType.schedule_posted.value, site_id=2, channels=[],
-            scheduled_for=now - timedelta(hours=1), dedup_key="sp1",
-            payload_json={"site_name": "S1", "n_offerings": 3},
-        ))
+        s.add(
+            Alert(
+                type=AlertType.schedule_posted.value,
+                site_id=2,
+                channels=[],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="sp1",
+                payload_json={"site_name": "S1", "n_offerings": 3},
+            )
+        )
     r = await c.get(
         "/api/inbox/summary",
         params={"since": _iso(now - timedelta(days=1)), "until": _iso(now + timedelta(seconds=1))},
@@ -1145,21 +1218,23 @@ async def inbox_summary(
                 # Unknown type stored — defensive
                 at = alert.type  # type: ignore[assignment]
             summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
-            inbox_alerts.append(InboxAlertOut(
-                id=alert.id,
-                type=alert.type,
-                kid_id=alert.kid_id,
-                kid_name=kid_name,
-                offering_id=alert.offering_id,
-                site_id=alert.site_id,
-                channels=list(alert.channels or []),
-                scheduled_for=alert.scheduled_for,
-                sent_at=alert.sent_at,
-                skipped=alert.skipped,
-                dedup_key=alert.dedup_key,
-                payload_json=alert.payload_json or {},
-                summary_text=summary,
-            ))
+            inbox_alerts.append(
+                InboxAlertOut(
+                    id=alert.id,
+                    type=alert.type,
+                    kid_id=alert.kid_id,
+                    kid_name=kid_name,
+                    offering_id=alert.offering_id,
+                    site_id=alert.site_id,
+                    channels=list(alert.channels or []),
+                    scheduled_for=alert.scheduled_for,
+                    sent_at=alert.sent_at,
+                    skipped=alert.skipped,
+                    dedup_key=alert.dedup_key,
+                    payload_json=alert.payload_json or {},
+                    summary_text=summary,
+                )
+            )
 
         # --- New matches grouped by kid ---
         # total_new: matches where computed_at IN [since, until)
@@ -1198,20 +1273,24 @@ async def inbox_summary(
         ]
 
         # --- Site activity ---
-        refreshed_count = (await s.execute(
-            select(func.count(func.distinct(CrawlRun.site_id)))
-            .where(CrawlRun.started_at >= since)
-            .where(CrawlRun.started_at < until)
-            .where(CrawlRun.status == CrawlStatus.ok.value)
-        )).scalar_one()
+        refreshed_count = (
+            await s.execute(
+                select(func.count(func.distinct(CrawlRun.site_id)))
+                .where(CrawlRun.started_at >= since)
+                .where(CrawlRun.started_at < until)
+                .where(CrawlRun.status == CrawlStatus.ok.value)
+            )
+        ).scalar_one()
 
-        posted_new_count = (await s.execute(
-            select(func.count(func.distinct(Alert.site_id)))
-            .where(Alert.type == AlertType.schedule_posted.value)
-            .where(Alert.scheduled_for >= since)
-            .where(Alert.scheduled_for < until)
-            .where(Alert.site_id.is_not(None))
-        )).scalar_one()
+        posted_new_count = (
+            await s.execute(
+                select(func.count(func.distinct(Alert.site_id)))
+                .where(Alert.type == AlertType.schedule_posted.value)
+                .where(Alert.scheduled_for >= since)
+                .where(Alert.scheduled_for < until)
+                .where(Alert.site_id.is_not(None))
+            )
+        ).scalar_one()
 
         # Stagnant: reuse the existing detector. Verified signature in
         # src/yas/alerts/detectors/site_stagnant.py: kwarg is `threshold_days`,
@@ -1418,6 +1497,7 @@ At the END of `create_app` (after every `include_router` call, before `return ap
 
 ```python
 from yas.web.spa_fallback import install_spa_fallback
+
 # ... existing wiring ...
 install_spa_fallback(app)
 return app
@@ -3962,7 +4042,13 @@ from datetime import UTC, datetime, timedelta
 
 from yas.db.base import Base
 from yas.db.models import (
-    Alert, CrawlRun, HouseholdSettings, Kid, Match, Offering, Site,
+    Alert,
+    CrawlRun,
+    HouseholdSettings,
+    Kid,
+    Match,
+    Offering,
+    Site,
 )
 from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.session import create_engine_for, session_scope
@@ -3978,28 +4064,49 @@ async def main(db_url: str) -> None:
         s.add(Kid(id=1, name="Sam", dob=datetime(2019, 5, 1).date()))
         s.add(Site(id=1, name="Lil Sluggers", base_url="https://x", needs_browser=False))
         await s.flush()
-        s.add(Offering(
-            id=1, site_id=1, name="Spring T-Ball",
-            start_date=(now + timedelta(days=14)).date(),
-            registration_opens_at=now + timedelta(days=1),
-            status="active",
-        ))
+        s.add(
+            Offering(
+                id=1,
+                site_id=1,
+                name="Spring T-Ball",
+                start_date=(now + timedelta(days=14)).date(),
+                registration_opens_at=now + timedelta(days=1),
+                status="active",
+            )
+        )
         await s.flush()
-        s.add(Match(kid_id=1, offering_id=1, score=0.94, reasons={"watchlist": True}, computed_at=now))
-        s.add(Alert(
-            type=AlertType.watchlist_hit.value, kid_id=1, site_id=1, channels=["email"],
-            scheduled_for=now - timedelta(hours=1), dedup_key="seed-1",
-            payload_json={"offering_name": "Spring T-Ball", "site_name": "Lil Sluggers"},
-        ))
-        s.add(CrawlRun(
-            site_id=1, started_at=now - timedelta(hours=2), finished_at=now - timedelta(hours=2, minutes=-1),
-            status=CrawlStatus.ok.value, pages_fetched=3, changes_detected=1, llm_calls=0, llm_cost_usd=0.0,
-        ))
+        s.add(
+            Match(kid_id=1, offering_id=1, score=0.94, reasons={"watchlist": True}, computed_at=now)
+        )
+        s.add(
+            Alert(
+                type=AlertType.watchlist_hit.value,
+                kid_id=1,
+                site_id=1,
+                channels=["email"],
+                scheduled_for=now - timedelta(hours=1),
+                dedup_key="seed-1",
+                payload_json={"offering_name": "Spring T-Ball", "site_name": "Lil Sluggers"},
+            )
+        )
+        s.add(
+            CrawlRun(
+                site_id=1,
+                started_at=now - timedelta(hours=2),
+                finished_at=now - timedelta(hours=2, minutes=-1),
+                status=CrawlStatus.ok.value,
+                pages_fetched=3,
+                changes_detected=1,
+                llm_calls=0,
+                llm_cost_usd=0.0,
+            )
+        )
     await engine.dispose()
 
 
 if __name__ == "__main__":
     import sys
+
     asyncio.run(main(sys.argv[1]))
 ```
 

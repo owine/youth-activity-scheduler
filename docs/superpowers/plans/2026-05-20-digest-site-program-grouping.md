@@ -52,6 +52,7 @@ The core grouping logic, fully testable without a database.
 ```python
 # tests/unit/test_email_grouping.py
 """Pure unit tests for the digest site->program grouping helper."""
+
 from __future__ import annotations
 
 from yas.email.builders import _group_matches_by_site, _program_label
@@ -233,35 +234,63 @@ async def test_gather_digest_populates_site_name_and_groups(tmp_path: Any) -> No
     async with session_scope(eng) as s:
         site_a = Site(name="Park District", base_url="https://a.example.com", active=True)
         site_b = Site(name="YMCA", base_url="https://b.example.com", active=True)
-        s.add_all([site_a, site_b]); await s.flush()
+        s.add_all([site_a, site_b])
+        await s.flush()
         page_a = Page(site_id=site_a.id, url="https://a.example.com/s", kind=PageKind.schedule)
         page_b = Page(site_id=site_b.id, url="https://b.example.com/s", kind=PageKind.schedule)
-        s.add_all([page_a, page_b]); await s.flush()
+        s.add_all([page_a, page_b])
+        await s.flush()
         kid = Kid(name="Ada", dob=date(2017, 1, 1), created_at=NOW - timedelta(days=30))
-        s.add(kid); await s.flush()
+        s.add(kid)
+        await s.flush()
         # Two offerings at site A (soccer + swim), one at site B (dance).
-        o1 = Offering(site_id=site_a.id, page_id=page_a.id, name="Soccer Camp",
-                      normalized_name="soccer camp", program_type="soccer",
-                      start_date=date(2026, 6, 1), price_cents=15000,
-                      registration_url="https://a.example.com/r/1")
-        o2 = Offering(site_id=site_a.id, page_id=page_a.id, name="Summer Swim",
-                      normalized_name="summer swim", program_type="swim",
-                      start_date=date(2026, 6, 15), price_cents=14000)
-        o3 = Offering(site_id=site_b.id, page_id=page_b.id, name="Ballet I",
-                      normalized_name="ballet i", program_type="dance",
-                      start_date=date(2026, 6, 3), price_cents=12000)
-        s.add_all([o1, o2, o3]); await s.flush()
+        o1 = Offering(
+            site_id=site_a.id,
+            page_id=page_a.id,
+            name="Soccer Camp",
+            normalized_name="soccer camp",
+            program_type="soccer",
+            start_date=date(2026, 6, 1),
+            price_cents=15000,
+            registration_url="https://a.example.com/r/1",
+        )
+        o2 = Offering(
+            site_id=site_a.id,
+            page_id=page_a.id,
+            name="Summer Swim",
+            normalized_name="summer swim",
+            program_type="swim",
+            start_date=date(2026, 6, 15),
+            price_cents=14000,
+        )
+        o3 = Offering(
+            site_id=site_b.id,
+            page_id=page_b.id,
+            name="Ballet I",
+            normalized_name="ballet i",
+            program_type="dance",
+            start_date=date(2026, 6, 3),
+            price_cents=12000,
+        )
+        s.add_all([o1, o2, o3])
+        await s.flush()
         # Matches inside the window, scores set so ordering is deterministic.
-        s.add_all([
-            Match(kid_id=kid.id, offering_id=o1.id, score=0.91, computed_at=NOW),
-            Match(kid_id=kid.id, offering_id=o2.id, score=0.80, computed_at=NOW),
-            Match(kid_id=kid.id, offering_id=o3.id, score=0.66, computed_at=NOW),
-        ]); await s.flush()
+        s.add_all(
+            [
+                Match(kid_id=kid.id, offering_id=o1.id, score=0.91, computed_at=NOW),
+                Match(kid_id=kid.id, offering_id=o2.id, score=0.80, computed_at=NOW),
+                Match(kid_id=kid.id, offering_id=o3.id, score=0.66, computed_at=NOW),
+            ]
+        )
+        await s.flush()
 
         payload = await gather_digest_payload(
-            s, kid,
-            window_start=NOW - timedelta(days=1), window_end=NOW + timedelta(hours=1),
-            alert_no_matches_kid_days=7, now=NOW,
+            s,
+            kid,
+            window_start=NOW - timedelta(days=1),
+            window_end=NOW + timedelta(hours=1),
+            alert_no_matches_kid_days=7,
+            now=NOW,
         )
 
     # Bug fix: site_name is populated on the flat list (previously always "").
@@ -296,22 +325,18 @@ In `src/yas/email/builders.py::_offering_to_dict`, add to the dict literal:
 After the `new_matches` list is built (the loop over `match_rows`), insert:
 
 ```python
-    # Resolve site names for the new-match offerings (one batch query) and
-    # populate site_name on each dict. Without this the digest showed no site
-    # (site_name defaulted to "" and the macro guard dropped it).
-    if new_matches:
-        site_ids = {m["site_id"] for m in new_matches}
-        site_names = dict(
-            (
-                await session.execute(
-                    select(Site.id, Site.name).where(Site.id.in_(site_ids))
-                )
-            ).all()
-        )
-        for m in new_matches:
-            m["site_name"] = site_names.get(m["site_id"], "")
+# Resolve site names for the new-match offerings (one batch query) and
+# populate site_name on each dict. Without this the digest showed no site
+# (site_name defaulted to "" and the macro guard dropped it).
+if new_matches:
+    site_ids = {m["site_id"] for m in new_matches}
+    site_names = dict(
+        (await session.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))).all()
+    )
+    for m in new_matches:
+        m["site_name"] = site_names.get(m["site_id"], "")
 
-    new_match_groups = _group_matches_by_site(new_matches)
+new_match_groups = _group_matches_by_site(new_matches)
 ```
 
 Ensure `Site` is imported in `builders.py` (the `new_match` builder already imports it — confirm it's module-level).
@@ -372,9 +397,7 @@ def test_offering_row_show_site_false_omits_site(variant: str) -> None:
 @pytest.mark.parametrize("variant", ["html", "text"])
 def test_offering_row_default_includes_site(variant: str) -> None:
     macro = f"offering_row_{variant}"
-    tpl = env.from_string(
-        f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}'
-    )
+    tpl = env.from_string(f'{{% from "macros.j2" import {macro} %}}{{{{ {macro}(m) }}}}')
     out = tpl.render(m=_offering(site_name="Park District", score=0.9))
     assert "Park District" in out
 ```

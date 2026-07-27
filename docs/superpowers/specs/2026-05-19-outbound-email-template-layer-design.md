@@ -69,11 +69,13 @@ src/yas/email/
 ```python
 # yas/email/__init__.py
 
+
 @dataclass(frozen=True)
 class RenderedEmail:
     subject: str
     body_plain: str
     body_html: str
+
 
 async def render_email(
     session: AsyncSession,
@@ -95,9 +97,12 @@ class TypeRenderer:
     html_template: str  # e.g. "new_match.html.j2"
     txt_template: str
 
+
 RENDERERS: dict[AlertType, TypeRenderer] = {
-    AlertType.new_match:      TypeRenderer(build_new_match,      "new_match.html.j2",      "new_match.txt.j2"),
-    AlertType.reg_opens_now:    TypeRenderer(build_reg_opens_now,    "reg_opens_now.html.j2",    "reg_opens_now.txt.j2"),
+    AlertType.new_match: TypeRenderer(build_new_match, "new_match.html.j2", "new_match.txt.j2"),
+    AlertType.reg_opens_now: TypeRenderer(
+        build_reg_opens_now, "reg_opens_now.html.j2", "reg_opens_now.txt.j2"
+    ),
     # ... one line per type
 }
 ```

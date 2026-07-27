@@ -81,21 +81,25 @@ async def test_alert_list_includes_summary_text(client):
     c, engine = client  # verify fixture yields tuple; if not, adjust
     # Seed: a watchlist_hit alert for an existing kid, plus a system alert.
     async with session_scope(engine) as s:
-        s.add(Alert(
-            type=AlertType.watchlist_hit.value,
-            kid_id=1,  # existing seeded kid
-            channels=["email"],
-            scheduled_for=datetime.now(UTC),
-            dedup_key="test-watchlist-hit",
-            payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
-        ))
-        s.add(Alert(
-            type=AlertType.crawl_failed.value,
-            channels=["email"],
-            scheduled_for=datetime.now(UTC),
-            dedup_key="test-crawl-failed",
-            payload_json={"site_name": "Lil Sluggers"},
-        ))
+        s.add(
+            Alert(
+                type=AlertType.watchlist_hit.value,
+                kid_id=1,  # existing seeded kid
+                channels=["email"],
+                scheduled_for=datetime.now(UTC),
+                dedup_key="test-watchlist-hit",
+                payload_json={"offering_name": "T-Ball", "site_name": "Lil Sluggers"},
+            )
+        )
+        s.add(
+            Alert(
+                type=AlertType.crawl_failed.value,
+                channels=["email"],
+                scheduled_for=datetime.now(UTC),
+                dedup_key="test-crawl-failed",
+                payload_json={"site_name": "Lil Sluggers"},
+            )
+        )
 
     r = await c.get("/api/alerts")
     assert r.status_code == 200
@@ -169,10 +173,7 @@ from yas.web.routes.inbox_alert_summary import summarize_alert
 
 # In list_alerts: change main query to outer-join Kid for kid_name.
 # Replace the existing `q = select(Alert)` and the rows fetch with:
-q = (
-    select(Alert, Kid.name)
-    .outerjoin(Kid, Kid.id == Alert.kid_id)
-)
+q = select(Alert, Kid.name).outerjoin(Kid, Kid.id == Alert.kid_id)
 # (Apply all existing filters to q identically — they reference Alert columns
 #  which the join doesn't change.)
 # After applying filters, count_q stays as-is (it doesn't need kid_name).
@@ -191,16 +192,24 @@ for alert, kid_name in rows:
         kid_name=kid_name,
         payload=alert.payload_json or {},
     )
-    items.append(AlertOut(
-        id=alert.id, type=alert.type, kid_id=alert.kid_id,
-        offering_id=alert.offering_id, site_id=alert.site_id,
-        channels=list(alert.channels or []),
-        scheduled_for=alert.scheduled_for, sent_at=alert.sent_at,
-        skipped=alert.skipped, dedup_key=alert.dedup_key,
-        payload_json=alert.payload_json or {},
-        closed_at=alert.closed_at, close_reason=alert.close_reason,
-        summary_text=summary,
-    ))
+    items.append(
+        AlertOut(
+            id=alert.id,
+            type=alert.type,
+            kid_id=alert.kid_id,
+            offering_id=alert.offering_id,
+            site_id=alert.site_id,
+            channels=list(alert.channels or []),
+            scheduled_for=alert.scheduled_for,
+            sent_at=alert.sent_at,
+            skipped=alert.skipped,
+            dedup_key=alert.dedup_key,
+            payload_json=alert.payload_json or {},
+            closed_at=alert.closed_at,
+            close_reason=alert.close_reason,
+            summary_text=summary,
+        )
+    )
 return AlertListResponse(items=items, total=total or 0, limit=limit, offset=offset)
 ```
 
@@ -210,11 +219,13 @@ For `get_alert` (singleton), use the same join pattern:
 @router.get("/{alert_id}", response_model=AlertOut)
 async def get_alert(request: Request, alert_id: int) -> AlertOut:
     async with session_scope(_engine(request)) as s:
-        row = (await s.execute(
-            select(Alert, Kid.name)
-            .outerjoin(Kid, Kid.id == Alert.kid_id)
-            .where(Alert.id == alert_id)
-        )).first()
+        row = (
+            await s.execute(
+                select(Alert, Kid.name)
+                .outerjoin(Kid, Kid.id == Alert.kid_id)
+                .where(Alert.id == alert_id)
+            )
+        ).first()
         if row is None:
             raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
         alert, kid_name = row
@@ -224,13 +235,19 @@ async def get_alert(request: Request, alert_id: int) -> AlertOut:
             at = alert.type
         summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
         return AlertOut(
-            id=alert.id, type=alert.type, kid_id=alert.kid_id,
-            offering_id=alert.offering_id, site_id=alert.site_id,
+            id=alert.id,
+            type=alert.type,
+            kid_id=alert.kid_id,
+            offering_id=alert.offering_id,
+            site_id=alert.site_id,
             channels=list(alert.channels or []),
-            scheduled_for=alert.scheduled_for, sent_at=alert.sent_at,
-            skipped=alert.skipped, dedup_key=alert.dedup_key,
+            scheduled_for=alert.scheduled_for,
+            sent_at=alert.sent_at,
+            skipped=alert.skipped,
+            dedup_key=alert.dedup_key,
             payload_json=alert.payload_json or {},
-            closed_at=alert.closed_at, close_reason=alert.close_reason,
+            closed_at=alert.closed_at,
+            close_reason=alert.close_reason,
             summary_text=summary,
         )
 ```
@@ -241,22 +258,28 @@ The other endpoints (`/resend`, `/close`, `/reopen`) currently use `AlertOut.mod
 async def _to_out(s: AsyncSession, alert: Alert) -> AlertOut:
     kid_name = None
     if alert.kid_id is not None:
-        kid_name = (await s.execute(
-            select(Kid.name).where(Kid.id == alert.kid_id)
-        )).scalar_one_or_none()
+        kid_name = (
+            await s.execute(select(Kid.name).where(Kid.id == alert.kid_id))
+        ).scalar_one_or_none()
     try:
         at: AlertType | str = AlertType(alert.type)
     except ValueError:
         at = alert.type
     summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
     return AlertOut(
-        id=alert.id, type=alert.type, kid_id=alert.kid_id,
-        offering_id=alert.offering_id, site_id=alert.site_id,
+        id=alert.id,
+        type=alert.type,
+        kid_id=alert.kid_id,
+        offering_id=alert.offering_id,
+        site_id=alert.site_id,
         channels=list(alert.channels or []),
-        scheduled_for=alert.scheduled_for, sent_at=alert.sent_at,
-        skipped=alert.skipped, dedup_key=alert.dedup_key,
+        scheduled_for=alert.scheduled_for,
+        sent_at=alert.sent_at,
+        skipped=alert.skipped,
+        dedup_key=alert.dedup_key,
         payload_json=alert.payload_json or {},
-        closed_at=alert.closed_at, close_reason=alert.close_reason,
+        closed_at=alert.closed_at,
+        close_reason=alert.close_reason,
         summary_text=summary,
     )
 ```

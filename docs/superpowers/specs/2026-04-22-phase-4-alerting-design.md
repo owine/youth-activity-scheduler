@@ -171,9 +171,13 @@ One function per event source. Each operates on an open `AsyncSession`, computes
 
 ```python
 async def enqueue_new_match(session, kid_id, offering_id, score, reasons) -> int | None: ...
-async def enqueue_watchlist_hit(session, kid_id, offering_id, watchlist_entry_id, reasons) -> int: ...
+async def enqueue_watchlist_hit(
+    session, kid_id, offering_id, watchlist_entry_id, reasons
+) -> int: ...
 async def enqueue_schedule_posted(session, page_id, site_id, summary) -> int: ...
-async def enqueue_crawl_failed(session, site_id, consecutive_failures, last_error) -> int | None: ...
+async def enqueue_crawl_failed(
+    session, site_id, consecutive_failures, last_error
+) -> int | None: ...
 async def enqueue_registration_countdowns(session, offering_id, kid_id, opens_at) -> list[int]: ...
 async def enqueue_site_stagnant(session, site_id, days_silent) -> int | None: ...
 async def enqueue_no_matches_for_kid(session, kid_id, days_since_created) -> int | None: ...
@@ -265,6 +269,7 @@ class AlertGroup:
     kid_id: int | None
     alert_type: AlertType
 
+
 def coalesce(due: list[Alert], *, window_s: int) -> list[AlertGroup]: ...
 ```
 
@@ -301,6 +306,7 @@ class NotifierCapability(StrEnum):
     push = "push"
     push_emergency = "push_emergency"
 
+
 @dataclass(frozen=True)
 class NotifierMessage:
     kid_id: int | None
@@ -311,15 +317,18 @@ class NotifierMessage:
     url: str | None = None
     urgent: bool = False
 
+
 @dataclass(frozen=True)
 class SendResult:
     ok: bool
     transient_failure: bool
     detail: str
 
+
 class Notifier(Protocol):
     name: str
     capabilities: set[NotifierCapability]
+
     async def send(self, msg: NotifierMessage) -> SendResult: ...
     async def aclose(self) -> None: ...
 ```
@@ -436,13 +445,13 @@ Startup check verifies required env vars per configured channel; missing env →
 ```python
 alerts_enabled: bool = True
 alert_delivery_tick_s: int = 60
-alert_coalesce_normal_s: int = 600                  # 10 min
+alert_coalesce_normal_s: int = 600  # 10 min
 alert_max_pushes_per_hour: int = 5
 alert_digest_time_utc: str = "07:00"
 alert_detector_time_utc: str = "09:00"
 alert_stagnant_site_days: int = 30
 alert_no_matches_kid_days: int = 7
-alert_countdown_past_due_grace_s: int = 86400       # 24 h
+alert_countdown_past_due_grace_s: int = 86400  # 24 h
 alert_digest_empty_skip: bool = True
 
 # Channel secrets (env-only; optional)

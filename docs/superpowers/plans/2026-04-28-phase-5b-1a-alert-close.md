@@ -686,7 +686,7 @@ Expected: 3 failures (the filter doesn't exist; or the response shape may differ
 In `src/yas/web/routes/inbox.py`, modify the `inbox_summary` signature to accept the new param. Add (just after `until`):
 
 ```python
-include_closed: Annotated[bool, Query()] = False,
+include_closed: Annotated[bool, Query()] = (False,)
 ```
 
 In the alerts query block (currently at lines 47–54 — verify still there), conditionally add the close-status `where` clause:

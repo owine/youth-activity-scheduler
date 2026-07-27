@@ -352,6 +352,7 @@ ALIASES = {
 
 # --- age gate -----------------------------------------------------------------
 
+
 def test_age_uses_offering_start_date_not_today():
     kid = _Kid(dob=date(2021, 5, 1))
     offering = _Offering(start_date=date(2026, 5, 15), age_min=5, age_max=6)
@@ -397,6 +398,7 @@ def test_age_unspecified_range_passes():
 
 # --- distance gate ------------------------------------------------------------
 
+
 def test_distance_unknown_fails_open():
     kid = _Kid(max_distance_mi=15.0)
     offering = _Offering(location_id=None)
@@ -437,6 +439,7 @@ def test_distance_no_cap_set_passes():
 
 # --- interests gate -----------------------------------------------------------
 
+
 def test_interests_match_via_program_type():
     kid = _Kid(interests=["soccer"])
     offering = _Offering(program_type=ProgramType.soccer, name="Spring Soccer")
@@ -467,6 +470,7 @@ def test_interests_empty_list_rejects():
 
 # --- status gate --------------------------------------------------------------
 
+
 def test_offering_active_passes():
     offering = _Offering(status=OfferingStatus.active.value, end_date=date(2027, 1, 1))
     today = date(2026, 4, 22)
@@ -492,6 +496,7 @@ def test_offering_withdrawn_rejects():
 
 # --- no-conflict gate ---------------------------------------------------------
 
+
 def _school_block():
     return _Block(
         source=UnavailabilitySource.school.value,
@@ -513,7 +518,9 @@ def test_summer_offering_passes_school_year_gate():
         time_start=time(9, 0),
         time_end=time(12, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed, r.detail
 
 
@@ -523,10 +530,12 @@ def test_during_school_year_conflicts_with_school():
         start_date=date(2026, 10, 1),
         end_date=date(2026, 11, 1),
         days_of_week=["tue"],
-        time_start=time(10, 0),   # overlaps 08-15
+        time_start=time(10, 0),  # overlaps 08-15
         time_end=time(11, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert not r.passed
 
 
@@ -539,7 +548,9 @@ def test_after_school_during_school_year_passes():
         time_start=time(16, 0),
         time_end=time(17, 0),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed
 
 
@@ -555,7 +566,8 @@ def test_school_holiday_carves_exception_on_specific_date():
         time_end=time(11, 0),
     )
     r = no_conflict_with_unavailability(
-        offering, [block],
+        offering,
+        [block],
         school_holidays={date(2027, 1, 18)},
         today=date(2026, 4, 22),
     )
@@ -564,8 +576,12 @@ def test_school_holiday_carves_exception_on_specific_date():
 
 def test_partial_schedule_fails_open():
     block = _school_block()
-    offering = _Offering(start_date=None, end_date=None, days_of_week=[], time_start=None, time_end=None)
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    offering = _Offering(
+        start_date=None, end_date=None, days_of_week=[], time_start=None, time_end=None
+    )
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert r.passed
     assert r.code == "schedule_partial"
 
@@ -583,10 +599,12 @@ def test_enrollment_block_blocks_overlapping_offering():
         start_date=date(2026, 5, 10),
         end_date=date(2026, 6, 20),
         days_of_week=["sat"],
-        time_start=time(9, 30),   # overlaps
+        time_start=time(9, 30),  # overlaps
         time_end=time(10, 30),
     )
-    r = no_conflict_with_unavailability(offering, [block], school_holidays=set(), today=date(2026, 4, 22))
+    r = no_conflict_with_unavailability(
+        offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
     assert not r.passed
 ```
 
@@ -636,17 +654,26 @@ def age_fits(kid: Any, offering: Any, *, today: date) -> GateResult:
     if offering.age_min is None and offering.age_max is None:
         return GateResult(True, "age_unspecified", "offering has no age range")
     if offering.age_min is not None and age < offering.age_min:
-        return GateResult(False, "too_young",
-                          f"age {age} on {reference.isoformat()} < min {offering.age_min}")
+        return GateResult(
+            False, "too_young", f"age {age} on {reference.isoformat()} < min {offering.age_min}"
+        )
     if offering.age_max is not None and age > offering.age_max:
-        return GateResult(False, "too_old",
-                          f"age {age} on {reference.isoformat()} > max {offering.age_max}")
-    return GateResult(True, "age_ok",
-                      f"age {age} on {reference.isoformat()} fits [{offering.age_min}, {offering.age_max}]")
+        return GateResult(
+            False, "too_old", f"age {age} on {reference.isoformat()} > max {offering.age_max}"
+        )
+    return GateResult(
+        True,
+        "age_ok",
+        f"age {age} on {reference.isoformat()} fits [{offering.age_min}, {offering.age_max}]",
+    )
 
 
 def distance_fits(
-    kid: Any, offering: Any, *, distance_mi: float | None, household_default: float | None,
+    kid: Any,
+    offering: Any,
+    *,
+    distance_mi: float | None,
+    household_default: float | None,
 ) -> GateResult:
     cap = kid.max_distance_mi if kid.max_distance_mi is not None else household_default
     if cap is None:
@@ -666,15 +693,20 @@ def interests_overlap(kid: Any, offering: Any, aliases: dict[str, list[str]]) ->
     for interest in kid.interests:
         interest = interest.lower()
         if program_type_val == interest:
-            return GateResult(True, "interest_program_type_match",
-                              f"kid interest '{interest}' == program_type")
+            return GateResult(
+                True, "interest_program_type_match", f"kid interest '{interest}' == program_type"
+            )
         terms = aliases.get(interest, [interest])
         for term in terms:
             if normalize_name(term) in needle_hay:
-                return GateResult(True, "interest_text_match",
-                                  f"kid interest '{interest}' matched via '{term}' in name/description")
-    return GateResult(False, "no_interest_match",
-                      f"no kid interest ({', '.join(kid.interests)}) matched offering")
+                return GateResult(
+                    True,
+                    "interest_text_match",
+                    f"kid interest '{interest}' matched via '{term}' in name/description",
+                )
+    return GateResult(
+        False, "no_interest_match", f"no kid interest ({', '.join(kid.interests)}) matched offering"
+    )
 
 
 def offering_active_and_not_ended(offering: Any, *, today: date) -> GateResult:
@@ -715,7 +747,9 @@ def no_conflict_with_unavailability(
     today: date,
 ) -> GateResult:
     if not _offering_has_full_schedule(offering):
-        return GateResult(True, "schedule_partial", "offering schedule incomplete; cannot verify no-conflict")
+        return GateResult(
+            True, "schedule_partial", "offering schedule incomplete; cannot verify no-conflict"
+        )
 
     offering_days = {d.lower() for d in (getattr(d, "value", d) for d in offering.days_of_week)}
     active_blocks = [b for b in blocks if b.active]
@@ -736,19 +770,24 @@ def no_conflict_with_unavailability(
                     continue
                 if block.date_end is not None and cur > block.date_end:
                     continue
-                block_days = {d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))}
+                block_days = {
+                    d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))
+                }
                 if block_days and weekday not in block_days:
                     continue
                 if block.time_start is None or block.time_end is None:
                     # Whole-day block on this date → conflict.
-                    return GateResult(False, "conflict",
-                                      f"all-day block on {cur.isoformat()} ({source})")
-                if _time_overlaps(offering.time_start, offering.time_end, block.time_start, block.time_end):
-                    return GateResult(False, "conflict",
-                                      f"conflict on {cur.isoformat()} ({source})")
+                    return GateResult(
+                        False, "conflict", f"all-day block on {cur.isoformat()} ({source})"
+                    )
+                if _time_overlaps(
+                    offering.time_start, offering.time_end, block.time_start, block.time_end
+                ):
+                    return GateResult(
+                        False, "conflict", f"conflict on {cur.isoformat()} ({source})"
+                    )
         cur += timedelta(days=1)
-    return GateResult(True, "no_conflict",
-                      f"no overlap with {len(active_blocks)} active block(s)")
+    return GateResult(True, "no_conflict", f"no overlap with {len(active_blocks)} active block(s)")
 ```
 
 - [ ] **Step 5: Run tests**
@@ -813,16 +852,22 @@ TODAY = date(2026, 4, 22)
 
 def test_score_breakdown_weighted_sum():
     bd = ScoreBreakdown(
-        availability=1.0, distance=1.0, price=1.0,
-        registration_timing=1.0, freshness=1.0,
+        availability=1.0,
+        distance=1.0,
+        price=1.0,
+        registration_timing=1.0,
+        freshness=1.0,
     )
     assert bd.score == pytest.approx(1.0)
 
 
 def test_score_all_zeros():
     bd = ScoreBreakdown(
-        availability=0.0, distance=0.0, price=0.0,
-        registration_timing=0.0, freshness=0.0,
+        availability=0.0,
+        distance=0.0,
+        price=0.0,
+        registration_timing=0.0,
+        freshness=0.0,
     )
     assert bd.score == 0.0
 
@@ -831,7 +876,11 @@ def test_availability_default_on_missing():
     kid = _Kid(availability={})
     offering = _Offering()
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["availability"] == pytest.approx(0.5)
 
@@ -840,7 +889,11 @@ def test_distance_full_credit_under_cap():
     kid = _Kid(max_distance_mi=10.0)
     offering = _Offering()
     _score, reasons = compute_score(
-        kid, offering, distance_mi=2.0, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=2.0,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     # 2mi < 30% of 10 (=3mi) → full credit
     assert reasons["distance"] == pytest.approx(1.0)
@@ -850,7 +903,11 @@ def test_distance_linear_decay():
     kid = _Kid(max_distance_mi=10.0)
     offering = _Offering()
     _score, reasons = compute_score(
-        kid, offering, distance_mi=6.5, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=6.5,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     # between 3 and 10; partial
     assert 0.0 < reasons["distance"] < 1.0
@@ -860,7 +917,11 @@ def test_distance_zero_at_cap():
     kid = _Kid(max_distance_mi=10.0)
     offering = _Offering()
     _score, reasons = compute_score(
-        kid, offering, distance_mi=10.0, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=10.0,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["distance"] == pytest.approx(0.0)
 
@@ -869,7 +930,11 @@ def test_price_full_when_unset():
     kid = _Kid()
     offering = _Offering(price_cents=99999)
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["price"] == pytest.approx(1.0)
 
@@ -878,7 +943,11 @@ def test_registration_timing_open_now():
     kid = _Kid()
     offering = _Offering(registration_opens_at=datetime(2026, 4, 1, tzinfo=UTC))
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["registration_timing"] == pytest.approx(1.0)
 
@@ -887,10 +956,14 @@ def test_registration_timing_closed():
     kid = _Kid()
     offering = _Offering(
         registration_opens_at=datetime(2026, 4, 1, tzinfo=UTC),
-        end_date=date(2026, 4, 15),   # already ended
+        end_date=date(2026, 4, 15),  # already ended
     )
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     # end_date < today interpreted as "registration closed"
     assert reasons["registration_timing"] == pytest.approx(0.0)
@@ -900,7 +973,11 @@ def test_registration_timing_unknown_defaults_half():
     kid = _Kid()
     offering = _Offering(registration_opens_at=None)
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["registration_timing"] == pytest.approx(0.5)
 
@@ -909,7 +986,11 @@ def test_freshness_recent_full():
     kid = _Kid()
     offering = _Offering(first_seen=datetime.now(UTC))
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["freshness"] > 0.95
 
@@ -918,7 +999,11 @@ def test_freshness_old_zero():
     kid = _Kid()
     offering = _Offering(first_seen=datetime.now(UTC) - timedelta(days=120))
     _score, reasons = compute_score(
-        kid, offering, distance_mi=None, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=None,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     assert reasons["freshness"] == pytest.approx(0.0)
 
@@ -927,7 +1012,11 @@ def test_score_is_weighted_combination():
     kid = _Kid(max_distance_mi=10.0)
     offering = _Offering(first_seen=datetime.now(UTC))
     score, reasons = compute_score(
-        kid, offering, distance_mi=2.0, household_max_distance_mi=None, today=TODAY,
+        kid,
+        offering,
+        distance_mi=2.0,
+        household_max_distance_mi=None,
+        today=TODAY,
     )
     # weighted sum with distance=1.0, freshness≈1.0, availability=0.5, price=1.0, reg=0.5
     # 0.5*0.4 + 1.0*0.2 + 1.0*0.1 + 0.5*0.2 + 1.0*0.1 = 0.2 + 0.2 + 0.1 + 0.1 + 0.1 = 0.7
@@ -1025,7 +1114,8 @@ def _availability_signal(kid: Any, offering: Any) -> float:
 
 
 def _distance_signal(
-    kid: Any, offering: Any,
+    kid: Any,
+    offering: Any,
     distance_mi: float | None,
     household_default: float | None,
 ) -> float:
@@ -1219,7 +1309,7 @@ def test_priority_high_beats_normal():
     o = _Offering(name="Little Kickers")
     hit = matches_watchlist(o, [e_normal, e_high], site_id=1)
     assert hit is not None
-    assert hit.entry.id == 2   # high wins
+    assert hit.entry.id == 2  # high wins
 
 
 def test_among_same_priority_lowest_id_wins():
@@ -1253,26 +1343,42 @@ from __future__ import annotations
 
 INTEREST_ALIASES: dict[str, list[str]] = {
     # Team sports
-    "soccer":     ["soccer", "futbol", "kickers"],
-    "baseball":   ["baseball", "t ball", "tball", "t-ball", "coach pitch", "little league", "sluggers"],
-    "softball":   ["softball", "fastpitch"],
+    "soccer": ["soccer", "futbol", "kickers"],
+    "baseball": [
+        "baseball",
+        "t ball",
+        "tball",
+        "t-ball",
+        "coach pitch",
+        "little league",
+        "sluggers",
+    ],
+    "softball": ["softball", "fastpitch"],
     "basketball": ["basketball", "hoops"],
-    "hockey":     ["hockey", "ice hockey", "learn to skate"],
-    "football":   ["football", "flag football"],
+    "hockey": ["hockey", "ice hockey", "learn to skate"],
+    "football": ["football", "flag football"],
     # Individual / other sports
-    "swim":         ["swim", "swimming", "aquatics", "learn to swim"],
-    "martial_arts": ["martial arts", "karate", "taekwondo", "tae kwon do", "judo", "jiu jitsu", "bjj"],
-    "gymnastics":   ["gymnastics", "tumbling"],
-    "dance":        ["dance", "ballet", "jazz dance", "hip hop", "tap"],
-    "gym":          ["gym", "gymnastics", "tumbling", "fitness", "parkour"],
+    "swim": ["swim", "swimming", "aquatics", "learn to swim"],
+    "martial_arts": [
+        "martial arts",
+        "karate",
+        "taekwondo",
+        "tae kwon do",
+        "judo",
+        "jiu jitsu",
+        "bjj",
+    ],
+    "gymnastics": ["gymnastics", "tumbling"],
+    "dance": ["dance", "ballet", "jazz dance", "hip hop", "tap"],
+    "gym": ["gym", "gymnastics", "tumbling", "fitness", "parkour"],
     # Enrichment
-    "art":      ["art", "painting", "drawing", "ceramics", "pottery", "crafts"],
-    "music":    ["music", "piano", "guitar", "violin", "orchestra", "chorus", "singing"],
-    "stem":     ["stem", "science", "coding", "robotics", "engineering", "math"],
+    "art": ["art", "painting", "drawing", "ceramics", "pottery", "crafts"],
+    "music": ["music", "piano", "guitar", "violin", "orchestra", "chorus", "singing"],
+    "stem": ["stem", "science", "coding", "robotics", "engineering", "math"],
     "academic": ["academic", "tutoring", "reading", "writing", "language", "spanish"],
     # Umbrella
-    "multisport":   ["multisport", "multi sport", "sports sampler"],
-    "outdoor":      ["outdoor", "nature", "hiking", "camping"],
+    "multisport": ["multisport", "multi sport", "sports sampler"],
+    "outdoor": ["outdoor", "nature", "hiking", "camping"],
     "camp_general": ["camp", "summer camp", "day camp"],
 }
 ```
@@ -1483,7 +1589,7 @@ async def test_transport_error_retries_once_then_returns_none():
     try:
         result = await client.geocode("Chicago")
         assert result is None
-        assert route.call_count == 2    # one retry
+        assert route.call_count == 2  # one retry
     finally:
         await client.aclose()
 
@@ -1609,7 +1715,7 @@ class NominatimClient:
                 display_name=str(item.get("display_name", "")),
                 provider="nominatim",
             )
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             return None
 
     async def aclose(self) -> None:
@@ -1661,7 +1767,7 @@ class GeocodeAttempt(Base):
 
     address_norm: Mapped[str] = mapped_column(String, primary_key=True)
     last_tried: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    result: Mapped[str] = mapped_column(String, nullable=False)       # "ok" | "not_found" | "error"
+    result: Mapped[str] = mapped_column(String, nullable=False)  # "ok" | "not_found" | "error"
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
 ```
 
@@ -1727,11 +1833,16 @@ async def test_enricher_populates_coords(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         s.add(Location(id=1, name="Lincoln Park Rec", address="2045 N Lincoln Park W, Chicago, IL"))
-    geocoder = FakeGeocoder(fixtures={
-        "2045 n lincoln park w, chicago, il": GeocodeResult(
-            lat=41.9214, lon=-87.6351, display_name="Lincoln Park", provider="fake",
-        )
-    })
+    geocoder = FakeGeocoder(
+        fixtures={
+            "2045 n lincoln park w, chicago, il": GeocodeResult(
+                lat=41.9214,
+                lon=-87.6351,
+                display_name="Lincoln Park",
+                provider="fake",
+            )
+        }
+    )
     async with session_scope(engine) as s:
         result = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
     assert result.updated == 1
@@ -1753,12 +1864,12 @@ async def test_enricher_records_not_found_and_skips_on_retry(tmp_path):
     assert r1.not_found == 1
     async with session_scope(engine) as s:
         r2 = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
-    assert r2.skipped == 1   # skipped due to prior not_found
+    assert r2.skipped == 1  # skipped due to prior not_found
     async with session_scope(engine) as s:
         rows = (await s.execute(select(GeocodeAttempt))).scalars().all()
         assert len(rows) == 1
         assert rows[0].result == "not_found"
-    assert geocoder.call_count == 1   # second call skipped
+    assert geocoder.call_count == 1  # second call skipped
     await engine.dispose()
 
 
@@ -1826,10 +1937,17 @@ async def enrich_ungeocoded_locations(
     skipped = 0
 
     locations = (
-        await session.execute(
-            select(Location).where(Location.lat.is_(None)).where(Location.address.isnot(None)).limit(batch_size)
+        (
+            await session.execute(
+                select(Location)
+                .where(Location.lat.is_(None))
+                .where(Location.address.isnot(None))
+                .limit(batch_size)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     for loc in locations:
         addr_norm = normalize_name(loc.address or "")
@@ -1845,18 +1963,25 @@ async def enrich_ungeocoded_locations(
             result = await geocoder.geocode(loc.address or "")
         except Exception as exc:  # noqa: BLE001
             errored += 1
-            session.add(GeocodeAttempt(
-                address_norm=addr_norm, last_tried=datetime.now(UTC),
-                result="error", detail=str(exc)[:500],
-            ))
+            session.add(
+                GeocodeAttempt(
+                    address_norm=addr_norm,
+                    last_tried=datetime.now(UTC),
+                    result="error",
+                    detail=str(exc)[:500],
+                )
+            )
             continue
         if result is None:
             not_found += 1
             if prior is None:
-                session.add(GeocodeAttempt(
-                    address_norm=addr_norm, last_tried=datetime.now(UTC),
-                    result="not_found",
-                ))
+                session.add(
+                    GeocodeAttempt(
+                        address_norm=addr_norm,
+                        last_tried=datetime.now(UTC),
+                        result="not_found",
+                    )
+                )
             else:
                 prior.last_tried = datetime.now(UTC)
                 prior.result = "not_found"
@@ -1865,16 +1990,22 @@ async def enrich_ungeocoded_locations(
         loc.lon = result.lon
         updated += 1
         if prior is None:
-            session.add(GeocodeAttempt(
-                address_norm=addr_norm, last_tried=datetime.now(UTC), result="ok",
-            ))
+            session.add(
+                GeocodeAttempt(
+                    address_norm=addr_norm,
+                    last_tried=datetime.now(UTC),
+                    result="ok",
+                )
+            )
         else:
             prior.last_tried = datetime.now(UTC)
             prior.result = "ok"
         if on_rematch is not None:
             offering_ids = (
-                await session.execute(select(Offering.id).where(Offering.location_id == loc.id))
-            ).scalars().all()
+                (await session.execute(select(Offering.id).where(Offering.location_id == loc.id)))
+                .scalars()
+                .all()
+            )
             for oid in offering_ids:
                 await on_rematch(session, oid)
 
@@ -1882,24 +2013,32 @@ async def enrich_ungeocoded_locations(
 
 
 async def geocode_enricher_loop(
-    engine: AsyncEngine, settings: Settings, geocoder: Geocoder,
+    engine: AsyncEngine,
+    settings: Settings,
+    geocoder: Geocoder,
 ) -> None:
     from yas.matching.matcher import rematch_offering  # local import to avoid cycles
 
-    log.info("geocode.start",
-             tick_s=settings.geocode_tick_s,
-             batch_size=settings.geocode_batch_size)
+    log.info(
+        "geocode.start", tick_s=settings.geocode_tick_s, batch_size=settings.geocode_batch_size
+    )
     try:
         while True:
             async with session_scope(engine) as s:
                 result = await enrich_ungeocoded_locations(
-                    s, geocoder, batch_size=settings.geocode_batch_size,
+                    s,
+                    geocoder,
+                    batch_size=settings.geocode_batch_size,
                     on_rematch=rematch_offering,
                 )
             if result.updated or result.not_found or result.errored:
-                log.info("geocode.tick",
-                         updated=result.updated, not_found=result.not_found,
-                         errored=result.errored, skipped=result.skipped)
+                log.info(
+                    "geocode.tick",
+                    updated=result.updated,
+                    not_found=result.not_found,
+                    errored=result.errored,
+                    skipped=result.skipped,
+                )
             await asyncio.sleep(settings.geocode_tick_s)
     except asyncio.CancelledError:
         log.info("geocode.stop")
@@ -1959,9 +2098,17 @@ async def test_no_school_info_produces_zero_blocks(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert rows == []
     await engine.dispose()
 
@@ -1980,9 +2127,17 @@ async def test_materializes_one_block_per_year_range(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2
         for r in rows:
             assert r.time_start == time(8, 0)
@@ -2009,9 +2164,17 @@ async def test_rewrites_on_second_call(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert len(rows) == 1
         assert rows[0].time_start == time(9, 0)
         assert rows[0].time_end == time(16, 0)
@@ -2029,9 +2192,17 @@ async def test_partial_school_info_produces_zero_blocks(tmp_path):
     async with session_scope(engine) as s:
         await materialize_school_blocks(s, kid_id=1)
     async with session_scope(engine) as s:
-        rows = (await s.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source == UnavailabilitySource.school.value)
-        )).scalars().all()
+        rows = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(
+                        UnavailabilityBlock.source == UnavailabilitySource.school.value
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert rows == []
     await engine.dispose()
 ```
@@ -2078,17 +2249,19 @@ async def materialize_school_blocks(session: AsyncSession, kid_id: int) -> None:
     for entry in kid.school_year_ranges:
         start = _parse_date(entry["start"])
         end = _parse_date(entry["end"])
-        session.add(UnavailabilityBlock(
-            kid_id=kid_id,
-            source=UnavailabilitySource.school.value,
-            label=f"School {start.isoformat()}..{end.isoformat()}",
-            days_of_week=weekdays,
-            time_start=kid.school_time_start,
-            time_end=kid.school_time_end,
-            date_start=start,
-            date_end=end,
-            active=True,
-        ))
+        session.add(
+            UnavailabilityBlock(
+                kid_id=kid_id,
+                source=UnavailabilitySource.school.value,
+                label=f"School {start.isoformat()}..{end.isoformat()}",
+                days_of_week=weekdays,
+                time_start=kid.school_time_start,
+                time_end=kid.school_time_end,
+                date_start=start,
+                date_end=end,
+                active=True,
+            )
+        )
 ```
 
 - [ ] **Step 4: Run + commit**
@@ -2137,12 +2310,20 @@ async def _setup(tmp_path):
         page = Page(id=1, site_id=1, url="https://x/p")
         s.add(page)
         await s.flush()
-        s.add(Offering(
-            id=1, site_id=1, page_id=1,
-            name="Sat Soccer", normalized_name="sat soccer",
-            start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
-            days_of_week=["sat"], time_start=time(9, 0), time_end=time(10, 0),
-        ))
+        s.add(
+            Offering(
+                id=1,
+                site_id=1,
+                page_id=1,
+                name="Sat Soccer",
+                normalized_name="sat soccer",
+                start_date=date(2026, 5, 1),
+                end_date=date(2026, 6, 30),
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
+            )
+        )
         s.add(Enrollment(id=1, kid_id=1, offering_id=1, status=EnrollmentStatus.interested.value))
     return engine
 
@@ -2234,7 +2415,9 @@ async def apply_enrollment_block(session: AsyncSession, enrollment_id: int) -> N
 
     existing = (
         await session.execute(
-            select(UnavailabilityBlock).where(UnavailabilityBlock.source_enrollment_id == enrollment_id)
+            select(UnavailabilityBlock).where(
+                UnavailabilityBlock.source_enrollment_id == enrollment_id
+            )
         )
     ).scalar_one_or_none()
 
@@ -2249,18 +2432,20 @@ async def apply_enrollment_block(session: AsyncSession, enrollment_id: int) -> N
     ).scalar_one()
 
     if existing is None:
-        session.add(UnavailabilityBlock(
-            kid_id=enrollment.kid_id,
-            source=UnavailabilitySource.enrollment.value,
-            source_enrollment_id=enrollment.id,
-            label=f"Enrolled: {offering.name}",
-            days_of_week=list(offering.days_of_week or []),
-            time_start=offering.time_start,
-            time_end=offering.time_end,
-            date_start=offering.start_date,
-            date_end=offering.end_date,
-            active=True,
-        ))
+        session.add(
+            UnavailabilityBlock(
+                kid_id=enrollment.kid_id,
+                source=UnavailabilitySource.enrollment.value,
+                source_enrollment_id=enrollment.id,
+                label=f"Enrolled: {offering.name}",
+                days_of_week=list(offering.days_of_week or []),
+                time_start=offering.time_start,
+                time_end=offering.time_end,
+                date_start=offering.start_date,
+                date_end=offering.end_date,
+                active=True,
+            )
+        )
     else:
         existing.kid_id = enrollment.kid_id
         existing.label = f"Enrolled: {offering.name}"
@@ -2304,11 +2489,23 @@ from sqlalchemy import select
 
 from yas.db.base import Base
 from yas.db.models import (
-    Enrollment, HouseholdSettings, Kid, Location, Match, Offering, Page, Site,
-    UnavailabilityBlock, WatchlistEntry,
+    Enrollment,
+    HouseholdSettings,
+    Kid,
+    Location,
+    Match,
+    Offering,
+    Page,
+    Site,
+    UnavailabilityBlock,
+    WatchlistEntry,
 )
 from yas.db.models._types import (
-    EnrollmentStatus, OfferingStatus, ProgramType, UnavailabilitySource, WatchlistPriority,
+    EnrollmentStatus,
+    OfferingStatus,
+    ProgramType,
+    UnavailabilitySource,
+    WatchlistPriority,
 )
 from yas.db.session import create_engine_for, session_scope
 from yas.matching.matcher import rematch_kid, rematch_offering
@@ -2337,10 +2534,18 @@ async def _kid(session, **kwargs):
 
 async def _offering(session, **kwargs):
     defaults = dict(
-        site_id=1, page_id=1, name="Spring Soccer", normalized_name="spring soccer",
-        program_type=ProgramType.soccer.value, age_min=6, age_max=8,
-        start_date=date(2026, 5, 1), end_date=date(2026, 6, 30),
-        days_of_week=["sat"], time_start=time(9, 0), time_end=time(10, 0),
+        site_id=1,
+        page_id=1,
+        name="Spring Soccer",
+        normalized_name="spring soccer",
+        program_type=ProgramType.soccer.value,
+        age_min=6,
+        age_max=8,
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 30),
+        days_of_week=["sat"],
+        time_start=time(9, 0),
+        time_end=time(10, 0),
         status=OfferingStatus.active.value,
     )
     defaults.update(kwargs)
@@ -2380,7 +2585,7 @@ async def test_age_gate_uses_start_date(tmp_path):
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
-        assert len(rows) == 1   # matched despite today's age = 4
+        assert len(rows) == 1  # matched despite today's age = 4
 
 
 @pytest.mark.asyncio
@@ -2389,15 +2594,24 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["soccer"])
         # school block covers 2026-09..2027-06
-        s.add(UnavailabilityBlock(
-            kid_id=kid.id, source=UnavailabilitySource.school.value,
-            days_of_week=["mon","tue","wed","thu","fri"],
-            time_start=time(8,0), time_end=time(15,0),
-            date_start=date(2026,9,2), date_end=date(2027,6,14),
-        ))
-        await _offering(s,
-            start_date=date(2026, 6, 15), end_date=date(2026, 8, 15),
-            days_of_week=["mon","wed"], time_start=time(9,0), time_end=time(12,0),
+        s.add(
+            UnavailabilityBlock(
+                kid_id=kid.id,
+                source=UnavailabilitySource.school.value,
+                days_of_week=["mon", "tue", "wed", "thu", "fri"],
+                time_start=time(8, 0),
+                time_end=time(15, 0),
+                date_start=date(2026, 9, 2),
+                date_end=date(2027, 6, 14),
+            )
+        )
+        await _offering(
+            s,
+            start_date=date(2026, 6, 15),
+            end_date=date(2026, 8, 15),
+            days_of_week=["mon", "wed"],
+            time_start=time(9, 0),
+            time_end=time(12, 0),
         )
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
@@ -2410,13 +2624,19 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
 async def test_watchlist_bypasses_all_hard_gates(tmp_path):
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
-        kid = await _kid(s, interests=["swim"], max_distance_mi=1.0)   # not soccer; tiny distance
+        kid = await _kid(s, interests=["swim"], max_distance_mi=1.0)  # not soccer; tiny distance
         # location with unavailable coords so distance stays unknown = fail-open on distance
-        s.add(WatchlistEntry(
-            id=1, kid_id=kid.id, pattern="spring soccer",
-            priority=WatchlistPriority.high.value, active=True, ignore_hard_gates=False,
-        ))
-        await _offering(s)   # program_type soccer, age 6-8 (kid is 6 on 2026-05-01)
+        s.add(
+            WatchlistEntry(
+                id=1,
+                kid_id=kid.id,
+                pattern="spring soccer",
+                priority=WatchlistPriority.high.value,
+                active=True,
+                ignore_hard_gates=False,
+            )
+        )
+        await _offering(s)  # program_type soccer, age 6-8 (kid is 6 on 2026-05-01)
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
@@ -2433,24 +2653,35 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
         kid_b = await _kid(s, name="Kid B", dob=date(2019, 5, 1), interests=["soccer"])
         sat_9 = await _offering(s, name="Sat 9am Soccer")
         sat_9_other = await _offering(s, name="Sat 9am Other Soccer")
-        s.add(Enrollment(
-            id=1, kid_id=kid_a.id, offering_id=sat_9.id, status=EnrollmentStatus.enrolled.value,
-        ))
+        s.add(
+            Enrollment(
+                id=1,
+                kid_id=kid_a.id,
+                offering_id=sat_9.id,
+                status=EnrollmentStatus.enrolled.value,
+            )
+        )
         await s.flush()
         # materialize the enrollment block manually (avoiding materializer coupling here)
-        s.add(UnavailabilityBlock(
-            kid_id=kid_a.id, source=UnavailabilitySource.enrollment.value,
-            source_enrollment_id=1,
-            days_of_week=["sat"], time_start=time(9,0), time_end=time(10,0),
-            date_start=date(2026,5,1), date_end=date(2026,6,30),
-        ))
+        s.add(
+            UnavailabilityBlock(
+                kid_id=kid_a.id,
+                source=UnavailabilitySource.enrollment.value,
+                source_enrollment_id=1,
+                days_of_week=["sat"],
+                time_start=time(9, 0),
+                time_end=time(10, 0),
+                date_start=date(2026, 5, 1),
+                date_end=date(2026, 6, 30),
+            )
+        )
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=kid_a.id)
         await rematch_kid(s, kid_id=kid_b.id)
     async with session_scope(engine) as s:
         # Kid A matches the enrolled offering (obviously) but not the conflicting sibling
         rows_a = (await s.execute(select(Match).where(Match.kid_id == kid_a.id))).scalars().all()
-        assert {m.offering_id for m in rows_a} == {sat_9.id}   # conflicting sibling filtered
+        assert {m.offering_id for m in rows_a} == {sat_9.id}  # conflicting sibling filtered
         # Kid B is unaffected and matches both soccer offerings
         rows_b = (await s.execute(select(Match).where(Match.kid_id == kid_b.id))).scalars().all()
         assert {m.offering_id for m in rows_b} == {sat_9.id, sat_9_other.id}
@@ -2467,7 +2698,7 @@ async def test_failed_gate_removes_existing_match(tmp_path):
     async with session_scope(engine) as s:
         # change the kid to a different age so the match should drop
         kid = (await s.execute(select(Kid))).scalar_one()
-        kid.dob = date(2010, 1, 1)   # kid is ~16
+        kid.dob = date(2010, 1, 1)  # kid is ~16
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id=1)
     async with session_scope(engine) as s:
@@ -2505,14 +2736,24 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.db.models import (
-    HouseholdSettings, Kid, Location, Match, Offering, UnavailabilityBlock, WatchlistEntry,
+    HouseholdSettings,
+    Kid,
+    Location,
+    Match,
+    Offering,
+    UnavailabilityBlock,
+    WatchlistEntry,
 )
 from yas.db.models._types import OfferingStatus
 from yas.geo.distance import great_circle_miles
 from yas.matching.aliases import INTEREST_ALIASES
 from yas.matching.gates import (
-    GateResult, age_fits, distance_fits, interests_overlap,
-    no_conflict_with_unavailability, offering_active_and_not_ended,
+    GateResult,
+    age_fits,
+    distance_fits,
+    interests_overlap,
+    no_conflict_with_unavailability,
+    offering_active_and_not_ended,
 )
 from yas.matching.scoring import compute_score
 from yas.matching.watchlist import matches_watchlist
@@ -2537,7 +2778,9 @@ async def _household_defaults(session: AsyncSession) -> tuple[int | None, float 
 async def _home_coords(session: AsyncSession, home_id: int | None) -> tuple[float, float] | None:
     if home_id is None:
         return None
-    loc = (await session.execute(select(Location).where(Location.id == home_id))).scalar_one_or_none()
+    loc = (
+        await session.execute(select(Location).where(Location.id == home_id))
+    ).scalar_one_or_none()
     if loc is None or loc.lat is None or loc.lon is None:
         return None
     return (loc.lat, loc.lon)
@@ -2546,14 +2789,18 @@ async def _home_coords(session: AsyncSession, home_id: int | None) -> tuple[floa
 async def _offering_coords(session: AsyncSession, offering: Offering) -> tuple[float, float] | None:
     if offering.location_id is None:
         return None
-    loc = (await session.execute(select(Location).where(Location.id == offering.location_id))).scalar_one_or_none()
+    loc = (
+        await session.execute(select(Location).where(Location.id == offering.location_id))
+    ).scalar_one_or_none()
     if loc is None or loc.lat is None or loc.lon is None:
         return None
     return (loc.lat, loc.lon)
 
 
 async def _compute_distance_mi(
-    session: AsyncSession, home: tuple[float, float] | None, offering: Offering,
+    session: AsyncSession,
+    home: tuple[float, float] | None,
+    offering: Offering,
 ) -> float | None:
     if home is None:
         return None
@@ -2564,15 +2811,23 @@ async def _compute_distance_mi(
 
 
 async def _kid_blocks(session: AsyncSession, kid_id: int) -> list[UnavailabilityBlock]:
-    return list((await session.execute(
-        select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id)
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def _kid_watchlist(session: AsyncSession, kid_id: int) -> list[WatchlistEntry]:
-    return list((await session.execute(
-        select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id)
-    )).scalars().all())
+    return list(
+        (await session.execute(select(WatchlistEntry).where(WatchlistEntry.kid_id == kid_id)))
+        .scalars()
+        .all()
+    )
 
 
 def _school_holidays(kid: Kid) -> set[date]:
@@ -2586,15 +2841,19 @@ def _school_holidays(kid: Kid) -> set[date]:
 
 
 async def _eligible_offerings(session: AsyncSession) -> list[Offering]:
-    return list((await session.execute(
-        select(Offering).where(Offering.status == OfferingStatus.active.value)
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(Offering).where(Offering.status == OfferingStatus.active.value)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def _active_kids(session: AsyncSession) -> list[Kid]:
-    return list((await session.execute(
-        select(Kid).where(Kid.active.is_(True))
-    )).scalars().all())
+    return list((await session.execute(select(Kid).where(Kid.active.is_(True)))).scalars().all())
 
 
 def _gates_passed(gates: list[GateResult]) -> bool:
@@ -2602,7 +2861,9 @@ def _gates_passed(gates: list[GateResult]) -> bool:
 
 
 def _reasons_payload(
-    gates: list[GateResult], score_bd: dict[str, Any], watchlist_hit: Any,
+    gates: list[GateResult],
+    score_bd: dict[str, Any],
+    watchlist_hit: Any,
 ) -> dict[str, Any]:
     return {
         "gates": {g.code: {"passed": g.passed, "detail": g.detail} for g in gates},
@@ -2612,15 +2873,23 @@ def _reasons_payload(
                 "entry_id": watchlist_hit.entry.id,
                 "pattern": watchlist_hit.entry.pattern,
                 "match_type": watchlist_hit.reason,
-                "priority": getattr(watchlist_hit.entry.priority, "value", watchlist_hit.entry.priority),
-            } if watchlist_hit else None
+                "priority": getattr(
+                    watchlist_hit.entry.priority, "value", watchlist_hit.entry.priority
+                ),
+            }
+            if watchlist_hit
+            else None
         ),
     }
 
 
 async def _evaluate_pair(
-    session: AsyncSession, kid: Kid, offering: Offering, *,
-    home: tuple[float, float] | None, default_max_distance: float | None,
+    session: AsyncSession,
+    kid: Kid,
+    offering: Offering,
+    *,
+    home: tuple[float, float] | None,
+    default_max_distance: float | None,
     today: date,
     # Optional precomputed per-kid state (hoisted by rematch_kid for N-offering loops).
     blocks: list[UnavailabilityBlock] | None = None,
@@ -2638,13 +2907,16 @@ async def _evaluate_pair(
 
     gates = [
         age_fits(kid, offering, today=today),
-        distance_fits(kid, offering, distance_mi=distance_mi, household_default=default_max_distance),
+        distance_fits(
+            kid, offering, distance_mi=distance_mi, household_default=default_max_distance
+        ),
         interests_overlap(kid, offering, INTEREST_ALIASES),
         offering_active_and_not_ended(offering, today=today),
         no_conflict_with_unavailability(offering, blocks, school_holidays, today=today),
     ]
     score, breakdown = compute_score(
-        kid, offering,
+        kid,
+        offering,
         distance_mi=distance_mi,
         household_max_distance_mi=default_max_distance,
         today=today,
@@ -2654,16 +2926,26 @@ async def _evaluate_pair(
     return include, score, reasons
 
 
-async def _upsert_match(session: AsyncSession, kid_id: int, offering_id: int,
-                        score: float, reasons: dict[str, Any]) -> bool:
+async def _upsert_match(
+    session: AsyncSession, kid_id: int, offering_id: int, score: float, reasons: dict[str, Any]
+) -> bool:
     """Returns True if new (insert), False if existing row updated."""
-    existing = (await session.execute(
-        select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-    )).scalar_one_or_none()
+    existing = (
+        await session.execute(
+            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+        )
+    ).scalar_one_or_none()
     now = datetime.now(UTC)
     if existing is None:
-        session.add(Match(kid_id=kid_id, offering_id=offering_id,
-                          score=score, reasons=reasons, computed_at=now))
+        session.add(
+            Match(
+                kid_id=kid_id,
+                offering_id=offering_id,
+                score=score,
+                reasons=reasons,
+                computed_at=now,
+            )
+        )
         return True
     existing.score = score
     existing.reasons = reasons
@@ -2672,16 +2954,20 @@ async def _upsert_match(session: AsyncSession, kid_id: int, offering_id: int,
 
 
 async def _delete_match_if_exists(session: AsyncSession, kid_id: int, offering_id: int) -> bool:
-    existing = (await session.execute(
-        select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-    )).scalar_one_or_none()
+    existing = (
+        await session.execute(
+            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+        )
+    ).scalar_one_or_none()
     if existing is None:
         return False
     await session.delete(existing)
     return True
 
 
-async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None = None) -> MatchResult:
+async def rematch_kid(
+    session: AsyncSession, kid_id: int, *, today: date | None = None
+) -> MatchResult:
     kid = (await session.execute(select(Kid).where(Kid.id == kid_id))).scalar_one()
     if today is None:
         today = date.today()
@@ -2695,9 +2981,15 @@ async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None 
     result = MatchResult(kid_id=kid_id)
     for off in offerings:
         include, score, reasons = await _evaluate_pair(
-            session, kid, off,
-            home=home, default_max_distance=default_distance, today=today,
-            blocks=blocks, watchlist_entries=watchlist_entries, school_holidays=school_holidays,
+            session,
+            kid,
+            off,
+            home=home,
+            default_max_distance=default_distance,
+            today=today,
+            blocks=blocks,
+            watchlist_entries=watchlist_entries,
+            school_holidays=school_holidays,
         )
         key = (kid_id, off.id)
         if include:
@@ -2709,7 +3001,9 @@ async def rematch_kid(session: AsyncSession, kid_id: int, *, today: date | None 
     return result
 
 
-async def rematch_offering(session: AsyncSession, offering_id: int, *, today: date | None = None) -> MatchResult:
+async def rematch_offering(
+    session: AsyncSession, offering_id: int, *, today: date | None = None
+) -> MatchResult:
     off = (await session.execute(select(Offering).where(Offering.id == offering_id))).scalar_one()
     if today is None:
         today = date.today()
@@ -2718,7 +3012,12 @@ async def rematch_offering(session: AsyncSession, offering_id: int, *, today: da
     result = MatchResult(offering_id=offering_id)
     for kid in await _active_kids(session):
         include, score, reasons = await _evaluate_pair(
-            session, kid, off, home=home, default_max_distance=default_distance, today=today,
+            session,
+            kid,
+            off,
+            home=home,
+            default_max_distance=default_distance,
+            today=today,
         )
         key = (kid.id, offering_id)
         if include:
@@ -2730,7 +3029,9 @@ async def rematch_offering(session: AsyncSession, offering_id: int, *, today: da
     return result
 
 
-async def rematch_all_active_kids(session: AsyncSession, *, today: date | None = None) -> list[MatchResult]:
+async def rematch_all_active_kids(
+    session: AsyncSession, *, today: date | None = None
+) -> list[MatchResult]:
     results: list[MatchResult] = []
     for kid in await _active_kids(session):
         results.append(await rematch_kid(session, kid.id, today=today))
@@ -2784,11 +3085,16 @@ async def client(tmp_path, monkeypatch):
     engine = create_engine_for(url)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    geocoder = FakeGeocoder(fixtures={
-        "123 main st, chicago, il": GeocodeResult(
-            lat=41.88, lon=-87.63, display_name="Chicago", provider="fake",
-        )
-    })
+    geocoder = FakeGeocoder(
+        fixtures={
+            "123 main st, chicago, il": GeocodeResult(
+                lat=41.88,
+                lon=-87.63,
+                display_name="Chicago",
+                provider="fake",
+            )
+        }
+    )
     app = create_app(engine=engine, fetcher=None, llm=None, geocoder=geocoder)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c, engine, geocoder
@@ -2826,7 +3132,9 @@ async def test_patch_home_address_triggers_immediate_geocode(client):
     assert body["home_location_id"] is not None
     assert geocoder.call_count >= 1
     async with session_scope(engine) as s:
-        loc = (await s.execute(select(Location).where(Location.id == body["home_location_id"]))).scalar_one()
+        loc = (
+            await s.execute(select(Location).where(Location.id == body["home_location_id"]))
+        ).scalar_one()
         assert loc.lat == 41.88
         assert loc.lon == -87.63
 
@@ -2843,8 +3151,10 @@ async def test_patch_home_address_geocode_miss_still_saves(client):
     body = r.json()
     assert body["home_location_id"] is not None  # location created
     async with session_scope(engine) as s:
-        loc = (await s.execute(select(Location).where(Location.id == body["home_location_id"]))).scalar_one()
-        assert loc.lat is None   # miss — enricher will retry never (negative-cached)
+        loc = (
+            await s.execute(select(Location).where(Location.id == body["home_location_id"]))
+        ).scalar_one()
+        assert loc.lat is None  # miss — enricher will retry never (negative-cached)
 ```
 
 - [ ] **Step 2: Schemas**
@@ -2942,10 +3252,12 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
         if address is not None:
             existing_id = hh.home_location_id
             if existing_id is not None:
-                loc = (await s.execute(select(Location).where(Location.id == existing_id))).scalar_one()
+                loc = (
+                    await s.execute(select(Location).where(Location.id == existing_id))
+                ).scalar_one()
                 loc.name = loc_name
                 loc.address = address
-                loc.lat = None   # invalidate; will re-geocode
+                loc.lat = None  # invalidate; will re-geocode
                 loc.lon = None
             else:
                 loc = Location(name=loc_name, address=address)
@@ -2959,9 +3271,11 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                 except Exception:  # noqa: BLE001
                     result = None
                 addr_norm = normalize_name(address)
-                prior = (await s.execute(
-                    select(GeocodeAttempt).where(GeocodeAttempt.address_norm == addr_norm)
-                )).scalar_one_or_none()
+                prior = (
+                    await s.execute(
+                        select(GeocodeAttempt).where(GeocodeAttempt.address_norm == addr_norm)
+                    )
+                ).scalar_one_or_none()
                 now = datetime.now(UTC)
                 if result is not None:
                     loc.lat = result.lat
@@ -2973,7 +3287,11 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                         prior.result = "ok"
                 else:
                     if prior is None:
-                        s.add(GeocodeAttempt(address_norm=addr_norm, last_tried=now, result="not_found"))
+                        s.add(
+                            GeocodeAttempt(
+                                address_norm=addr_norm, last_tried=now, result="not_found"
+                            )
+                        )
                     else:
                         prior.last_tried = now
                         prior.result = "not_found"
@@ -3031,11 +3349,22 @@ Follow the same pattern as Phase 2's `sites` router and Task 11's `household`. P
 
 ```python
 async with session_scope(engine) as s:
-    kid = ... # create/update
+    kid = ...  # create/update
     await s.flush()
-    if any(f in patch_data for f in ("school_time_start","school_time_end",
-            "school_year_ranges","school_weekdays","school_holidays",
-            "availability","interests","max_distance_mi","dob")):
+    if any(
+        f in patch_data
+        for f in (
+            "school_time_start",
+            "school_time_end",
+            "school_year_ranges",
+            "school_weekdays",
+            "school_holidays",
+            "availability",
+            "interests",
+            "max_distance_mi",
+            "dob",
+        )
+    ):
         await materialize_school_blocks(s, kid.id)
     await rematch_kid(s, kid.id)
 ```
@@ -3197,6 +3526,7 @@ In `src/yas/crawl/pipeline.py`, inside `_do_crawl`, after the `reconcile(...)` c
 
 ```python
 from yas.matching.matcher import rematch_offering
+
 for oid in reconcile_result.new + reconcile_result.updated:
     await rematch_offering(s, oid)
 ```

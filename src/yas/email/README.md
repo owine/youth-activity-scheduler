@@ -37,9 +37,9 @@ rendered: RenderedEmail = await render_email(session, kind, lead, members)
 # Driven by a pre-built payload (digest only — bypasses the registry):
 rendered: RenderedEmail = render_digest_payload(digest_payload, top_line)
 
-rendered.subject     # str — pulled from the .txt template's {% block subject %}
+rendered.subject  # str — pulled from the .txt template's {% block subject %}
 rendered.body_plain  # str — the .txt template's full render
-rendered.body_html   # str — the .html template's full render
+rendered.body_html  # str — the .html template's full render
 ```
 
 `kind` is `EmailKind = AlertType | Literal["test_send"]`. `test_send` is the
