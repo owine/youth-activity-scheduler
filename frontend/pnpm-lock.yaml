@@ -78,6 +78,9 @@ importers:
       '@tanstack/router-vite-plugin':
         specifier: 1.167.23
         version: 1.167.23(@tanstack/react-router@1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(rolldown@1.1.5)(vite@8.1.5(@types/node@24.13.3)(jiti@2.7.0))
+      '@testing-library/dom':
+        specifier: 10.4.1
+        version: 10.4.1
       '@testing-library/jest-dom':
         specifier: 7.0.0
         version: 7.0.0(@testing-library/dom@10.4.1)
