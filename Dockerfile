@@ -6,9 +6,10 @@ WORKDIR /build
 # Corepack ships with Node and pins pnpm to the version recorded in
 # package.json's `packageManager` field. No network install of pnpm needed.
 RUN corepack enable
-# Cache deps separately. .npmrc enforces minimum-release-age soak so a
-# compromised version can't slip into the image build.
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./
+# Cache deps separately. --frozen-lockfile means the image can only ever install
+# the exact, already-reviewed versions in pnpm-lock.yaml; nothing is resolved
+# fresh at build time, so a compromised release can't slip into the image.
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 # Build
 COPY frontend/ ./
