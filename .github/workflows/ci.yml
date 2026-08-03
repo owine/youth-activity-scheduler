@@ -20,6 +20,9 @@ jobs:
           filters: |
             image:
               - 'Dockerfile'
+              # .dockerignore decides what the build can see at all; an
+              # over-broad pattern here breaks the image with no other signal.
+              - '.dockerignore'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'src/**'

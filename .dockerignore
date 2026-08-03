@@ -1,15 +1,35 @@
+# Docker matches these patterns against the whole path relative to the context
+# root, not per-directory like .gitignore. A bare `node_modules` would only ever
+# match ./node_modules — so every pattern that can occur at depth needs `**/`.
+# `**` matches zero or more directories, so `**/node_modules` covers the
+# root-level one too.
+
+# Dependency trees. Without this, `COPY frontend/ ./` drops the host's
+# macOS/arm node_modules on top of the linux/musl one the image just installed;
+# pnpm's deps-status check then tries to purge it and aborts for lack of a TTY.
+**/node_modules
 .venv
+
+# VCS and CI config
 .git
 .github
-__pycache__
-.pytest_cache
-.mypy_cache
-.ruff_cache
+
+# Python caches and packaging metadata
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+
+# Build output. The image builds the SPA itself, so a host `frontend/dist` is
+# both stale and pure context bloat.
+**/dist
+**/build
+
+# Not needed by any build stage. `tests` stays root-only on purpose: it's the
+# backend suite, and frontend/ has no directory by that name.
 tests
 docs
 data
 .env
 .DS_Store
-dist
-build
-*.egg-info
