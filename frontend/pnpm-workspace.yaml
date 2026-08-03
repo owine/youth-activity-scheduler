@@ -1,2 +1,16 @@
+# pnpm 11 reads project configuration from here, not .npmrc — .npmrc is
+# restricted to auth and registry settings and silently ignores everything else.
 allowBuilds:
   msw: true
+
+# Supply-chain hardening. The release-age soak deliberately lives in the shared
+# Renovate preset (github>owine/renovate-config), not here: Renovate's gate
+# decides when a PR opens, pnpm's would decide when a lockfile can be written,
+# and whenever pnpm's is stricter it refuses to resolve the version Renovate
+# just wrote into package.json — renovate/artifacts fails, the lockfile goes
+# stale, and --frozen-lockfile rejects the PR.
+preferFrozenLockfile: true
+saveExact: true
+
+audit:
+  level: moderate

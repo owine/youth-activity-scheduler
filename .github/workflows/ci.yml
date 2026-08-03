@@ -26,7 +26,7 @@ jobs:
               - 'alembic/**'
               - 'frontend/package.json'
               - 'frontend/pnpm-lock.yaml'
-              - 'frontend/.npmrc'
+              - 'frontend/pnpm-workspace.yaml'
               - 'frontend/vite.config.ts'
               - 'frontend/tsconfig*.json'
               - 'frontend/src/**'
