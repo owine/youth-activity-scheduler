@@ -1,14 +1,14 @@
-# pnpm 11 reads project configuration from here, not .npmrc — .npmrc is
-# restricted to auth and registry settings and silently ignores everything else.
+# All pnpm project config lives here. pnpm 11 reads only auth and registry
+# settings from .npmrc and silently ignores everything else, so settings put
+# there are dead config — that is why this repo has no .npmrc.
+# https://pnpm.io/settings
 allowBuilds:
   msw: true
 
-# Supply-chain hardening. The release-age soak deliberately lives in the shared
-# Renovate preset (github>owine/renovate-config), not here: Renovate's gate
-# decides when a PR opens, pnpm's would decide when a lockfile can be written,
-# and whenever pnpm's is stricter it refuses to resolve the version Renovate
-# just wrote into package.json — renovate/artifacts fails, the lockfile goes
-# stale, and --frozen-lockfile rejects the PR.
+# Supply-chain hardening.
+# Do NOT add minimumReleaseAge here — the release-age soak belongs to the shared
+# Renovate preset, and a second pnpm-side gate is adversarial rather than
+# additive. Rationale in CLAUDE.md under "Gotchas".
 preferFrozenLockfile: true
 saveExact: true
 
