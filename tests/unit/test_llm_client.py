@@ -175,3 +175,30 @@ async def test_default_max_tokens_leaves_room_for_large_pages():
     client = AnthropicClient(api_key="sk-test", sdk_client=fake)
     await client.extract_offerings(html="<p/>", url="u", site_name="s")
     assert seen["max_tokens"] >= 16000
+
+
+@pytest.mark.asyncio
+async def test_cost_is_priced_from_the_model_that_answered():
+    """Pricing follows msg.model, not the Haiku rates baked in at import time."""
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model="claude-opus-5", usage_in=1_000_000, usage_out=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    # Opus 5: $5.00/MTok in + $25.00/MTok out.
+    assert result.cost_usd == pytest.approx(30.0)
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_reports_zero_cost_rather_than_guessing():
+    """A missing number is honest; a plausible wrong one silently corrupts spend totals."""
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model="claude-something-unreleased", usage_in=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert result.cost_usd == 0.0

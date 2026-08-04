@@ -16,11 +16,27 @@ from pydantic import ValidationError
 
 from yas.llm.prompt import build_extraction_prompt
 from yas.llm.schemas import ExtractedOffering, ExtractionResponse
+from yas.logging import get_logger
 
-# Claude Haiku 4.5 public pricing (2026-04). Update here if Anthropic revises.
-# Input: $1.00 / 1M tokens. Output: $5.00 / 1M tokens.
-_HAIKU_IN_PER_MTOK = 1.00
-_HAIKU_OUT_PER_MTOK = 5.00
+log = get_logger("yas.llm.client")
+
+# Public per-MTok pricing as (input, output), matched by model-ID prefix so dated
+# snapshots (claude-haiku-4-5-20251001) resolve to their alias. Update if Anthropic
+# revises. Longest prefix wins, so 4-x entries can't be shadowed by a shorter one.
+#
+# Cache-token rates are deliberately absent: this workload sends unique page HTML
+# per call behind a content-hash cache, so there is no reusable prefix to cache.
+_PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    # Standard rate. Introductory pricing ($2.00/$10.00) applies through 2026-08-31;
+    # priced at standard here so we over-estimate rather than under-report.
+    "claude-sonnet-5": (3.00, 15.00),
+    "claude-opus-4-7": (5.00, 25.00),
+    "claude-opus-4-8": (5.00, 25.00),
+    "claude-opus-5": (5.00, 25.00),
+    "claude-fable-5": (10.00, 50.00),
+}
 
 # Enough headroom for a listing page of many sessions. Truncation is now a hard
 # error (see _call_messages), and unused output tokens are never billed, so the
@@ -213,10 +229,30 @@ def _dump_msg(msg: Any) -> str:
         return "<unrepresentable message>"
 
 
+def _rate_for(model: str) -> tuple[float, float] | None:
+    match = ""
+    for prefix in _PRICING_PER_MTOK:
+        if model.startswith(prefix) and len(prefix) > len(match):
+            match = prefix
+    return _PRICING_PER_MTOK[match] if match else None
+
+
 def _estimate_cost_usd(msg: Any) -> float:
+    """Price the call from the model that actually answered.
+
+    An unknown model yields 0.0 plus a warning rather than a guess: a missing
+    number is visibly missing, whereas one silently computed at the wrong tier
+    corrupts the spend totals surfaced on crawl runs.
+    """
     usage = getattr(msg, "usage", None)
     if usage is None:
         return 0.0
+    model = str(getattr(msg, "model", "") or "")
+    rate = _rate_for(model)
+    if rate is None:
+        log.warning("llm.unknown_model_pricing", model=model)
+        return 0.0
+    in_per_mtok, out_per_mtok = rate
     inp = getattr(usage, "input_tokens", 0) or 0
     out = getattr(usage, "output_tokens", 0) or 0
-    return (inp / 1_000_000) * _HAIKU_IN_PER_MTOK + (out / 1_000_000) * _HAIKU_OUT_PER_MTOK
+    return (inp / 1_000_000) * in_per_mtok + (out / 1_000_000) * out_per_mtok
