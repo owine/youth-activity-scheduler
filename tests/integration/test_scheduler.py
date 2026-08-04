@@ -90,13 +90,14 @@ async def test_scheduler_logs_exceptions_escaping_crawl_page(tmp_path, monkeypat
         site = Site(name="Test", base_url="https://example.com", default_cadence_s=3600)
         s.add(site)
         await s.flush()
-        s.add(
-            Page(
-                site_id=site.id,
-                url="https://example.com/p",
-                next_check_at=datetime.now(UTC) - timedelta(seconds=1),
-            )
+        page = Page(
+            site_id=site.id,
+            url="https://example.com/p",
+            next_check_at=datetime.now(UTC) - timedelta(seconds=1),
         )
+        s.add(page)
+        await s.flush()
+        page_id = page.id
 
     async def _boom(**kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("finalize blew up")
@@ -117,6 +118,15 @@ async def test_scheduler_logs_exceptions_escaping_crawl_page(tmp_path, monkeypat
     )
     assert failed[0]["log_level"] == "error"
     assert "finalize blew up" in failed[0]["error"]
+    # The exception type is logged separately from its message. str(exc) can be
+    # empty — the ForwardEmail timeouts that motivated this work surfaced as
+    # "timeout: " with nothing after the colon — so the type is sometimes the
+    # only thing identifying the failure, and it is what aggregates cleanly.
+    assert failed[0]["error_type"] == "RuntimeError"
+    # Pin the rest of the debugging contract so these fields can't quietly go.
+    assert failed[0]["page_id"] == page_id
+    assert "RuntimeError: finalize blew up" in failed[0]["traceback"]
+    assert "_boom" in failed[0]["traceback"], "traceback must retain the raising frame"
     await engine.dispose()
 
 

@@ -87,6 +87,10 @@ async def _tick(
             log.error(
                 "scheduler.page_failed",
                 page_id=page.id,
+                # Logged apart from the message because str(exc) is empty for
+                # some exceptions — httpx timeouts among them — leaving the type
+                # as the only identifying detail. It also aggregates cleanly.
+                error_type=type(result).__name__,
                 error=str(result),
                 traceback="".join(
                     traceback.format_exception(type(result), result, result.__traceback__)
