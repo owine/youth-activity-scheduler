@@ -48,13 +48,17 @@ class ToolCallError(Exception):
         self.detail = detail
 
 
-class _ToolMissingError(Exception):
-    """Internal: the model did not call the expected tool."""
+class _ToolUseFailure(Exception):
+    """Internal: the call returned, but not a usable tool input.
 
-    def __init__(self, raw: str, stop_reason: str):
-        super().__init__(stop_reason)
+    Carries a ready-made `detail` so the public wrappers only have to pick which
+    exception type to re-raise as.
+    """
+
+    def __init__(self, raw: str, detail: str):
+        super().__init__(detail)
         self.raw = raw
-        self.stop_reason = stop_reason
+        self.detail = detail
 
 
 class LLMClient(Protocol):
@@ -121,11 +125,23 @@ class AnthropicClient:
             tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": user}],
         )
+        stop_reason = str(getattr(msg, "stop_reason", "?"))
+        # A max_tokens cutoff truncates the tool input mid-JSON. It may still parse
+        # into a well-formed-but-short result, which the reconciler would read as
+        # "these offerings are gone" and withdraw. Never let it through.
+        if stop_reason == "max_tokens":
+            raise _ToolUseFailure(
+                raw=_dump_msg(msg),
+                detail=(
+                    f"response truncated at max_tokens={max_tokens} "
+                    f"(stop_reason=max_tokens); result is incomplete"
+                ),
+            )
         tool_input = _find_tool_input(msg, tool_name)
         if tool_input is None:
-            raise _ToolMissingError(
+            raise _ToolUseFailure(
                 raw=_dump_msg(msg),
-                stop_reason=str(getattr(msg, "stop_reason", "?")),
+                detail=f"model stopped without calling {tool_name} (stop_reason={stop_reason})",
             )
         cost = _estimate_cost_usd(msg)
         model = str(getattr(msg, "model", self._model))
@@ -150,11 +166,8 @@ class AnthropicClient:
                 input_schema=input_schema,
                 max_tokens=max_tokens,
             )
-        except _ToolMissingError as exc:
-            raise ToolCallError(
-                raw=exc.raw,
-                detail=f"model stopped without calling {tool_name} (stop_reason={exc.stop_reason})",
-            ) from exc
+        except _ToolUseFailure as exc:
+            raise ToolCallError(raw=exc.raw, detail=exc.detail) from exc
 
     async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
@@ -166,11 +179,8 @@ class AnthropicClient:
                 tool_description="Report the list of offerings extracted from the page.",
                 input_schema=_tool_schema(),
             )
-        except _ToolMissingError as exc:
-            raise ExtractionError(
-                raw=exc.raw,
-                detail=f"model stopped without calling report_offerings (stop_reason={exc.stop_reason})",
-            ) from exc
+        except _ToolUseFailure as exc:
+            raise ExtractionError(raw=exc.raw, detail=exc.detail) from exc
         try:
             parsed = ExtractionResponse.model_validate(tool_input)
         except ValidationError as exc:

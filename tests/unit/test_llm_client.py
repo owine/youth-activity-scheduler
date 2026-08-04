@@ -113,3 +113,49 @@ async def test_fake_llm_client_returns_scripted_response():
     res = await fake.extract_offerings(html="<p/>", url="u", site_name="s")
     assert [o.name for o in res.offerings] == ["Swim Basics"]
     assert fake.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_anthropic_client_raises_when_response_truncated_by_max_tokens():
+    """A max_tokens cutoff yields a partial tool input — never treat it as a complete result.
+
+    The reconciler diffs extracted offerings against active DB rows and withdraws
+    anything missing, so a silently truncated list retracts real programs.
+    """
+
+    class _TruncatedMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.stop_reason = "max_tokens"
+            return msg
+
+    # Parses cleanly against the schema — only stop_reason reveals the truncation.
+    tool_input = {"offerings": [{"name": "Session 1", "program_type": "soccer"}]}
+    fake = _FakeAnthropicClient(messages=_TruncatedMessages(tool_input))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ExtractionError
+
+    with pytest.raises(ExtractionError, match="max_tokens"):
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+
+@pytest.mark.asyncio
+async def test_call_tool_raises_when_response_truncated_by_max_tokens():
+    class _TruncatedMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.stop_reason = "max_tokens"
+            return msg
+
+    fake = _FakeAnthropicClient(messages=_TruncatedMessages({"candidates": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ToolCallError
+
+    with pytest.raises(ToolCallError, match="max_tokens"):
+        await client.call_tool(
+            system="s",
+            user="u",
+            tool_name="report_offerings",
+            tool_description="d",
+            input_schema={"type": "object"},
+        )
