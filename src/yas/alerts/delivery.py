@@ -120,6 +120,14 @@ async def send_alert_group(
         return
 
     if not channels:
+        # Digest-only types (site_stagnant, schedule_posted, no_matches_for_kid)
+        # route here by design. Returning without touching the rows left them
+        # unsent and unskipped, so the due-query re-selected them on every tick
+        # forever. Retire them instead: `skipped` drops them from delivery while
+        # leaving them visible in the inbox, which filters on `closed_at`.
+        # The digest itself is unaffected — build_digest re-derives its content
+        # from live state rather than reading these rows.
+        _mark_all_skipped(members, "digest only")
         log.debug("delivery.no_channels", alert_type=group.alert_type)
         return
 
@@ -286,6 +294,17 @@ async def send_alert_group(
                 permanent_errors.values() or ["transient"]
             )
             _mark_all_skipped(members, detail)
+            # This is the only path that discards an alert the user was meant to
+            # receive, so it is the one that must be loud. Without it the last
+            # trace is a warning-level transient_failure indistinguishable from
+            # the retryable attempts before it.
+            log.error(
+                "delivery.gave_up",
+                alert_type=group.alert_type,
+                alert_ids=[a.id for a in members],
+                attempts=current_attempts,
+                detail=detail,
+            )
         else:
             delay = _RETRY_DELAYS[new_attempts]
             scheduled_for = now + delay
