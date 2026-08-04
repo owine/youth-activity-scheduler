@@ -144,3 +144,35 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
         assert runs[0].error_text and "500" in runs[0].error_text
         assert page.consecutive_failures == 1
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crawl_page_applies_backoff_when_extraction_raises_unexpectedly(tmp_path):
+    """An SDK-level failure (rate limit, connection error) must still advance next_check_at.
+
+    Otherwise the page stays due and the scheduler re-fetches and re-calls the API
+    on every tick.
+    """
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        raise RuntimeError("simulated anthropic.RateLimitError")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(on_call=_boom)
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            result = await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+        finally:
+            await fetcher.aclose()
+
+    assert result.status == CrawlStatus.failed
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        assert page.consecutive_failures == 1
+        assert page.next_check_at is not None
+    await engine.dispose()

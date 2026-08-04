@@ -57,9 +57,18 @@ async def crawl_page(
 
     try:
         result = await _do_crawl(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
-    except Exception as exc:  # pragma: no cover — defensive
+    except Exception as exc:
         tb = traceback.format_exc()
         log.error("pipeline.unexpected", error=str(exc), traceback=tb[:2000])
+        # _do_crawl applies backoff itself on every path it *returns* from, so
+        # reaching here means next_check_at was never advanced. Without this the
+        # page stays due and the scheduler retries it on every tick — a hot loop
+        # that re-fetches and re-calls the LLM API, which is exactly the wrong
+        # response to the rate limits and connection errors that land here.
+        try:
+            await _apply_failure(engine, page, site, error_text=f"unexpected: {exc}")
+        except Exception:  # pragma: no cover — defensive; DB itself is unhealthy
+            log.error("pipeline.backoff_failed", page_id=page.id, traceback=tb[:2000])
         result = CrawlResult(
             status=CrawlStatus.failed,
             pages_fetched=0,
