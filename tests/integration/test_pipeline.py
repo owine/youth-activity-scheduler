@@ -144,3 +144,88 @@ async def test_crawl_page_records_fetch_failure(tmp_path):
         assert runs[0].error_text and "500" in runs[0].error_text
         assert page.consecutive_failures == 1
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crawl_page_applies_backoff_when_extraction_raises_unexpectedly(tmp_path):
+    """An SDK-level failure (rate limit, connection error) must still advance next_check_at.
+
+    Otherwise the page stays due and the scheduler re-fetches and re-calls the API
+    on every tick.
+    """
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        raise RuntimeError("simulated anthropic.RateLimitError")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(on_call=_boom)
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            result = await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+        finally:
+            await fetcher.aclose()
+
+    assert result.status == CrawlStatus.failed
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        assert page.consecutive_failures == 1
+        assert page.next_check_at is not None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crawl_page_survives_and_reports_a_failing_backoff_write(tmp_path):
+    """If the backoff write itself fails, log *that* error — not the one that caused it.
+
+    Reusing the outer traceback here would hide the unhealthy-DB stack behind the
+    original crawl error, exactly when the real one is needed.
+    """
+    import structlog
+
+    from yas.crawl import pipeline as pipeline_mod
+
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        raise RuntimeError("ORIGINAL_CRAWL_ERROR")
+
+    async def _failing_backoff(*_args, **_kwargs):
+        raise RuntimeError("BACKOFF_WRITE_FAILED")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(on_call=_boom)
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            orig = pipeline_mod._apply_failure
+            pipeline_mod._apply_failure = _failing_backoff
+            try:
+                with structlog.testing.capture_logs() as logs:
+                    result = await crawl_page(
+                        engine=engine, fetcher=fetcher, llm=llm, page=page, site=site
+                    )
+            finally:
+                pipeline_mod._apply_failure = orig
+        finally:
+            await fetcher.aclose()
+
+    # The crawl still completes rather than propagating into the scheduler.
+    assert result.status == CrawlStatus.failed
+
+    backoff_logs = [entry for entry in logs if entry.get("event") == "pipeline.backoff_failed"]
+    assert len(backoff_logs) == 1
+    assert backoff_logs[0]["error"] == "BACKOFF_WRITE_FAILED"
+    # The backoff failure is the primary error; the crawl error that triggered it
+    # survives below as chained context, which is worth keeping.
+    tb = backoff_logs[0]["traceback"]
+    assert tb.rstrip().endswith("RuntimeError: BACKOFF_WRITE_FAILED")
+    assert "During handling of the above exception" in tb
+    await engine.dispose()

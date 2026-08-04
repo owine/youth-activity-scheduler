@@ -113,3 +113,115 @@ async def test_fake_llm_client_returns_scripted_response():
     res = await fake.extract_offerings(html="<p/>", url="u", site_name="s")
     assert [o.name for o in res.offerings] == ["Swim Basics"]
     assert fake.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_anthropic_client_raises_when_response_truncated_by_max_tokens():
+    """A max_tokens cutoff yields a partial tool input — never treat it as a complete result.
+
+    The reconciler diffs extracted offerings against active DB rows and withdraws
+    anything missing, so a silently truncated list retracts real programs.
+    """
+
+    class _TruncatedMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.stop_reason = "max_tokens"
+            return msg
+
+    # Parses cleanly against the schema — only stop_reason reveals the truncation.
+    tool_input = {"offerings": [{"name": "Session 1", "program_type": "soccer"}]}
+    fake = _FakeAnthropicClient(messages=_TruncatedMessages(tool_input))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ExtractionError
+
+    with pytest.raises(ExtractionError, match="max_tokens"):
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+
+@pytest.mark.asyncio
+async def test_call_tool_raises_when_response_truncated_by_max_tokens():
+    class _TruncatedMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.stop_reason = "max_tokens"
+            return msg
+
+    fake = _FakeAnthropicClient(messages=_TruncatedMessages({"candidates": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ToolCallError
+
+    with pytest.raises(ToolCallError, match="max_tokens"):
+        await client.call_tool(
+            system="s",
+            user="u",
+            tool_name="report_offerings",
+            tool_description="d",
+            input_schema={"type": "object"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_default_max_tokens_leaves_room_for_large_pages():
+    """4096 truncated real listing pages; the cap must clear observed page sizes."""
+    seen: dict[str, Any] = {}
+
+    class _CapturingMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            return await super().create(**kwargs)
+
+    fake = _FakeAnthropicClient(messages=_CapturingMessages({"offerings": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert seen["max_tokens"] >= 16000
+
+
+@pytest.mark.asyncio
+async def test_cost_is_priced_from_the_model_that_answered():
+    """Pricing follows msg.model, not the Haiku rates baked in at import time."""
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model="claude-opus-5", usage_in=1_000_000, usage_out=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    # Opus 5: $5.00/MTok in + $25.00/MTok out.
+    assert result.cost_usd == pytest.approx(30.0)
+
+
+@pytest.mark.asyncio
+async def test_unknown_model_reports_zero_cost_rather_than_guessing():
+    """A missing number is honest; a plausible wrong one silently corrupts spend totals."""
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model="claude-something-unreleased", usage_in=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert result.cost_usd == 0.0
+
+
+@pytest.mark.asyncio
+async def test_error_raw_identifies_the_call_without_echoing_page_content():
+    """`raw` is a diagnostic handle, not a transcript — the response echoes scraped HTML."""
+
+    class _NoToolMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.content = [type("_T", (), {"type": "text", "text": "SECRET_PAGE_BODY"})()]
+            msg.stop_reason = "end_turn"
+            msg.id = "msg_01abc"
+            return msg
+
+    fake = _FakeAnthropicClient(messages=_NoToolMessages({"offerings": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ExtractionError
+
+    with pytest.raises(ExtractionError) as ei:
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert "msg_01abc" in ei.value.raw
+    assert "end_turn" in ei.value.raw
+    assert "SECRET_PAGE_BODY" not in ei.value.raw

@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from yas.discovery.heads import HeadInfo
+from yas.llm.client import DEFAULT_MAX_TOKENS
 from yas.logging import get_logger
 
 log = get_logger("yas.discovery.classifier")
@@ -45,7 +46,7 @@ class ClassifierLLMClient(Protocol):
         tool_name: str,
         tool_description: str,
         input_schema: dict[str, Any],
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]: ...
 
 
