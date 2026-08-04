@@ -159,3 +159,19 @@ async def test_call_tool_raises_when_response_truncated_by_max_tokens():
             tool_description="d",
             input_schema={"type": "object"},
         )
+
+
+@pytest.mark.asyncio
+async def test_default_max_tokens_leaves_room_for_large_pages():
+    """4096 truncated real listing pages; the cap must clear observed page sizes."""
+    seen: dict[str, Any] = {}
+
+    class _CapturingMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            return await super().create(**kwargs)
+
+    fake = _FakeAnthropicClient(messages=_CapturingMessages({"offerings": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert seen["max_tokens"] >= 16000

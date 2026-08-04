@@ -22,6 +22,11 @@ from yas.llm.schemas import ExtractedOffering, ExtractionResponse
 _HAIKU_IN_PER_MTOK = 1.00
 _HAIKU_OUT_PER_MTOK = 5.00
 
+# Enough headroom for a listing page of many sessions. Truncation is now a hard
+# error (see _call_messages), and unused output tokens are never billed, so the
+# only cost of a generous cap is the ceiling we never hit.
+DEFAULT_MAX_TOKENS = 16000
+
 
 @dataclass(frozen=True)
 class ExtractionResult:
@@ -74,7 +79,7 @@ class LLMClient(Protocol):
         tool_name: str,
         tool_description: str,
         input_schema: dict[str, Any],
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]: ...
 
 
@@ -110,7 +115,7 @@ class AnthropicClient:
         tool_name: str,
         tool_description: str,
         input_schema: dict[str, Any],
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]:
         tool = {
             "name": tool_name,
@@ -155,7 +160,7 @@ class AnthropicClient:
         tool_name: str,
         tool_description: str,
         input_schema: dict[str, Any],
-        max_tokens: int = 4096,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]:
         try:
             return await self._call_messages(
