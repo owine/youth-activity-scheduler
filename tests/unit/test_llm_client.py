@@ -202,3 +202,26 @@ async def test_unknown_model_reports_zero_cost_rather_than_guessing():
     client = AnthropicClient(api_key="sk-test", sdk_client=fake)
     result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
     assert result.cost_usd == 0.0
+
+
+@pytest.mark.asyncio
+async def test_error_raw_identifies_the_call_without_echoing_page_content():
+    """`raw` is a diagnostic handle, not a transcript — the response echoes scraped HTML."""
+
+    class _NoToolMessages(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.content = [type("_T", (), {"type": "text", "text": "SECRET_PAGE_BODY"})()]
+            msg.stop_reason = "end_turn"
+            msg.id = "msg_01abc"
+            return msg
+
+    fake = _FakeAnthropicClient(messages=_NoToolMessages({"offerings": []}))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    from yas.llm.client import ExtractionError
+
+    with pytest.raises(ExtractionError) as ei:
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert "msg_01abc" in ei.value.raw
+    assert "end_turn" in ei.value.raw
+    assert "SECRET_PAGE_BODY" not in ei.value.raw

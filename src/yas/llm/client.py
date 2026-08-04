@@ -223,10 +223,17 @@ def _find_tool_input(msg: Any, tool_name: str = "report_offerings") -> dict[str,
 
 
 def _dump_msg(msg: Any) -> str:
-    try:
-        return repr(msg)
-    except Exception:
-        return "<unrepresentable message>"
+    """A diagnostic handle for the failed call — deliberately not the response body.
+
+    The assistant message echoes scraped page content, and the truncation path
+    calls this exactly when that content is largest. Log the request id and
+    stop_reason; pull the body from the Anthropic console if you need it.
+    """
+    return (
+        f"id={getattr(msg, 'id', '?')} "
+        f"stop_reason={getattr(msg, 'stop_reason', '?')} "
+        f"model={getattr(msg, 'model', '?')}"
+    )
 
 
 def _rate_for(model: str) -> tuple[float, float] | None:
