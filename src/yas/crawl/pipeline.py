@@ -67,8 +67,16 @@ async def crawl_page(
         # response to the rate limits and connection errors that land here.
         try:
             await _apply_failure(engine, page, site, error_text=f"unexpected: {exc}")
-        except Exception:  # pragma: no cover — defensive; DB itself is unhealthy
-            log.error("pipeline.backoff_failed", page_id=page.id, traceback=tb[:2000])
+        except Exception as backoff_exc:
+            # Deliberately not `tb` — that is the crawl error we are already
+            # handling. This branch means the DB write itself failed, and its
+            # own stack is the one worth having.
+            log.error(
+                "pipeline.backoff_failed",
+                page_id=page.id,
+                error=str(backoff_exc),
+                traceback=traceback.format_exc()[:2000],
+            )
         result = CrawlResult(
             status=CrawlStatus.failed,
             pages_fetched=0,
