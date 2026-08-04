@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+import structlog.testing
 from sqlalchemy import select
 
 from tests.fakes.notifier import FakeNotifier
@@ -585,6 +586,101 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         now_naive = now.replace(tzinfo=None)
         assert sched > now_naive, "scheduled_for should advance for retry"
         assert updated.payload_json.get("_attempts") == 1, "_attempts must be incremented"
+
+
+@pytest.mark.asyncio
+async def test_retry_exhaustion_logs_an_error(tmp_path):  # type: ignore[no-untyped-def]
+    """Giving up after _MAX_RETRIES must emit an error-level log.
+
+    Regression: production dropped a digest after 4 transient ForwardEmail
+    timeouts and the only trace was a `warning`-level transient_failure line
+    identical to the retryable ones before it. A silently discarded alert is
+    the one failure mode nothing downstream can detect.
+    """
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={
+                "offering_id": off_id,
+                "kid_name": "Alice",
+                # Already exhausted: the next failure crosses _MAX_RETRIES.
+                "_attempts": 3,
+            },
+        )
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+
+        email_notifier = _email_notifier("email")
+        email_notifier.queue_transient_failure("timeout: ")
+
+        groups = coalesce([a], window_s=600)
+        with structlog.testing.capture_logs() as logs:
+            await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    gave_up = [entry for entry in logs if entry.get("event") == "delivery.gave_up"]
+    assert gave_up, f"expected a delivery.gave_up log, got events: {[e.get('event') for e in logs]}"
+    assert gave_up[0]["log_level"] == "error", "giving up on an alert must log at error level"
+    assert gave_up[0]["alert_type"] == AlertType.new_match.value
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is True
+        assert updated.sent_at is None
+
+
+@pytest.mark.asyncio
+async def test_digest_only_alert_is_retired_not_left_pending(tmp_path):  # type: ignore[no-untyped-def]
+    """An alert type routed to no channels must be retired, not re-selected forever.
+
+    Regression: site_stagnant routes to [] (digest-only), and send_alert_group
+    returned early without touching the row. In production three such rows sat
+    unsent/unskipped and were re-selected on every 60s tick — one of them for
+    three weeks.
+
+    `skipped` is the right lever rather than `closed_at`: the delivery
+    due-query filters on it, while the inbox filters only on `closed_at` and
+    merely displays `skipped`. So the row leaves the delivery queue and stays
+    visible in the inbox. Digest content is unaffected either way —
+    `build_digest` re-derives stagnant sites via `detect_stagnant_sites`
+    rather than reading these rows.
+    """
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        # site_stagnant routes to [] by default — digest-only.
+        a = _alert(
+            alert_type=AlertType.site_stagnant.value,
+            kid_id=None,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"site_name": "Park"},
+        )
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+
+        email_notifier = _email_notifier("email")
+        groups = coalesce([a], window_s=600)
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is True, (
+            "a digest-only alert must be retired so the due-query stops re-selecting it"
+        )
+        assert updated.payload_json.get("_skipped_reason") == "digest only"
+        assert updated.sent_at is None, "no channel sent it, so it is not 'sent'"
+        assert updated.closed_at is None, "retiring from delivery must not hide it from the inbox"
+
+    assert email_notifier.call_count == 0
 
 
 @pytest.mark.asyncio

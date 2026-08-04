@@ -17,6 +17,13 @@ from yas.config import Settings
 
 _FORWARDEMAIL_API_URL = "https://api.forwardemail.net/v1/emails"
 
+# httpx defaults to 5s across the board, which is too tight for a third-party
+# mail API accepting a multipart digest body — a slowdown there burned all four
+# delivery retries and dropped a daily digest. Connect stays comparatively
+# short because a slow TCP handshake really is a dead endpoint; read/write get
+# the headroom, since that is where the API actually spends its time.
+_FORWARDEMAIL_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+
 
 # ---------------------------------------------------------------------------
 # Shared builder
@@ -153,7 +160,7 @@ class _ForwardEmailTransport:
         self._token = api_token
         self._from_addr = from_addr
         self._to_addrs = to_addrs
-        self._client = httpx.AsyncClient()
+        self._client = httpx.AsyncClient(timeout=_FORWARDEMAIL_TIMEOUT)
 
     async def send(self, msg: NotifierMessage) -> SendResult:
         data: dict[str, str] = {

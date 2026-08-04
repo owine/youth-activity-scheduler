@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import traceback
 from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
@@ -76,4 +77,22 @@ async def _tick(
         )
         for page, site in rows
     ]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # return_exceptions keeps one bad page from cancelling its siblings, but the
+    # results must still be inspected — discarding them means an exception that
+    # escapes crawl_page (its run-finalizing writes sit outside the internal
+    # try) disappears with no log and no traceback.
+    for (page, _site), result in zip(rows, results, strict=True):
+        if isinstance(result, BaseException):
+            log.error(
+                "scheduler.page_failed",
+                page_id=page.id,
+                # Logged apart from the message because str(exc) is empty for
+                # some exceptions — httpx timeouts among them — leaving the type
+                # as the only identifying detail. It also aggregates cleanly.
+                error_type=type(result).__name__,
+                error=str(result),
+                traceback="".join(
+                    traceback.format_exception(type(result), result, result.__traceback__)
+                )[:2000],
+            )

@@ -429,6 +429,29 @@ async def test_forwardemail_transport_5xx_transient():
 
 
 @pytest.mark.asyncio
+async def test_forwardemail_transport_uses_explicit_generous_timeout():
+    """The API client must not inherit httpx's 5s default.
+
+    Regression: a ForwardEmail slowdown timed out all four delivery attempts
+    and the daily digest was dropped. Sending a ~13KB multipart POST to a
+    third-party mail API needs more headroom than httpx's default gives, so
+    the timeout is set explicitly rather than left implicit.
+    """
+    transport = _ForwardEmailTransport(
+        api_token="tok",
+        from_addr="from@example.com",
+        to_addrs=["to@example.com"],
+    )
+    try:
+        timeout = transport._client.timeout
+        assert timeout.connect is not None and timeout.connect >= 10.0
+        assert timeout.read is not None and timeout.read >= 30.0
+        assert timeout.write is not None and timeout.write >= 30.0
+    finally:
+        await transport._client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_forwardemail_transport_timeout_transient():
     """httpx.TimeoutException → transient failure."""
     with respx.mock:
