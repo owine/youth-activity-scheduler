@@ -1,23 +1,24 @@
 # Override that swaps the GHCR `image:` for a local `build: .` so devs can
 # iterate on uncommitted source. The base compose targets prod (pulls from
-# GHCR); this override is opt-in.
+# GHCR); this override is opt-in and must come LAST so its build: wins.
 #
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #
-# Stack with macOS volume override:
+# Stack with the macOS volume override:
 #   docker compose \
 #     -f docker-compose.yml \
 #     -f docker-compose.macos.yml \
 #     -f docker-compose.dev.yml \
 #     up --build
-
-x-build: &yas-build
-  build: .
-  image: yas-local:dev   # local-only tag; not pushed
+#
+# The service name must track docker-compose.yml. Compose ADDS a service an
+# override names but the base lacks, rather than erroring — so a stale name
+# here yields a phantom service carrying `build:` while the real service still
+# pulls from GHCR. scripts/lib.sh::assert_local_build checks named services
+# individually to catch exactly that.
 
 services:
-  yas-worker:
-    <<: *yas-build
-  yas-api:
-    <<: *yas-build
+  yas:
+    build: .
+    image: yas-local:dev   # local-only tag; not pushed

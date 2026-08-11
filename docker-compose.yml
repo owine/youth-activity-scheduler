@@ -1,34 +1,23 @@
-x-image: &yas-image
-  image: ghcr.io/owine/youth-activity-scheduler:latest
+# Single-container layout: api + worker in one process (`python -m yas all`).
+#
+# One interpreter, one SQLAlchemy engine and pool, and one shared set of
+# httpx / Playwright / Anthropic / Nominatim clients. A worker fault exits the
+# process (see yas.__main__._supervise) and `restart: unless-stopped` brings it
+# back, which is what a per-container crash used to do.
+#
+# For separate api/worker containers, use docker-compose.split.yml INSTEAD of
+# this file.
 
 services:
-  yas-worker:
-    <<: *yas-image
-    command: ["python", "-m", "yas", "worker"]
-    env_file: .env
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-    # Disable the inherited Dockerfile HEALTHCHECK: this container doesn't
-    # run an HTTP server, so the curl probe would fail forever and break
-    # `depends_on: service_healthy` chains.
-    healthcheck:
-      disable: true
-
-  yas-api:
-    <<: *yas-image
-    command: ["python", "-m", "yas", "api"]
+  yas:
+    image: ghcr.io/owine/youth-activity-scheduler:latest
+    command: ["python", "-m", "yas", "all"]
     env_file: .env
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
-    depends_on:
-      yas-worker:
-        condition: service_started
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
+    # No healthcheck: block here on purpose. This service serves HTTP, so it
+    # inherits the image's own `curl /healthz` HEALTHCHECK correctly. The old
+    # yas-worker needed `disable: true` only because it ran no HTTP server.
