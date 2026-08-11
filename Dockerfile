@@ -85,7 +85,18 @@ COPY --from=frontend-build /build/dist /app/static
 ARG GIT_SHA=unknown
 ENV YAS_GIT_SHA=$GIT_SHA
 
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+# --start-period covers boot: `all` mode applies Alembic migrations before
+# uvicorn binds, so early probes are expected to fail. Failures inside the
+# start period don't count toward --retries and don't mark the container
+# unhealthy, which keeps a slow migration from looking like a runtime fault.
+#
+# Note this probes /healthz, which is shallow (status/git_sha/version). It
+# deliberately does NOT check the worker — a stalled worker leaves the
+# container healthy. That's covered by the process exiting instead: see
+# yas.__main__._supervise. Docker's HEALTHCHECK only sets a status label, it
+# never restarts anything; recovery comes from `restart: unless-stopped`
+# reacting to the exit.
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=30s \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
 
 CMD ["python", "-m", "yas", "all"]
