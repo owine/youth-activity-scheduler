@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import sys
+from collections.abc import Coroutine
+from typing import Any
 
 import uvicorn
 
@@ -24,6 +25,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="which process to run: api (FastAPI), worker (crawler+alerts), all (both), migrate (apply schema and exit)",
     )
     return p
+
+
+async def _supervise(
+    server_coro: Coroutine[Any, Any, Any],
+    worker_coro: Coroutine[Any, Any, Any],
+) -> None:
+    """Run the API server and the worker as siblings; either dying kills both.
+
+    In the two-container layout a worker crash exited its container and the
+    restart policy revived it. Collapsed into one container we need the same
+    outcome, so a TaskGroup is used rather than a bare create_task: it cancels
+    the surviving sibling and re-raises, the process exits non-zero, and Docker
+    restarts the container. A bare create_task would leave a dead worker
+    unobserved behind a healthy-looking API — visible only as /readyz reporting
+    heartbeat_fresh: false, with nothing to act on it.
+    """
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(server_coro)
+        tg.create_task(worker_coro)
 
 
 async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
@@ -51,15 +71,10 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
             log_config=None,
         )
         server = uvicorn.Server(config)
-        worker_task = asyncio.create_task(
-            run_worker(engine, settings, fetcher=fetcher, llm=llm, geocoder=geocoder)
+        await _supervise(
+            server.serve(),
+            run_worker(engine, settings, fetcher=fetcher, llm=llm, geocoder=geocoder),
         )
-        try:
-            await server.serve()
-        finally:
-            worker_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await worker_task
     finally:
         await fetcher.aclose()
         await geocoder.aclose()

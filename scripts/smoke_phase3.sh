@@ -12,10 +12,10 @@ COMPOSE=$(compose_cmd)
 
 # Refuse to smoke a pulled image: `--build` is a silent no-op without a
 # `build:` section, so losing dev.yml would still "work" against GHCR.
-assert_local_build "$COMPOSE" yas-worker yas-api || exit 2
+assert_local_build "$COMPOSE" yas || exit 2
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d --build yas-worker yas-api
+$COMPOSE up -d --build yas
 sleep 10
 
 echo "--- set home location (geocoded immediately) ---"
@@ -49,7 +49,7 @@ sleep 90
 
 echo ""
 echo "--- offerings ---"
-$COMPOSE exec -T yas-api sqlite3 /data/activities.db \
+$COMPOSE exec -T yas sqlite3 /data/activities.db \
   'select id, name, program_type, age_min, age_max, start_date, time_start from offerings'
 
 echo ""

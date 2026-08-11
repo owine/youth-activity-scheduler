@@ -1,0 +1,46 @@
+# Opt-in two-container layout: API and worker in separate containers.
+#
+# Use this INSTEAD OF docker-compose.yml, not layered on top of it — compose
+# overrides can add and modify services but cannot remove one, so there is no
+# way to switch off the base `yas` service from an overlay.
+#
+#   docker compose -f docker-compose.split.yml up -d
+#
+# Prefer the default single-container layout unless you specifically want
+# independent crash domains or to scale the worker separately.
+#
+# Uses a named volume rather than ./data on purpose: this is the layout with
+# concurrent api <-> worker writes, which is what trips Docker Desktop's
+# VirtioFS SQLite locking on macOS. That also means it needs no macos overlay.
+
+x-image: &yas-image
+  image: ghcr.io/owine/youth-activity-scheduler:latest
+
+services:
+  yas-worker:
+    <<: *yas-image
+    command: ["python", "-m", "yas", "worker"]
+    env_file: .env
+    volumes:
+      - yas-data:/data
+    restart: unless-stopped
+    # This container runs no HTTP server, so the image's curl /healthz probe
+    # would fail forever. Disable it rather than let it flap.
+    healthcheck:
+      disable: true
+
+  yas-api:
+    <<: *yas-image
+    command: ["python", "-m", "yas", "api"]
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - yas-data:/data
+    depends_on:
+      yas-worker:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  yas-data:
