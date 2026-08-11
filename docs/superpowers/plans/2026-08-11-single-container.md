@@ -557,35 +557,68 @@ Expected: a real local build, then 4/4 Playwright specs. This is the regression 
 
 - [ ] **Step 3: Prove the supervision change end-to-end**
 
-The unit tests cover `_supervise` in isolation; this confirms the wiring.
+The unit tests cover `_supervise` in isolation; these confirm the wiring in the
+shipped image and the restart policy behind it.
+
+Do **not** try to kill the process from inside the container. `pkill` is not in
+the image (`python:slim` ships no `procps`), and `os.kill(1, SIGKILL)` from
+within is silently discarded — the kernel only delivers signals to namespace
+PID 1 that init has installed a handler for. `docker kill` from outside works
+but proves nothing about the policy: Docker treats it as a manual stop and
+skips restart policies, exactly like `docker stop`.
+
+Verify the two halves separately instead:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-docker compose exec -T yas pkill -f "yas all" || true
-sleep 15
-docker compose ps          # expect the container restarted, not sitting dead
-docker compose logs --tail 20 yas
-docker compose down -v
+# (a) In the shipped image, does a worker fault produce a non-zero exit?
+docker run --rm --entrypoint python yas-local:dev -c '
+import asyncio
+from yas.__main__ import _supervise
+async def server(): await asyncio.sleep(3600)
+async def worker(): raise RuntimeError("worker exploded")
+asyncio.run(_supervise(server(), worker()))
+'; echo "exit: $?"     # expect non-zero
+
+# (b) Does restart: unless-stopped revive a process that exits on its own?
+cid=$(docker run -d --restart unless-stopped yas-local:dev python -c 'import sys; sys.exit(1)')
+sleep 12
+docker inspect "$cid" --format 'RestartCount={{.RestartCount}} running={{.State.Running}}'
+docker rm -f "$cid"    # expect RestartCount climbing, running=true
+
+# (c) Is the policy actually set on the service?
+docker compose -f docker-compose.yml config --format json | jq -r '.services.yas.restart'
 ```
 
-Expected: the container exits and is restarted by `restart: unless-stopped`.
+Together: worker dies -> process exits non-zero -> Docker restarts the container.
 
 - [ ] **Step 4: Rehearse the orphan hazard**
 
-This is the one users will hit. Verify both the failure and the fix.
+Write the old two-service file to the **repo root**, not a temp dir — compose
+resolves `env_file: .env` relative to the compose file's own directory, so a
+file in /tmp silently fails to start with "env file not found".
 
 ```bash
-git stash                                    # back to the two-container layout
-docker compose up -d                         # old yas-api + yas-worker
-git stash pop                                # new single-service layout
-docker compose up -d                         # WITHOUT --remove-orphans
-docker ps --format '{{.Names}}' | grep yas   # expect THREE containers — the hazard
-docker compose up -d --remove-orphans
-docker ps --format '{{.Names}}' | grep yas   # expect ONE
-docker compose down -v
+git show main:docker-compose.yml > ./.tmp-old-compose.yml
+P=yasorphan
+docker compose -p $P -f ./.tmp-old-compose.yml up -d          # old pair
+docker compose -p $P -f docker-compose.yml up -d              # WITHOUT the flag
+docker ps --filter "label=com.docker.compose.project=$P" --format '{{.Names}}'
+docker compose -p $P -f docker-compose.yml up -d --remove-orphans
+docker ps --filter "label=com.docker.compose.project=$P" --format '{{.Names}}'
+docker compose -p $P -f docker-compose.yml down -v && rm -f ./.tmp-old-compose.yml
 ```
 
-If the middle step does not show three containers, the README callout is describing a hazard that does not exist — re-check before shipping the warning.
+Observed (verified 2026-08-11), and **milder than first assumed**: without the
+flag compose prints a `Found orphan containers` warning and the new container
+fails to start with `Bind for 0.0.0.0:8080 failed: port is already allocated`,
+because the old `yas-api` still holds the port. The result is the old pair
+still running and a failed deploy — *not* three processes writing one SQLite
+file. It fails loud and safe. With the flag, both old containers are removed
+and exactly one remains.
+
+The port collision is what provides the protection, so it does not apply if a
+deployment publishes the API on a different port than the old stack did. Use
+the flag regardless.
 
 - [ ] **Step 5: Verify the split layout boots**
 
@@ -601,6 +634,48 @@ docker compose -f docker-compose.split.yml down -v
 Do not use auto-close keywords (`Closes #N`) — issue #1 is the Renovate dependency dashboard. Follow the repo PR SOP: open, wait for the Sourcery review, address actionable feedback, then enable auto-merge.
 
 ---
+
+## Production compose is separately managed — operator action required
+
+The `docker-compose.yml` in this repo is the reference layout published for
+self-hosters (it is what the README Quickstart drives). The maintainer's own
+production deployment uses a **separately managed compose file that this plan
+cannot touch**. Tasks 2–4 therefore need a mirrored manual change there.
+
+**Sequencing constraint — image first, compose second.** `all` mode exists in
+the *current* published image but without the `_supervise` fix from Task 1.
+Switching production to `all` before the new image is published reintroduces
+exactly the failure this change prevents: a worker dying silently behind a
+healthy-looking API, visible only as `/readyz` `heartbeat_fresh: false`. Pull
+the post-merge image (ideally pinned as `:sha-<short>`) *before* changing the
+compose.
+
+**The production change:** replace the two services with the single `yas`
+service from Task 2, keeping the existing data path or named volume. Remove
+the `x-image` anchor, `yas-worker`'s `healthcheck: disable: true`, `yas-api`'s
+`healthcheck:` block, and `depends_on`.
+
+**Deploy with `--remove-orphans`:**
+
+```bash
+docker compose pull
+docker compose up -d --remove-orphans
+```
+
+Without the flag, compose warns (`Found orphan containers`) and the new
+container fails to start with `Bind for 0.0.0.0:8080 failed: port is already
+allocated`, because the old `yas-api` still holds the port — you get the old
+pair still serving and a failed deploy, not silent concurrent writes. That
+protection depends on the port collision, so it does not hold if production
+publishes the API on a different port than the old stack did.
+
+**Keep the compose project name unchanged** if production uses a named volume,
+or the volume will not resolve and the container will come up against an empty
+database.
+
+**Rollback** is symmetric: restore the two-service file and run
+`docker compose up -d --remove-orphans` again. Both layouts read the same
+`/data/activities.db`.
 
 ## Out of scope
 

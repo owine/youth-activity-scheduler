@@ -23,15 +23,21 @@ background worker in one process.
 > **Upgrading from a release before the single-container layout?** Earlier
 > versions ran two containers, `yas-api` and `yas-worker`. Compose only
 > reconciles services it still knows about, so it will **not** remove them on
-> its own — you must pass `--remove-orphans` once. Skip it and the old pair
-> keeps running alongside the new `yas` container, leaving three processes
-> writing the same SQLite file.
+> its own — pass `--remove-orphans` once:
 >
 > ```bash
 > docker compose pull
 > docker compose up -d --remove-orphans
 > docker compose ps          # expect exactly one container
 > ```
+>
+> Forgetting the flag fails safe rather than silently: compose prints an
+> `orphan containers` warning, and the new container cannot start because the
+> old `yas-api` still holds port 8080 (`Bind for 0.0.0.0:8080 failed: port is
+> already allocated`). You are left with the old pair still serving and a
+> failed deploy — re-run with the flag. If you publish the API on a different
+> port than the old stack did, that collision won't occur and both would run
+> at once, so use the flag regardless.
 
 To upgrade later: `docker compose pull && docker compose up -d`.
 

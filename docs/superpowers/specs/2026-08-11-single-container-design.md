@@ -93,15 +93,21 @@ Because `docker-compose.macos.yml` will target the `yas` service after this chan
 
 ### Orphaned containers on upgrade — the sharpest edge
 
-An existing deployment is running `youth-activity-scheduler-yas-api-1` and `-yas-worker-1`. After pulling this change, `docker compose up -d` creates the new `yas` container **and leaves both old ones running**, because compose only reconciles services it still knows about. The result is three processes writing one SQLite file — precisely the concurrency the change was meant to reduce.
-
-The README upgrade instructions must therefore say:
+An existing deployment is running `youth-activity-scheduler-yas-api-1` and `-yas-worker-1`. After pulling this change, `docker compose up -d` creates the new `yas` container and leaves both old ones running, because compose only reconciles services it still knows about. The README upgrade instructions must therefore say:
 
 ```bash
 docker compose up -d --remove-orphans
 ```
 
-This needs to be prominent, not a footnote. The failure is silent, data-adjacent, and hits every existing user exactly once.
+**Rehearsed 2026-08-11, and the outcome is milder than first assumed.** The initial draft of this spec claimed the result was three processes writing one SQLite file. It is not. Compose prints an explicit `Found orphan containers` warning, and the new container then *fails to start*:
+
+```
+Bind for 0.0.0.0:8080 failed: port is already allocated
+```
+
+because the old `yas-api` still holds the port. The operator is left with the old pair still serving and a failed deploy — loud and safe, not silent and data-adjacent. Re-running with `--remove-orphans` removes both old containers and leaves exactly one.
+
+The port collision is what provides that protection, so it does not hold for a deployment that publishes the API on a different port than the old stack did. The flag is still the right instruction unconditionally; the warning text just should not claim data corruption.
 
 The compose project name is unchanged, so the `youth-activity-scheduler_yas-data` named volume and the `./data` bind mount both carry over untouched.
 
