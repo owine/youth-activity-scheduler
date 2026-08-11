@@ -17,6 +17,22 @@ docker compose up -d
 curl http://localhost:8080/healthz
 ```
 
+This runs a single container (`python -m yas all`) with the API and the
+background worker in one process.
+
+> **Upgrading from a release before the single-container layout?** Earlier
+> versions ran two containers, `yas-api` and `yas-worker`. Compose only
+> reconciles services it still knows about, so it will **not** remove them on
+> its own — you must pass `--remove-orphans` once. Skip it and the old pair
+> keeps running alongside the new `yas` container, leaving three processes
+> writing the same SQLite file.
+>
+> ```bash
+> docker compose pull
+> docker compose up -d --remove-orphans
+> docker compose ps          # expect exactly one container
+> ```
+
 To upgrade later: `docker compose pull && docker compose up -d`.
 
 Available image tags:
@@ -33,12 +49,27 @@ swap the `image:` for a local `build: .`:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
+### Separate api / worker containers (opt-in)
+
+If you want independent crash domains, or to scale the worker separately, use
+the split layout. It replaces the base file rather than layering onto it —
+compose can add and modify services but cannot remove one, so there's no way
+to switch off `yas` from an overlay:
+
+```bash
+docker compose -f docker-compose.split.yml up -d
+```
+
+It uses a named volume rather than `./data`, so it needs no macOS overlay.
+
 ### Local dev on macOS
 
 Docker Desktop's VirtioFS bind mount doesn't fully honor SQLite's locking
-primitives; you'll see sporadic `disk I/O error` under concurrent api ↔ worker
-access. Real Linux deployments are unaffected. For local dev on macOS, use the
-overlay that switches `./data` to a Docker-managed named volume:
+primitives; you'll see sporadic `disk I/O error`. Real Linux deployments are
+unaffected. The single-container layout removes cross-process contention, but
+one process still holds a connection pool — several connections to the same
+file — so keep using the overlay that switches `./data` to a Docker-managed
+named volume:
 
 ```bash
 # pulls from GHCR
@@ -53,7 +84,7 @@ docker compose \
 
 # inspect the db (it's inside the named volume, not on the host)
 docker compose -f docker-compose.yml -f docker-compose.macos.yml \
-    exec yas-api sqlite3 /data/activities.db '.tables'
+    exec yas sqlite3 /data/activities.db '.tables'
 ```
 
 ## Quickstart (local)
@@ -289,7 +320,8 @@ Matches your OS light/dark mode by default. Click the sun/moon/monitor icon in t
 
 ```bash
 cd frontend && pnpm run build      # emits frontend/dist/
-docker compose build yas-api       # multi-stage build copies dist into /app/static
+# dev.yml supplies the `build:`; the base file only pulls from GHCR.
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build yas
 ```
 
 ### End-to-end tests

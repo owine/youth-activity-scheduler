@@ -48,24 +48,39 @@ pnpm exec playwright test         # e2e; needs a live API at PLAYWRIGHT_BASE_URL
 ### Running the app
 
 ```bash
-uv run python -m yas all      # api + worker in one process (dev)
+uv run python -m yas all      # api + worker in one process — what the image ships
 uv run python -m yas api      # FastAPI only
 uv run python -m yas worker   # background loops only
 uv run python -m yas migrate  # apply schema and exit
 
-docker compose up -d          # pulls ghcr.io/owine/youth-activity-scheduler:latest
+docker compose up -d          # one `yas` container; pulls ghcr.io/owine/…:latest
 ./scripts/e2e_phase5a.sh      # full docker e2e: build, seed, playwright, teardown
 ```
 
+The shipped compose runs **one container** in `all` mode. `api` and `worker` modes remain: CI's
+`e2e` job runs `python -m yas api` with `YAS_STATIC_DIR`, and `docker-compose.split.yml` uses
+both for the opt-in two-container layout. That split file is **standalone — used instead of
+`docker-compose.yml`, not layered onto it**, because compose can add and modify services but
+cannot remove one, so an overlay could not switch off `yas`.
+
 On macOS, layer in `-f docker-compose.macos.yml` — VirtioFS bind mounts break SQLite locking
-and produce sporadic `disk I/O error`; the overlay swaps `./data` for a named volume.
+and produce sporadic `disk I/O error`; the overlay swaps `./data` for a named volume. One
+container removes cross-*process* contention but SQLAlchemy still pools several connections to
+the same file, so the overlay stays until someone reproduces its absence.
 
 `docker-compose.yml` targets prod: it pins `image: ghcr.io/...:latest` with **no `build:`**. So
 any script that must exercise local source has to layer in `-f docker-compose.dev.yml` (last —
 it overrides `image:` with `build: .`). Omit it and `docker compose build` prints
 `No services to build` and exits 0, `up` pulls the published image, and the run silently
-validates GHCR instead of your working tree. `e2e_phase5a.sh` asserts a `build:` is present in
-the resolved config for exactly this reason.
+validates GHCR instead of your working tree. `scripts/lib.sh::assert_local_build` asserts a
+`build:` on each **named service** for exactly this reason — a whole-config check would pass on
+a phantom service that a stale override added, since compose adds services an override names
+but the base lacks rather than erroring.
+
+`scripts/smoke_phase2.sh` is the exception: it reads `data/activities.db` from the host via
+`sqlite3`, so it needs the base file's `./data` bind mount and cannot use `compose_cmd()` (which
+would layer in `macos.yml` on Darwin and swap that for a named volume). It consequently still
+runs against the published image.
 
 ## Architecture
 
@@ -79,6 +94,12 @@ container (`docker-compose.yml` has no migrate service). `alembic/env.py` takes 
 In `all` mode one `Fetcher`, one `AnthropicClient`, and one `NominatimClient` are constructed
 at startup and shared between the API and the worker. `api` mode builds its own LLM + geocoder
 because `/discover` and household geocoding need them.
+
+`all` mode runs uvicorn and the worker as siblings in `_supervise`'s `TaskGroup`, so **either
+one failing cancels the other and exits the process non-zero** — `restart: unless-stopped` then
+does what a per-container crash used to do. This is load-bearing now that both run in one
+container: a bare `create_task` would leave a dead worker unobserved behind a healthy-looking
+API, detectable only as `/readyz` reporting `heartbeat_fresh: false`.
 
 `worker/runner.py` runs every background loop as a task in one `asyncio.TaskGroup`: heartbeat,
 crawl scheduler, daily sweep, geocode enricher, alert delivery, digest, detector. Each is
