@@ -12,10 +12,10 @@ COMPOSE=$(compose_cmd docker-compose.smoke.yml)
 
 # Refuse to smoke a pulled image: `--build` is a silent no-op without a
 # `build:` section, so losing dev.yml would still "work" against GHCR.
-assert_local_build "$COMPOSE" yas-worker yas-api || exit 2
+assert_local_build "$COMPOSE" yas || exit 2
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d --build yas-worker yas-api
+$COMPOSE up -d --build yas
 sleep 10
 
 echo "--- configure household email via Mailpit SMTP ---"

@@ -22,7 +22,7 @@ compose_cmd() {
 
 # Refuse to run against a pulled image.
 #
-#   assert_local_build "$COMPOSE" yas-worker yas-api
+#   assert_local_build "$COMPOSE" yas
 #
 # docker-compose.yml targets prod: it pins `image: ghcr.io/...:latest` with no
 # `build:`. Scripts that must exercise local source layer in

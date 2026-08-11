@@ -14,8 +14,14 @@ if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTH
 fi
 
 rm -f data/activities.db data/activities.db-shm data/activities.db-wal
-# yas-worker and yas-api apply migrations themselves on startup.
-docker compose up -d yas-worker yas-api
+# yas applies migrations itself on startup.
+#
+# Deliberately plain `docker compose` with no -f chain: this script reads
+# data/activities.db from the HOST via sqlite3, so it needs the base file's
+# ./data bind mount. compose_cmd() would layer in docker-compose.macos.yml on
+# Darwin, which swaps ./data for a named volume and would leave those sqlite3
+# reads pointing at a file that never gets written.
+docker compose up -d yas
 sleep 10
 
 echo "Registering Lil Sluggers..."
