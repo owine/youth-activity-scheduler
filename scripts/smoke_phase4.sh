@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. "$(dirname "$0")/lib.sh"
 
 if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTHROPIC_API_KEY=sk-test-nonop$' .env; then
   echo "ERROR: .env must set YAS_ANTHROPIC_API_KEY to a real key." >&2
@@ -16,6 +17,10 @@ COMPOSE="$COMPOSE -f docker-compose.smoke.yml"
 # smokes the published image instead of the working tree. Goes last: it
 # overrides `image:` with a local `build: .`.
 COMPOSE="$COMPOSE -f docker-compose.dev.yml"
+
+# Refuse to smoke a pulled image: `--build` is a silent no-op without a
+# `build:` section, so losing dev.yml would still "work" against GHCR.
+assert_local_build $COMPOSE || exit 2
 
 $COMPOSE down 2>/dev/null || true
 $COMPOSE up -d --build yas-worker yas-api

@@ -15,7 +15,15 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build  # emits /build/dist with index.html + assets/
 
-# --- Stage 2: Python backend ---
+# --- Stage 2: uv, for build-time use only ---
+# Named stage rather than a repeated inline image ref: the digest lives in one
+# place, and Renovate's dockerfile manager tracks plain `FROM` (multi-stage
+# included). An ARG would also deduplicate but `RUN --mount=from=${VAR}` is not
+# a documented Renovate case, and a silently stale pin is worse than a repeat.
+# Nothing COPYs from this stage, so it never reaches the final image.
+FROM ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc AS uv
+
+# --- Stage 3: Python backend ---
 FROM python:3.14.7-slim@sha256:83c1cebb322d099ac9e3a3a532ba74b0146d702838b25e4c75c02fa81ffeb910 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -37,7 +45,7 @@ WORKDIR /app
 # is usable during the RUN and absent from the committed layer. Nothing at
 # runtime invokes uv — CMD is `python -m yas all`.
 COPY pyproject.toml uv.lock README.md ./
-RUN --mount=type=bind,from=ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc,source=/uv,target=/usr/local/bin/uv \
+RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-install-project
 
 # Playwright browser + OS deps. Two things matter here:
@@ -59,7 +67,7 @@ RUN playwright install --with-deps --only-shell chromium
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src
-RUN --mount=type=bind,from=ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc,source=/uv,target=/usr/local/bin/uv \
+RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev
 
 RUN mkdir -p /data

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. "$(dirname "$0")/lib.sh"
 
 if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null; then
   echo "ERROR: .env must set YAS_ANTHROPIC_API_KEY" >&2; exit 2
@@ -15,12 +16,8 @@ COMPOSE="docker compose -f docker-compose.yml"
 # `build: .`. It goes last because it overrides `image:` from the base file.
 COMPOSE="$COMPOSE -f docker-compose.dev.yml"
 
-# Regression guard for exactly that failure mode: if the compose chain ever
-# loses its build stanza again, stop instead of testing a pulled image.
-if ! $COMPOSE config | grep -q '^ *build:'; then
-  echo "ERROR: no 'build:' in the compose chain — refusing to e2e a pulled image" >&2
-  exit 2
-fi
+# Regression guard for exactly that failure mode.
+assert_local_build $COMPOSE || exit 2
 
 $COMPOSE down -v 2>/dev/null || true
 $COMPOSE build yas-api yas-worker
