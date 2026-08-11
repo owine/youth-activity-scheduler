@@ -60,6 +60,13 @@ docker compose up -d          # pulls ghcr.io/owine/youth-activity-scheduler:lat
 On macOS, layer in `-f docker-compose.macos.yml` — VirtioFS bind mounts break SQLite locking
 and produce sporadic `disk I/O error`; the overlay swaps `./data` for a named volume.
 
+`docker-compose.yml` targets prod: it pins `image: ghcr.io/...:latest` with **no `build:`**. So
+any script that must exercise local source has to layer in `-f docker-compose.dev.yml` (last —
+it overrides `image:` with `build: .`). Omit it and `docker compose build` prints
+`No services to build` and exits 0, `up` pulls the published image, and the run silently
+validates GHCR instead of your working tree. `e2e_phase5a.sh` asserts a `build:` is present in
+the resolved config for exactly this reason.
+
 ## Architecture
 
 ### Process model

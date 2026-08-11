@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. "$(dirname "$0")/lib.sh"
 
 if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTHROPIC_API_KEY=sk-test-nonop$' .env; then
   echo "ERROR: .env must set YAS_ANTHROPIC_API_KEY to a real key." >&2
   exit 2
 fi
 
-COMPOSE="docker compose -f docker-compose.yml"
-if [ "$(uname)" = "Darwin" ]; then
-  COMPOSE="$COMPOSE -f docker-compose.macos.yml"
-fi
-COMPOSE="$COMPOSE -f docker-compose.smoke.yml"
+COMPOSE=$(compose_cmd docker-compose.smoke.yml)
+
+# Refuse to smoke a pulled image: `--build` is a silent no-op without a
+# `build:` section, so losing dev.yml would still "work" against GHCR.
+assert_local_build "$COMPOSE" yas-worker yas-api || exit 2
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d yas-worker yas-api
+$COMPOSE up -d --build yas-worker yas-api
 sleep 10
 
 echo "--- configure household email via Mailpit SMTP ---"

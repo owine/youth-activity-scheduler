@@ -15,7 +15,15 @@ RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 RUN pnpm run build  # emits /build/dist with index.html + assets/
 
-# --- Stage 2: Python backend ---
+# --- Stage 2: uv, for build-time use only ---
+# Named stage rather than a repeated inline image ref: the digest lives in one
+# place, and Renovate's dockerfile manager tracks plain `FROM` (multi-stage
+# included). An ARG would also deduplicate but `RUN --mount=from=${VAR}` is not
+# a documented Renovate case, and a silently stale pin is worse than a repeat.
+# Nothing COPYs from this stage, so it never reaches the final image.
+FROM ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc AS uv
+
+# --- Stage 3: Python backend ---
 FROM python:3.14.7-slim@sha256:83c1cebb322d099ac9e3a3a532ba74b0146d702838b25e4c75c02fa81ffeb910 AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,23 +36,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc /uv /usr/local/bin/uv
-
 WORKDIR /app
 
 # Layer 1: install deps only (not the project). README.md is required by
 # hatchling metadata validation even when the project itself isn't built here.
+#
+# uv arrives via a build-time bind mount rather than COPY, so the 46 MB binary
+# is usable during the RUN and absent from the committed layer. Nothing at
+# runtime invokes uv — CMD is `python -m yas all`.
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+# Playwright browser + OS deps. Two things matter here:
+#
+# 1. `--only-shell` installs just the Chromium headless shell, skipping the
+#    641 MB headed build. crawl/fetcher.py launches with headless=True and no
+#    channel=, which is exactly the case the headless shell serves.
+# 2. Bare `playwright`, NOT `uv run playwright`. `uv run` re-syncs the project
+#    environment first, and without --no-dev that reinstates the whole dev
+#    group (pytest, ruff, mypy, pre-commit — ~90 MB), silently undoing the
+#    --no-dev on the syncs around it. PATH already prefers /app/.venv/bin.
+#
+# Placed above `COPY src` on purpose: this layer depends only on the playwright
+# version in uv.lock, so source-only commits reuse it instead of rebuilding
+# ~1.1 GB on both matrix legs.
+RUN playwright install --with-deps --only-shell chromium
 
 # Layer 2: copy source and install the project itself.
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src
-RUN uv sync --frozen --no-dev
-
-# Playwright browser + OS deps. Done after uv sync so `playwright` is on PATH.
-RUN uv run playwright install --with-deps chromium
+RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
+    uv sync --frozen --no-dev
 
 RUN mkdir -p /data
 
