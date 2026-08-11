@@ -12,9 +12,13 @@ if [ "$(uname)" = "Darwin" ]; then
   COMPOSE="$COMPOSE -f docker-compose.macos.yml"
 fi
 COMPOSE="$COMPOSE -f docker-compose.smoke.yml"
+# Without dev.yml the base file's `image: ghcr.io/...:latest` wins and this
+# smokes the published image instead of the working tree. Goes last: it
+# overrides `image:` with a local `build: .`.
+COMPOSE="$COMPOSE -f docker-compose.dev.yml"
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d yas-worker yas-api
+$COMPOSE up -d --build yas-worker yas-api
 sleep 10
 
 echo "--- configure household email via Mailpit SMTP ---"

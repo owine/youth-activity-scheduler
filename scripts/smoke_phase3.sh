@@ -7,13 +7,17 @@ if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTH
   exit 2
 fi
 
-COMPOSE="docker compose"
+COMPOSE="docker compose -f docker-compose.yml"
 if [ "$(uname)" = "Darwin" ]; then
-  COMPOSE="$COMPOSE -f docker-compose.yml -f docker-compose.macos.yml"
+  COMPOSE="$COMPOSE -f docker-compose.macos.yml"
 fi
+# Without dev.yml the base file's `image: ghcr.io/...:latest` wins and this
+# smokes the published image instead of the working tree. Goes last: it
+# overrides `image:` with a local `build: .`.
+COMPOSE="$COMPOSE -f docker-compose.dev.yml"
 
 $COMPOSE down 2>/dev/null || true
-$COMPOSE up -d yas-worker yas-api
+$COMPOSE up -d --build yas-worker yas-api
 sleep 10
 
 echo "--- set home location (geocoded immediately) ---"
