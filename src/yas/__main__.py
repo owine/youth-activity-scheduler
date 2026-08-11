@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections.abc import Coroutine
+from typing import Any
 
 import uvicorn
 
@@ -25,7 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-async def _supervise(server_coro, worker_coro) -> None:  # type: ignore[no-untyped-def]
+async def _supervise(
+    server_coro: Coroutine[Any, Any, Any],
+    worker_coro: Coroutine[Any, Any, Any],
+) -> None:
     """Run the API server and the worker as siblings; either dying kills both.
 
     In the two-container layout a worker crash exited its container and the
