@@ -8,18 +8,11 @@ if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null || grep -q '^YAS_ANTH
   exit 2
 fi
 
-COMPOSE="docker compose -f docker-compose.yml"
-if [ "$(uname)" = "Darwin" ]; then
-  COMPOSE="$COMPOSE -f docker-compose.macos.yml"
-fi
-# Without dev.yml the base file's `image: ghcr.io/...:latest` wins and this
-# smokes the published image instead of the working tree. Goes last: it
-# overrides `image:` with a local `build: .`.
-COMPOSE="$COMPOSE -f docker-compose.dev.yml"
+COMPOSE=$(compose_cmd)
 
 # Refuse to smoke a pulled image: `--build` is a silent no-op without a
 # `build:` section, so losing dev.yml would still "work" against GHCR.
-assert_local_build $COMPOSE || exit 2
+assert_local_build "$COMPOSE" yas-worker yas-api || exit 2
 
 $COMPOSE down 2>/dev/null || true
 $COMPOSE up -d --build yas-worker yas-api

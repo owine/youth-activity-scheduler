@@ -7,17 +7,10 @@ if ! grep -q '^YAS_ANTHROPIC_API_KEY=sk-' .env 2>/dev/null; then
   echo "ERROR: .env must set YAS_ANTHROPIC_API_KEY" >&2; exit 2
 fi
 
-COMPOSE="docker compose -f docker-compose.yml"
-[ "$(uname)" = "Darwin" ] && COMPOSE="$COMPOSE -f docker-compose.macos.yml"
-# docker-compose.yml pins `image: ghcr.io/...:latest` with no `build:`, so
-# without this override `$COMPOSE build` below is a silent no-op ("No services
-# to build") and `up` pulls the published image — the suite would then validate
-# whatever is on GHCR rather than the working tree, and pass. dev.yml swaps in
-# `build: .`. It goes last because it overrides `image:` from the base file.
-COMPOSE="$COMPOSE -f docker-compose.dev.yml"
+COMPOSE=$(compose_cmd)
 
 # Regression guard for exactly that failure mode.
-assert_local_build $COMPOSE || exit 2
+assert_local_build "$COMPOSE" yas-worker yas-api || exit 2
 
 $COMPOSE down -v 2>/dev/null || true
 $COMPOSE build yas-api yas-worker
