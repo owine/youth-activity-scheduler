@@ -21,7 +21,7 @@ RUN pnpm run build  # emits /build/dist with index.html + assets/
 # included). An ARG would also deduplicate but `RUN --mount=from=${VAR}` is not
 # a documented Renovate case, and a silently stale pin is worse than a repeat.
 # Nothing COPYs from this stage, so it never reaches the final image.
-FROM ghcr.io/astral-sh/uv:0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc AS uv
+FROM ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 AS uv
 
 # --- Stage 3: Python backend ---
 FROM python:3.14.7-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4 AS base
