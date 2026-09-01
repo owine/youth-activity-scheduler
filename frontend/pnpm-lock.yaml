@@ -54,8 +54,8 @@ importers:
         specifier: 1.4.0
         version: 1.4.0
       zod:
-        specifier: 4.5.1
-        version: 4.5.1
+        specifier: 4.5.2
+        version: 4.5.2
     devDependencies:
       '@eslint/js':
         specifier: 10.0.1
@@ -124,8 +124,8 @@ importers:
         specifier: 17.11.0
         version: 17.11.0
       happy-dom:
-        specifier: 20.11.13
-        version: 20.11.13
+        specifier: 20.11.15
+        version: 20.11.15
       msw:
         specifier: 2.15.0
         version: 2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2)
@@ -146,7 +146,7 @@ importers:
         version: 8.2.2(@types/node@24.13.3)(jiti@2.7.0)
       vitest:
         specifier: 4.1.11
-        version: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.13)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
+        version: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.15)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
 
 packages:
 
@@ -2090,8 +2090,8 @@ packages:
     resolution: {integrity: sha512-Chq1s4CY7jmh8gO2qvLIJyfCDIN+EHLFW/9iShnp1z8FjBQMoodWP1kDC36VAMXXIvAjj4ARa7ntfAV2BrjsbA==}
     engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
 
-  happy-dom@20.11.13:
-    resolution: {integrity: sha512-UUGd67JqTs0BaH4UbTaq8jCxdtNoYjvbmZM5iwgQKK60tLad0p2uPc48WcVTj1MxlIP43z48WahJcViKbxnprQ==}
+  happy-dom@20.11.15:
+    resolution: {integrity: sha512-bj2gQIKzOYB6GAAJ/jrN/IFHQe79MhEOiMAspRRWiKebRoegvGDv2B6eUt8KiZMTEDvx6ri0fAF7Xh/umAUUZA==}
     engines: {node: '>=20.0.0'}
 
   headers-polyfill@5.0.1:
@@ -2970,8 +2970,8 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
-  zod@4.5.1:
-    resolution: {integrity: sha512-P3GqeAEOEDqKvafVGLezbg+39YW/ze4xrD4qdS0adOY8eoI3zfjv1PQM4UwQzgT8mZKXEbqtVt8K+ZKGqkMFKg==}
+  zod@4.5.2:
+    resolution: {integrity: sha512-XkYXCol10+ba/6F/cueWV+TezUeOqXW0hdeJt5CdXjTYeAgAQg5N03RQdJ80mhfFE72+pblvYMW4wy2Qp4Qbrg==}
 
 snapshots:
 
@@ -4197,7 +4197,7 @@ snapshots:
       jiti: 2.7.0
       magic-string: 0.30.21
       prettier: 3.9.6
-      zod: 4.5.1
+      zod: 4.5.2
     transitivePeerDependencies:
       - supports-color
 
@@ -4211,7 +4211,7 @@ snapshots:
       '@tanstack/router-utils': 1.162.2
       chokidar: 5.0.0
       unplugin: 3.3.0(rolldown@1.2.6)(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
-      zod: 4.5.1
+      zod: 4.5.2
     optionalDependencies:
       '@tanstack/react-router': 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       vite: 8.2.2(@types/node@24.13.3)(jiti@2.7.0)
@@ -4283,7 +4283,7 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
     optionalDependencies:
-      vitest: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.13)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
+      vitest: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.15)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
@@ -4555,7 +4555,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vitest: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.13)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
+      vitest: 4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.15)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
 
   '@vitest/utils@4.1.11':
     dependencies:
@@ -4734,8 +4734,8 @@ snapshots:
       '@babel/parser': 7.29.8
       eslint: 10.9.1(jiti@2.7.0)
       hermes-parser: 0.25.1
-      zod: 4.5.1
-      zod-validation-error: 4.0.2(zod@4.5.1)
+      zod: 4.5.2
+      zod-validation-error: 4.0.2(zod@4.5.2)
     transitivePeerDependencies:
       - supports-color
 
@@ -4883,7 +4883,7 @@ snapshots:
 
   graphql@16.14.2: {}
 
-  happy-dom@20.11.13:
+  happy-dom@20.11.15:
     dependencies:
       '@types/node': 24.13.3
       '@types/whatwg-mimetype': 3.0.2
@@ -5576,7 +5576,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.13)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0)):
+  vitest@4.1.11(@types/node@24.13.3)(@vitest/ui@4.1.11)(happy-dom@20.11.15)(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(msw@2.15.0(@types/node@24.13.3)(@typescript/typescript6@6.0.2))(vite@8.2.2(@types/node@24.13.3)(jiti@2.7.0))
@@ -5601,7 +5601,7 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.13.3
       '@vitest/ui': 4.1.11(vitest@4.1.11)
-      happy-dom: 20.11.13
+      happy-dom: 20.11.15
     transitivePeerDependencies:
       - msw
 
@@ -5650,8 +5650,8 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod-validation-error@4.0.2(zod@4.5.1):
+  zod-validation-error@4.0.2(zod@4.5.2):
     dependencies:
-      zod: 4.5.1
+      zod: 4.5.2
 
-  zod@4.5.1: {}
+  zod@4.5.2: {}
