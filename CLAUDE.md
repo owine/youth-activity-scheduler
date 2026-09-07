@@ -216,9 +216,15 @@ specs live in `e2e/` and run against a real API.
   msw, vitest — gets a working JS API) while `@typescript/native` is aliased to real
   `typescript@7`, which puts the v7 `tsc` on the bin path for `build`. Don't collapse this until
   typescript-eslint supports TS 7.1+.
-- **pnpm 11 reads only auth and registry settings from `.npmrc`** — every other key is silently
+- **pnpm reads only auth and registry settings from `.npmrc`** — every other key is silently
   ignored, no warning. All project config belongs in `frontend/pnpm-workspace.yaml`; the repo
   has no `.npmrc` at all, and re-adding one for settings would be dead config.
+- **pnpm 12 rejects a `pnpm-workspace.yaml` key it does not recognize** with
+  `ERR_PNPM_UNRECOGNIZED_WORKSPACE_SETTINGS`, rather than ignoring it as pnpm 11 did. The failure
+  is what you want — a misspelled `saveExact` used to drop the policy in silence — but it means a
+  key that is valid only in a *newer* pnpm than the pinned one fails the whole command, since the
+  pin proves the setting cannot have been meant for another version. So a settings change and the
+  `packageManager` bump that makes it legal have to land together, not in either order.
 - Supply-chain hardening is split deliberately. The **release-age soak lives in the shared
   Renovate preset** (`github>owine/renovate-config`): 3 days minor/patch, 7 days majors, 0 for
   CVEs and lockfile maintenance. Do **not** add a second pnpm-side soak (`minimumReleaseAge`) —
@@ -228,9 +234,9 @@ specs live in `e2e/` and run against a real API.
   lockfile goes stale, and `pnpm install --frozen-lockfile` rejects the PR. The 0-day CVE tier
   fails hardest. **Exact pinning** is enforced by `saveExact` in `frontend/pnpm-workspace.yaml`
   plus the preset's `rangeStrategy: pin`; backend deps are pinned exactly too.
-- `frontend/pnpm-workspace.yaml` uses pnpm v11's single `allowBuilds` key, not the older
-  `onlyBuiltDependencies` family, and camelCase settings (`preferFrozenLockfile`, `saveExact`,
-  `audit.level`) rather than the kebab-case `.npmrc` spellings.
+- `frontend/pnpm-workspace.yaml` uses the single `allowBuilds` key introduced in pnpm 11, not the
+  older `onlyBuiltDependencies` family, and camelCase settings (`preferFrozenLockfile`,
+  `saveExact`, `audit.level`) rather than the kebab-case `.npmrc` spellings.
 - CI's `ci-pass` job is a stable-named aggregator over all other jobs and treats `skipped` as
   success — docs-only PRs skip `docker-build` via the `changes` paths-filter and must still merge.
 - The HTTP API is unauthenticated by design and intended for trusted networks only.

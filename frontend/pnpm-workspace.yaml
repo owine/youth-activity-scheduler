@@ -1,6 +1,11 @@
-# All pnpm project config lives here. pnpm 11 reads only auth and registry
-# settings from .npmrc and silently ignores everything else, so settings put
-# there are dead config — that is why this repo has no .npmrc.
+# All pnpm project config lives here. pnpm reads only auth and registry settings
+# from .npmrc and silently ignores everything else, so settings put there are
+# dead config — that is why this repo has no .npmrc.
+#
+# Every key below must be one pnpm 12 recognizes: since packageManager pins a
+# version this pnpm satisfies, an unknown key is a hard
+# ERR_PNPM_UNRECOGNIZED_WORKSPACE_SETTINGS, not a warning. Adding a setting from
+# a newer pnpm means bumping packageManager in the same commit.
 # https://pnpm.io/settings
 allowBuilds:
   msw: true
