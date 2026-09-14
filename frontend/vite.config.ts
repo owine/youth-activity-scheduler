@@ -7,7 +7,7 @@ import path from 'node:path';
 export default defineConfig({
   plugins: [TanStackRouterVite(), tailwindcss(), react()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@': path.resolve(import.meta.dirname, './src') },
   },
   server: {
     port: 5173,
