@@ -9,12 +9,6 @@
   ],
   "packageRules": [
     {
-      "description": "Hold ESLint at v8 — project uses legacy .eslintrc.cjs; v9+ requires flat config migration",
-      "matchPackageNames": ["eslint"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
       "description": "Anthropic SDK — review every bump, do not bundle with the non-major automerge group",
       "matchPackageNames": ["anthropic"],
       "groupName": "anthropic-sdk",
