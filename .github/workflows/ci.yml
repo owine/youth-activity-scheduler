@@ -9,7 +9,7 @@ jobs:
   # On push-to-main we still build unconditionally — every published
   # image gets multi-arch verification.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       image: ${{ steps.filter.outputs.image }}
     steps:
@@ -38,7 +38,7 @@ jobs:
               - '.github/workflows/ci.yml'
 
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       YAS_ANTHROPIC_API_KEY: sk-test-nonop
       YAS_DATABASE_URL: sqlite+aiosqlite:///data/activities.db
@@ -65,7 +65,7 @@ jobs:
         run: uv run pytest -v
 
   frontend-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -92,7 +92,7 @@ jobs:
         run: pnpm run test
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       YAS_ANTHROPIC_API_KEY: sk-test-nonop
       YAS_DATABASE_URL: sqlite+aiosqlite:///data/activities.db
@@ -280,7 +280,7 @@ jobs:
     # HEAD. See PR #16 description (or the docs/) for the full sketch.
     needs: docker-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -370,7 +370,7 @@ jobs:
   ci-pass:
     needs: [changes, check, frontend-check, e2e, docker-build]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: All required jobs passed or were appropriately skipped
         env:
