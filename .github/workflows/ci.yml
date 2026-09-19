@@ -187,14 +187,19 @@ jobs:
     if: github.event_name == 'push' || needs.changes.outputs.image == 'true'
     strategy:
       fail-fast: false
-      # These runner labels are INVISIBLE to Renovate. Its github-actions
-      # manager extracts runner images from literal `runs-on:` values only;
-      # `runner:` here is an arbitrary matrix key it cannot know feeds the
-      # `runs-on: ${{ matrix.runner }}` below. Confirmed in owine/doc-scanner#209.
-      # So a Renovate runner bump will migrate every other job and silently
-      # leave these two behind — a split-brain build that stays GREEN, since
-      # both images work and nothing flags the mismatch. Bump them by hand in
-      # the same PR, then verify with `grep -rn ubuntu-<old> .github/`.
+      # `runner:` is an arbitrary matrix key feeding `runs-on:` below, so
+      # Renovate's github-actions manager — which reads literal `runs-on:`
+      # values only — cannot see these two labels natively (doc-scanner#209).
+      # The shared preset covers them with a `github-runners` customManager
+      # (owine/renovate-config#103), keyed to the same capture shape as the
+      # built-in manager so these share a branch with the literal `runs-on:`
+      # deps and both halves land in ONE PR. Before that, a runner bump
+      # migrated every other job and left these behind — a split-brain build
+      # that stayed GREEN, since both images work.
+      # Keep the suffix on the label: `26.04-arm` is a distinct
+      # github-runners version, not `26.04` with decoration.
+      # If a bump ever arrives touching only the other jobs, the preset
+      # regressed — hand-edit here, then `grep -rn ubuntu-<old> .github/`.
       matrix:
         include:
           - platform: linux/amd64
