@@ -9,7 +9,7 @@ jobs:
   # On push-to-main we still build unconditionally — every published
   # image gets multi-arch verification.
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       image: ${{ steps.filter.outputs.image }}
     steps:
@@ -38,7 +38,7 @@ jobs:
               - '.github/workflows/ci.yml'
 
   check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       YAS_ANTHROPIC_API_KEY: sk-test-nonop
       YAS_DATABASE_URL: sqlite+aiosqlite:///data/activities.db
@@ -65,7 +65,7 @@ jobs:
         run: uv run pytest -v
 
   frontend-check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: frontend
@@ -92,7 +92,7 @@ jobs:
         run: pnpm run test
 
   e2e:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     env:
       YAS_ANTHROPIC_API_KEY: sk-test-nonop
       YAS_DATABASE_URL: sqlite+aiosqlite:///data/activities.db
@@ -187,13 +187,21 @@ jobs:
     if: github.event_name == 'push' || needs.changes.outputs.image == 'true'
     strategy:
       fail-fast: false
+      # These runner labels are INVISIBLE to Renovate. Its github-actions
+      # manager extracts runner images from literal `runs-on:` values only;
+      # `runner:` here is an arbitrary matrix key it cannot know feeds the
+      # `runs-on: ${{ matrix.runner }}` below. Confirmed in owine/doc-scanner#209.
+      # So a Renovate runner bump will migrate every other job and silently
+      # leave these two behind — a split-brain build that stays GREEN, since
+      # both images work and nothing flags the mismatch. Bump them by hand in
+      # the same PR, then verify with `grep -rn ubuntu-<old> .github/`.
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
             arch: amd64
           - platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -280,7 +288,7 @@ jobs:
     # HEAD. See PR #16 description (or the docs/) for the full sketch.
     needs: docker-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
@@ -359,7 +367,7 @@ jobs:
 
   # Stable-named aggregator so the branch ruleset can require a single
   # `ci-pass` check regardless of the matrix dimensions (the per-axis
-  # `docker-build (linux/amd64, ubuntu-24.04, amd64)` names disappear
+  # `docker-build (linux/amd64, ubuntu-26.04, amd64)` names disappear
   # whenever a runner image rotates, and a job-level `if:` on the matrix
   # parent means the axis check names are never created at all — leaving
   # docs-only PRs permanently BLOCKED with "expected check not reported").
@@ -370,7 +378,7 @@ jobs:
   ci-pass:
     needs: [changes, check, frontend-check, e2e, docker-build]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: All required jobs passed or were appropriately skipped
         env:
