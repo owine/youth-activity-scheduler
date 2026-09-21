@@ -71,17 +71,11 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
         with:
-          package-json-file: frontend/package.json
-          install: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version-file: frontend/.nvmrc
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
+          working-directory: frontend
+          cache: true
+          require-lockfile: true
       - name: Typecheck
         run: pnpm run typecheck
       - name: Lint
@@ -101,22 +95,15 @@ jobs:
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           enable-cache: true
-      - uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+      - uses: pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024 # v3.0.0
         with:
-          package-json-file: frontend/package.json
-          install: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version-file: frontend/.nvmrc
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          working-directory: frontend
+          cache: true
+          require-lockfile: true
       - name: Set up Python
         run: uv python install 3.14
       - name: Install backend deps
         run: uv sync --all-extras --dev
-      - name: Install frontend deps
-        run: pnpm install --frozen-lockfile
-        working-directory: frontend
       - name: Build frontend
         run: pnpm run build
         working-directory: frontend
