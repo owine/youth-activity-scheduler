@@ -17,7 +17,7 @@ dependencies = [
   "jinja2==3.1.6",
   "python-multipart==0.0.32",
   "aiosqlite==0.22.1",
-  "selectolax==0.4.11",
+  "selectolax==0.4.12",
   "playwright==1.63.0",
   "aiosmtplib==5.1.3",
 ]
