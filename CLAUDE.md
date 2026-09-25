@@ -204,6 +204,12 @@ specs live in `e2e/` and run against a real API.
   `crawl/pipeline.py` around the registration-countdown check).
 - Logging is structlog with dotted event names (`pipeline.alerts_enqueued`, `offering.new`)
   and keyword context, never f-strings.
+- Error reporting to GlitchTip is **explicit**: structlog never reaches stdlib `logging`, so
+  `log.error` alone never reports. A failure that should page calls
+  `sentry_sdk.capture_exception`/`capture_message` (crawl sites add
+  `**crawl_scope(site, page)`); expected per-site failures (a 404) must not. The per-site
+  decision table and privacy settings live in `docs/observability.md`. Tests assert on
+  events via the `sentry_events` fixture.
 - Enums are `StrEnum` in `db/models/_types.py`; models are one class per file, re-exported
   through `db/models/__init__.py`.
 - Design docs go in `docs/superpowers/specs/`, implementation plans in
