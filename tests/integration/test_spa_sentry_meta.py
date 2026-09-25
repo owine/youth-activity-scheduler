@@ -28,6 +28,7 @@ def make_client(tmp_path, monkeypatch) -> ClientFactory:
     monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.delenv("SENTRY_BROWSER_DSN", raising=False)
     monkeypatch.delenv("YAS_GIT_SHA", raising=False)
+    monkeypatch.delenv("SENTRY_ENVIRONMENT", raising=False)
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text(INDEX)
@@ -65,6 +66,13 @@ async def test_browser_dsn_and_release_render_into_head(make_client):
     head = r.text.split("</head>")[0]
     assert f'<meta name="sentry-browser-dsn" content="{BROWSER_DSN}">' in head
     assert '<meta name="sentry-release" content="abc123">' in head
+    assert '<meta name="sentry-environment" content="production">' in head
+
+
+async def test_environment_matches_the_backend(make_client):
+    async with make_client(SENTRY_BROWSER_DSN=BROWSER_DSN, SENTRY_ENVIRONMENT="staging") as c:
+        r = await c.get("/")
+    assert '<meta name="sentry-environment" content="staging">' in r.text
 
 
 async def test_unknown_release_is_omitted(make_client):

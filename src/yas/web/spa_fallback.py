@@ -32,7 +32,10 @@ def _sentry_meta(settings: Settings) -> str:
     dsn = browser_sentry_dsn(settings.sentry_browser_dsn)
     if dsn is None:
         return ""
-    tags = [f'<meta name="sentry-browser-dsn" content="{html.escape(dsn)}">']
+    tags = [
+        f'<meta name="sentry-browser-dsn" content="{html.escape(dsn)}">',
+        f'<meta name="sentry-environment" content="{html.escape(settings.sentry_environment)}">',
+    ]
     if settings.git_sha != "unknown":
         tags.append(f'<meta name="sentry-release" content="{html.escape(settings.git_sha)}">')
     return "".join(tags)
