@@ -199,6 +199,13 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Source maps upload to GlitchTip only for images that get published.
+      # Keeping the SENTRY_* build args off PR builds also keeps them out of
+      # the frontend layer's cache key, so a PR build (no token, no debug IDs)
+      # can never be the cached layer a main build reuses — the secret itself
+      # is not part of the cache key. Unset repo vars/secret = upload skipped.
+      SENTRY_UPLOAD: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
@@ -248,6 +255,13 @@ jobs:
           # layer (which busts every commit anyway via the source COPY).
           build-args: |
             GIT_SHA=${{ github.sha }}
+            SENTRY_URL=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_URL || '' }}
+            SENTRY_ORG=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_ORG || '' }}
+            SENTRY_PROJECT=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_PROJECT || '' }}
+          # A buildkit secret, never a build arg: build args persist in image
+          # history. Mounted only for the frontend build RUN (see Dockerfile).
+          secrets: |
+            sentry_auth_token=${{ env.SENTRY_UPLOAD == 'true' && secrets.SENTRY_AUTH_TOKEN || '' }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
