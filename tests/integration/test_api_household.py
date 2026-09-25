@@ -177,3 +177,79 @@ async def test_patch_home_address_geocoder_unavailable_is_retryable(client, sent
         assert row.result == "unavailable"
         loc = (await s.execute(select(Location))).scalar_one()
         assert loc.lat is None  # the enricher picks it up after the retry window
+
+
+async def _home(engine) -> Location:
+    async with session_scope(engine) as s:
+        hh = (await s.execute(select(HouseholdSettings))).scalar_one()
+        return (
+            await s.execute(select(Location).where(Location.id == hh.home_location_id))
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_resaving_unchanged_address_keeps_coords_during_outage(client):
+    """The settings form re-sends home_address on every save. An unrelated save must
+    not wipe home coordinates, or an outage at that moment leaves the distance gate
+    at distance_unknown (passing everything) until the enricher retries."""
+    c, engine, geocoder = client
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+    assert geocoder.call_count == 1
+
+    geocoder.unavailable.add("123 main st, chicago, il")
+    r = await c.patch(
+        "/api/household",
+        json={"home_address": "123 Main St, Chicago, IL", "digest_time": "08:00"},
+    )
+
+    assert r.status_code == 200
+    assert geocoder.call_count == 1  # not asked again
+    loc = await _home(engine)
+    assert (loc.lat, loc.lon) == (41.88, -87.63)
+
+
+@pytest.mark.asyncio
+async def test_resaving_reformatted_address_keeps_coords_and_new_text(client):
+    c, engine, geocoder = client
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+
+    await c.patch(
+        "/api/household",
+        json={"home_address": "123 main st chicago il", "home_location_name": "House"},
+    )
+
+    assert geocoder.call_count == 1
+    loc = await _home(engine)
+    assert loc.lat == 41.88
+    assert loc.address == "123 main st chicago il"
+    assert loc.name == "House"
+
+
+@pytest.mark.asyncio
+async def test_changing_address_regeocodes(client):
+    c, engine, geocoder = client
+    geocoder.fixtures["1 elm st, evanston, il"] = GeocodeResult(
+        lat=42.04, lon=-87.69, display_name="Evanston", provider="fake"
+    )
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+
+    await c.patch("/api/household", json={"home_address": "1 Elm St, Evanston, IL"})
+
+    assert geocoder.call_count == 2
+    loc = await _home(engine)
+    assert (loc.lat, loc.lon) == (42.04, -87.69)
+
+
+@pytest.mark.asyncio
+async def test_resaving_ungeocoded_address_tries_again(client):
+    """An explicit save is a fine moment to retry an address that has no coordinates."""
+    c, engine, geocoder = client
+    geocoder.unavailable.add("123 main st, chicago, il")
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+    assert (await _home(engine)).lat is None
+
+    geocoder.unavailable.clear()
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+
+    assert geocoder.call_count == 2
+    assert (await _home(engine)).lat == 41.88

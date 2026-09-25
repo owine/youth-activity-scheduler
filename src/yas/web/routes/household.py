@@ -171,14 +171,22 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
         loc_name = data.pop("home_location_name", None) or "Home"
         if address is not None:
             existing_id = hh.home_location_id
+            needs_geocode = True
             if existing_id is not None:
                 loc = (
                     await s.execute(select(Location).where(Location.id == existing_id))
                 ).scalar_one()
+                # The settings form re-sends home_address on every save, so an
+                # unchanged address must keep its coordinates. Wiping them
+                # during a geocoder outage would leave the distance gate
+                # passing everything until the enricher's retry.
+                same_address = normalize_name(address) == normalize_name(loc.address or "")
+                needs_geocode = not same_address or loc.lat is None
                 loc.name = loc_name
                 loc.address = address
-                loc.lat = None  # invalidate; will re-geocode
-                loc.lon = None
+                if needs_geocode:
+                    loc.lat = None  # invalidate; will re-geocode
+                    loc.lon = None
             else:
                 loc = Location(name=loc_name, address=address)
                 s.add(loc)
@@ -186,7 +194,7 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                 hh.home_location_id = loc.id
             # Immediate geocode attempt. On failure the Location keeps lat=None
             # and the enricher picks it up once enricher.retry_due allows.
-            if geocoder is not None:
+            if geocoder is not None and needs_geocode:
                 result = None
                 outcome = "not_found"
                 detail: str | None = None
