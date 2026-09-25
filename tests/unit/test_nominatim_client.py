@@ -78,3 +78,16 @@ async def test_rate_limit_serializes_concurrent_calls():
         assert elapsed >= 0.35
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_non_json_body_returns_none():
+    respx.get(NominatimClient.BASE_URL).mock(
+        return_value=httpx.Response(200, text="<html>maintenance</html>")
+    )
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        assert await client.geocode("Chicago") is None
+    finally:
+        await client.aclose()

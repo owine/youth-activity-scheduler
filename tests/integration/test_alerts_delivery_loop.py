@@ -791,3 +791,102 @@ async def test_immediate_alert_render_failure_marks_skipped(tmp_path):  # type: 
 
     assert email_notifier.records == [], "notifier must not be called on render failure"
     assert email_notifier.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Error reporting
+# ---------------------------------------------------------------------------
+
+
+def _by_fingerprint(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {e["fingerprint"][0]: e for e in events}
+
+
+@pytest.mark.asyncio
+async def test_permanent_failure_on_every_channel_reports_channel_and_lost_alert(  # type: ignore[no-untyped-def]
+    tmp_path, sentry_events
+):
+    """A broken channel config is one issue per channel; the dropped alert is its own."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
+        )
+        s.add(a)
+        await s.flush()
+
+        email_notifier = _email_notifier("email")
+        email_notifier.queue_permanent_failure("401 unauthorized")
+        groups = coalesce([a], window_s=600)
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    events = _by_fingerprint(sentry_events)
+    assert set(events) == {"delivery.permanent_failure", "delivery.all_channels_failed"}
+
+    channel = events["delivery.permanent_failure"]
+    assert channel["level"] == "warning"
+    assert channel["fingerprint"] == ["delivery.permanent_failure", "email"]
+    assert channel["tags"]["channel"] == "email"
+    assert channel["extra"]["detail"] == "401 unauthorized"
+
+    lost = events["delivery.all_channels_failed"]
+    assert lost["level"] == "error"
+    assert lost["fingerprint"] == ["delivery.all_channels_failed", AlertType.new_match.value]
+    assert lost["tags"]["alert_type"] == AlertType.new_match.value
+
+
+@pytest.mark.asyncio
+async def test_retry_exhaustion_reports_the_lost_alert(tmp_path, sentry_events):  # type: ignore[no-untyped-def]
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice", "_attempts": 3},
+        )
+        s.add(a)
+        await s.flush()
+
+        email_notifier = _email_notifier("email")
+        email_notifier.queue_transient_failure("timeout: ")
+        groups = coalesce([a], window_s=600)
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    [event] = sentry_events
+    assert event["level"] == "error"
+    assert event["fingerprint"] == ["delivery.gave_up", AlertType.new_match.value]
+    assert event["tags"]["alert_type"] == AlertType.new_match.value
+
+
+@pytest.mark.asyncio
+async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentry_events):  # type: ignore[no-untyped-def]
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            payload={"offering_id": off_id, "kid_name": "Alice"},
+        )
+        s.add(a)
+        await s.flush()
+
+        email_notifier = _email_notifier("email")
+        email_notifier.queue_transient_failure("timeout: ")
+        groups = coalesce([a], window_s=600)
+        await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
+
+    assert sentry_events == []

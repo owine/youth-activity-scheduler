@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import sentry_sdk
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,7 +184,11 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
             if geocoder is not None:
                 try:
                     result = await geocoder.geocode(address)
-                except Exception:
+                except Exception as exc:
+                    # The client already absorbs transport/HTTP/JSON trouble, so
+                    # a raise here is a bug. Tagged by id, not address: the
+                    # address is the household's home.
+                    sentry_sdk.capture_exception(exc, tags={"location_id": str(loc.id)})
                     result = None
                 addr_norm = normalize_name(address)
                 prior = (

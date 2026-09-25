@@ -41,7 +41,9 @@ async def fetch_sitemap_urls(base_url: str, *, http_client: httpx.AsyncClient) -
 async def _fetch(url: str, http_client: httpx.AsyncClient) -> bytes | None:
     try:
         r = await http_client.get(url, timeout=10.0)
-    except Exception:
+    except httpx.HTTPError, httpx.InvalidURL:
+        # No reachable sitemap is the common case. Anything else is a bug and
+        # propagates, so /discover's 500 reaches GlitchTip.
         return None
     if r.status_code != 200:
         return None

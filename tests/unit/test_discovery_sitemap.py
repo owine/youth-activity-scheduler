@@ -95,6 +95,10 @@ async def test_malformed_xml_returns_empty():
     respx.get("https://example.com/sitemap.xml").mock(
         return_value=httpx.Response(200, content="<garbage<<")
     )
+    # Unparseable sitemap.xml falls through to the index. This mock was missing
+    # from the start; a broad `except Exception` in _fetch swallowed respx's
+    # "not mocked" assertion and made the test pass anyway.
+    respx.get("https://example.com/sitemap_index.xml").mock(return_value=httpx.Response(404))
     async with httpx.AsyncClient() as http:
         urls = await fetch_sitemap_urls("https://example.com/", http_client=http)
     assert urls == []
@@ -108,3 +112,26 @@ async def test_transport_error_returns_empty():
     async with httpx.AsyncClient() as http:
         urls = await fetch_sitemap_urls("https://example.com/", http_client=http)
     assert urls == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_too_many_redirects_returns_empty():
+    """Any httpx failure means "no sitemap here", not just transport errors."""
+    respx.get("https://example.com/sitemap.xml").mock(side_effect=httpx.TooManyRedirects("loop"))
+    respx.get("https://example.com/sitemap_index.xml").mock(
+        side_effect=httpx.TooManyRedirects("loop")
+    )
+    async with httpx.AsyncClient() as http:
+        urls = await fetch_sitemap_urls("https://example.com/", http_client=http)
+    assert urls == []
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_non_http_errors_propagate():
+    """A bug must surface (as a 500 the FastAPI integration reports), not read as "no sitemap"."""
+    respx.get("https://example.com/sitemap.xml").mock(side_effect=RuntimeError("bug"))
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(RuntimeError, match="bug"):
+            await fetch_sitemap_urls("https://example.com/", http_client=http)

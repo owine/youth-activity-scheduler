@@ -6,6 +6,7 @@ import traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+import sentry_sdk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -23,6 +24,7 @@ from yas.db.models._types import CrawlStatus
 from yas.db.session import session_scope
 from yas.llm.client import ExtractionError, LLMClient
 from yas.logging import get_logger
+from yas.observability import crawl_scope
 
 log = get_logger("yas.crawl.pipeline")
 
@@ -60,6 +62,9 @@ async def crawl_page(
     except Exception as exc:
         tb = traceback.format_exc()
         log.error("pipeline.unexpected", error=str(exc), traceback=tb[:2000])
+        # Default (stack-based) grouping: a code bug hitting every site is one
+        # issue, with the site tag showing which ones.
+        sentry_sdk.capture_exception(exc, **crawl_scope(site, page))
         # _do_crawl applies backoff itself on every path it *returns* from, so
         # reaching here means next_check_at was never advanced. Without this the
         # page stays due and the scheduler retries it on every tick — a hot loop
@@ -77,6 +82,7 @@ async def crawl_page(
                 error=str(backoff_exc),
                 traceback=traceback.format_exc()[:2000],
             )
+            sentry_sdk.capture_exception(backoff_exc, **crawl_scope(site, page))
         result = CrawlResult(
             status=CrawlStatus.failed,
             pages_fetched=0,
@@ -143,6 +149,20 @@ async def _do_crawl(
             engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name
         )
     except ExtractionError as exc:
+        # The page fetched fine but can't be read into offerings — most often
+        # its markup changed. Grouped per site so each broken site is one issue.
+        log.warning(
+            "pipeline.extraction_failed",
+            site_id=site.id,
+            page_id=page.id,
+            detail=exc.detail[:500],
+        )
+        sentry_sdk.capture_exception(
+            exc,
+            level="warning",
+            fingerprint=["crawl.extraction_failed", str(site.id)],
+            **crawl_scope(site, page),
+        )
         await _apply_next_check(engine, page, site)
         return CrawlResult(
             status=CrawlStatus.failed,
@@ -237,6 +257,25 @@ async def _do_crawl(
     for oid in reconcile_result.withdrawn:
         log.info("offering.withdrawn", offering_id=oid, site_id=site.id)
     log.info("page.changed", page_id=page.id, site_id=site.id, new_hash=new_hash)
+
+    if not ex.offerings and reconcile_result.withdrawn:
+        # A markup change more often yields a valid *empty* extraction than an
+        # ExtractionError, and the reconcile above has just withdrawn everything
+        # the page listed. Nothing else distinguishes that from a program list
+        # that really emptied, so say so.
+        log.warning(
+            "pipeline.extraction_empty",
+            site_id=site.id,
+            page_id=page.id,
+            withdrawn_count=len(reconcile_result.withdrawn),
+        )
+        sentry_sdk.capture_message(
+            f"Page extracted no offerings after listing {len(reconcile_result.withdrawn)}",
+            level="warning",
+            fingerprint=["crawl.extraction_empty", str(site.id)],
+            extras={"withdrawn_count": len(reconcile_result.withdrawn)},
+            **crawl_scope(site, page),
+        )
 
     changes = (
         len(reconcile_result.new) + len(reconcile_result.updated) + len(reconcile_result.withdrawn)

@@ -75,3 +75,23 @@ async def test_enricher_records_error(tmp_path):
         assert len(rows) == 1
         assert rows[0].result == "error"
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enricher_reports_geocoder_errors(tmp_path, sentry_events):
+    """The client already absorbs transport/HTTP/JSON trouble, so a raise here is a bug.
+
+    The address is also stored as `error` and never retried, so without a report
+    the location silently never gets coordinates.
+    """
+    engine = await _setup(tmp_path)
+    async with session_scope(engine) as s:
+        s.add(Location(id=7, name="Bad", address="error-please"))
+    geocoder = FakeGeocoder(errors={"error-please"})
+    async with session_scope(engine) as s:
+        await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
+
+    [event] = sentry_events
+    assert event["exception"]["values"][-1]["type"] == "RuntimeError"
+    assert event["tags"]["location_id"] == "7"
+    await engine.dispose()

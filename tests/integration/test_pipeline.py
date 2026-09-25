@@ -229,3 +229,165 @@ async def test_crawl_page_survives_and_reports_a_failing_backoff_write(tmp_path)
     assert tb.rstrip().endswith("RuntimeError: BACKOFF_WRITE_FAILED")
     assert "During handling of the above exception" in tb
     await engine.dispose()
+
+
+# --- Error reporting ---------------------------------------------------------
+# Which crawl failures reach GlitchTip. Expected per-site trouble (a 404) must
+# not; failures that mean the page can no longer be read, or that the code is
+# broken, must — tagged by site so GlitchTip can filter and break down by it.
+
+
+async def _crawl(engine, fetcher, llm, site_id, page_id):
+    async with session_scope(engine) as s:
+        site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+    return await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+
+
+def _exception_type(event):
+    return event["exception"]["values"][-1]["type"]
+
+
+@pytest.mark.asyncio
+async def test_unexpected_crawl_failure_reports_an_event_tagged_with_the_site(
+    tmp_path, sentry_events
+):
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        raise RuntimeError("reconciler blew up")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            await _crawl(engine, fetcher, FakeLLMClient(on_call=_boom), site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    [event] = sentry_events
+    assert _exception_type(event) == "RuntimeError"
+    assert event["tags"]["site"] == "Test"
+    assert event["tags"]["site_id"] == str(site_id)
+    assert event["tags"]["page_id"] == str(page_id)
+    assert event["contexts"]["crawl"]["page_url"] == fx.url("/p")
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_404_does_not_report(tmp_path, sentry_events):
+    """One site's page going away is expected; the in-app crawl_failed alert covers it."""
+    engine = await _init_db(tmp_path)
+    async with fixture_site(pages={}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/gone"))
+        try:
+            result = await _crawl(engine, fetcher, FakeLLMClient(), site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    assert result.status == CrawlStatus.failed
+    assert sentry_events == []
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_extraction_error_reports_a_warning_grouped_per_site(tmp_path, sentry_events):
+    """The page could not be read into offerings — the markup-changed case."""
+    from yas.llm.client import ExtractionError
+
+    engine = await _init_db(tmp_path)
+
+    def _invalid(_html, _url, _site):
+        raise ExtractionError(raw="{}", detail="offerings: field required")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            await _crawl(engine, fetcher, FakeLLMClient(on_call=_invalid), site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    [event] = sentry_events
+    assert _exception_type(event) == "ExtractionError"
+    assert event["level"] == "warning"
+    assert event["tags"]["site_id"] == str(site_id)
+    # One GlitchTip issue per site, regardless of which page or detail message.
+    assert event["fingerprint"] == ["crawl.extraction_failed", str(site_id)]
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_page_that_suddenly_extracts_nothing_reports_a_warning(tmp_path, sentry_events):
+    """A markup change usually yields a *valid* empty extraction, not an error.
+
+    The reconciler then withdraws every offering on the page, which is otherwise
+    indistinguishable from "the program list really emptied".
+    """
+    engine = await _init_db(tmp_path)
+    offering = ExtractedOffering(name="Tots Baseball", program_type=ProgramType.multisport)
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            await _crawl(engine, fetcher, FakeLLMClient(default=[offering]), site_id, page_id)
+            assert sentry_events == []
+
+            fx.set_page("/p", "<html><body><div id=app></div></body></html>")
+            await _crawl(engine, fetcher, FakeLLMClient(default=[]), site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    [event] = sentry_events
+    assert event["level"] == "warning"
+    assert "no offerings" in event["message"]
+    assert event["tags"]["site_id"] == str(site_id)
+    assert event["fingerprint"] == ["crawl.extraction_empty", str(site_id)]
+    assert event["extra"]["withdrawn_count"] == 1
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_page_that_never_had_offerings_extracting_nothing_does_not_report(
+    tmp_path, sentry_events
+):
+    engine = await _init_db(tmp_path)
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            await _crawl(engine, fetcher, FakeLLMClient(default=[]), site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    assert sentry_events == []
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failing_backoff_write_reports_its_own_error(tmp_path, sentry_events):
+    from yas.crawl import pipeline as pipeline_mod
+
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        raise RuntimeError("ORIGINAL_CRAWL_ERROR")
+
+    async def _failing_backoff(*_args, **_kwargs):
+        raise OSError("BACKOFF_WRITE_FAILED")
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        orig = pipeline_mod._apply_failure
+        pipeline_mod._apply_failure = _failing_backoff
+        try:
+            await _crawl(engine, fetcher, FakeLLMClient(on_call=_boom), site_id, page_id)
+        finally:
+            pipeline_mod._apply_failure = orig
+            await fetcher.aclose()
+
+    assert sorted(_exception_type(e) for e in sentry_events) == ["OSError", "RuntimeError"]
+    assert all(e["tags"]["site_id"] == str(site_id) for e in sentry_events)
+    await engine.dispose()
