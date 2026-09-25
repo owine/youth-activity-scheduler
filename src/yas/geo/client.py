@@ -1,9 +1,10 @@
 """Geocoder protocol and Nominatim-backed client.
 
 Respects Nominatim's usage policy: 1 req/s max, identifying User-Agent.
-Rate-limit is internal (asyncio.Lock + monotonic timestamp). Failures
-(transport, HTTP, parse) return None and are reported separately by
-the enricher via geocode_attempts.
+Rate-limit is internal (asyncio.Lock + monotonic timestamp). `None` means
+Nominatim answered with no match (or rejected the query itself with a 4xx);
+failing to get an answer (transport, 429/403/408/5xx, parse) raises
+GeocoderUnavailable, which callers record as retryable.
 """
 
 from __future__ import annotations
@@ -24,14 +25,28 @@ class GeocodeResult:
     provider: str  # "nominatim"
 
 
+class GeocoderUnavailable(Exception):
+    """The geocoder couldn't be asked, or didn't answer usably: transport failure,
+    429/403/408/5xx, or a body that isn't a search result. Transient — retry
+    later. Distinct from `None`, which means the geocoder answered "no match"."""
+
+
 class Geocoder(Protocol):
-    async def geocode(self, address: str) -> GeocodeResult | None: ...
+    async def geocode(self, address: str) -> GeocodeResult | None:
+        """Return the best match, or None when the address has no match.
+
+        Raises GeocoderUnavailable when no answer could be obtained.
+        """
+        ...
 
 
 class NominatimClient:
     BASE_URL = "https://nominatim.openstreetmap.org/search"
     USER_AGENT = "yas/0.1 (+https://github.com/example/youth-activity-scheduler)"
     _MAX_INTERVAL_S = 10.0
+    # 4xx that say "not now" rather than "not this query": 403 is Nominatim's
+    # User-Agent/IP block, 408 a request timeout. 429 is handled separately.
+    _UNAVAILABLE_4XX = frozenset({403, 408})
 
     def __init__(
         self,
@@ -62,20 +77,28 @@ class NominatimClient:
         params: dict[str, Any] = {"q": address, "format": "json", "limit": 1}
         try:
             r = await self._http.get(self.BASE_URL, params=params)
-        except httpx.TransportError:
+        except httpx.TransportError as exc:
             if attempt == 0:
                 await asyncio.sleep(2.0)
                 return await self._do_geocode(address, attempt=1)
-            return None
+            raise GeocoderUnavailable(f"transport error: {type(exc).__name__}") from exc
+        except httpx.RequestError as exc:  # e.g. DecodingError: not transport, not retried
+            raise GeocoderUnavailable(f"request error: {type(exc).__name__}") from exc
         if r.status_code == 429:
             self._min_interval_s = min(self._min_interval_s * 2 or 1.0, self._MAX_INTERVAL_S)
-            return None
+            raise GeocoderUnavailable("rate limited (HTTP 429)")
+        if r.status_code in self._UNAVAILABLE_4XX or r.status_code >= 500:
+            raise GeocoderUnavailable(f"HTTP {r.status_code}")
         if r.status_code >= 400:
+            # Any other 4xx rejects this query itself (whitespace-only gets 400
+            # "Nothing to search for"), so asking again won't help.
             return None
         try:
             data = r.json()
-        except ValueError:  # JSONDecodeError and UnicodeDecodeError both subclass it
-            return None
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError both subclass it
+            raise GeocoderUnavailable("response body is not JSON") from exc
+        if not isinstance(data, list):
+            raise GeocoderUnavailable(f"expected a JSON list, got {type(data).__name__}")
         if not data:
             return None
         item = data[0]
@@ -86,8 +109,8 @@ class NominatimClient:
                 display_name=str(item.get("display_name", "")),
                 provider="nominatim",
             )
-        except KeyError, TypeError, ValueError:
-            return None
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise GeocoderUnavailable("malformed search result") from exc
 
     async def aclose(self) -> None:
         if self._owns_client:

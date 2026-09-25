@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from tests.fakes.geocoder import FakeGeocoder
 from yas.db.base import Base
-from yas.db.models import HouseholdSettings, Location
+from yas.db.models import GeocodeAttempt, HouseholdSettings, Location
 from yas.db.session import create_engine_for, session_scope
 from yas.geo.client import GeocodeResult
 from yas.web.app import create_app
@@ -87,7 +87,7 @@ async def test_patch_home_address_geocode_miss_still_saves(client):
         loc = (
             await s.execute(select(Location).where(Location.id == body["home_location_id"]))
         ).scalar_one()
-        assert loc.lat is None  # miss — enricher will retry never (negative-cached)
+        assert loc.lat is None  # miss — negative-cached; the enricher won't retry it
 
 
 @pytest.mark.asyncio
@@ -147,13 +147,33 @@ async def test_get_household_returns_null_address_when_unset(client):
 
 @pytest.mark.asyncio
 async def test_patch_home_address_reports_geocoder_errors(client, sentry_events):
-    c, _, geocoder = client
+    c, engine, geocoder = client
     geocoder.errors.add("error-please")
 
     r = await c.patch("/api/household", json={"home_address": "error-please"})
 
-    # The save still succeeds; the failure is recorded as not_found and never
-    # retried (#456), which is why it has to be reported.
+    # The save still succeeds; the failure is recorded as `error` (not a
+    # permanent not_found), and reported because a raise here is a bug.
     assert r.status_code == 200
     [event] = sentry_events
     assert event["exception"]["values"][-1]["type"] == "RuntimeError"
+    async with session_scope(engine) as s:
+        row = (await s.execute(select(GeocodeAttempt))).scalar_one()
+        assert row.result == "error"
+
+
+@pytest.mark.asyncio
+async def test_patch_home_address_geocoder_unavailable_is_retryable(client, sentry_events):
+    """An outage during save must not permanently negative-cache the home address (#456)."""
+    c, engine, geocoder = client
+    geocoder.unavailable.add("123 main st, chicago, il")
+
+    r = await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+
+    assert r.status_code == 200
+    assert sentry_events == []
+    async with session_scope(engine) as s:
+        row = (await s.execute(select(GeocodeAttempt))).scalar_one()
+        assert row.result == "unavailable"
+        loc = (await s.execute(select(Location))).scalar_one()
+        assert loc.lat is None  # the enricher picks it up after the retry window

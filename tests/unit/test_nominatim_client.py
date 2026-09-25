@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from yas.geo.client import GeocodeResult, NominatimClient
+from yas.geo.client import GeocodeResult, GeocoderUnavailable, NominatimClient
 
 _OK_PAYLOAD = [
     {"lat": "41.8781", "lon": "-87.6298", "display_name": "Chicago, IL, USA"},
@@ -39,14 +39,14 @@ async def test_empty_result_returns_none():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_transport_error_retries_once_then_returns_none():
+async def test_transport_error_retries_once_then_raises_unavailable():
     route = respx.get(NominatimClient.BASE_URL).mock(
         side_effect=[httpx.ConnectError("boom"), httpx.ConnectError("boom")],
     )
     client = NominatimClient(min_interval_s=0.0)
     try:
-        result = await client.geocode("Chicago")
-        assert result is None
+        with pytest.raises(GeocoderUnavailable):
+            await client.geocode("Chicago")
         assert route.call_count == 2  # one retry
     finally:
         await client.aclose()
@@ -54,11 +54,12 @@ async def test_transport_error_retries_once_then_returns_none():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_429_doubles_interval():
+async def test_429_doubles_interval_and_raises_unavailable():
     respx.get(NominatimClient.BASE_URL).mock(return_value=httpx.Response(429))
     client = NominatimClient(min_interval_s=0.1)
     try:
-        assert await client.geocode("anywhere") is None
+        with pytest.raises(GeocoderUnavailable, match="429"):
+            await client.geocode("anywhere")
         # session interval doubled (0.1 → 0.2), capped at 10s
         assert client._min_interval_s >= 0.2
     finally:
@@ -82,12 +83,77 @@ async def test_rate_limit_serializes_concurrent_calls():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_non_json_body_returns_none():
+async def test_non_json_body_raises_unavailable():
     respx.get(NominatimClient.BASE_URL).mock(
         return_value=httpx.Response(200, text="<html>maintenance</html>")
     )
     client = NominatimClient(min_interval_s=0.0)
     try:
-        assert await client.geocode("Chicago") is None
+        with pytest.raises(GeocoderUnavailable):
+            await client.geocode("Chicago")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [403, 408, 500, 503])
+@respx.mock
+async def test_http_error_raises_unavailable(status):
+    respx.get(NominatimClient.BASE_URL).mock(return_value=httpx.Response(status))
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        with pytest.raises(GeocoderUnavailable, match=str(status)):
+            await client.geocode("Chicago")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"error": "Unable to geocode"},  # an object, not a list
+        [{"display_name": "no coordinates"}],
+        [{"lat": "not-a-number", "lon": "-87.6"}],
+    ],
+)
+@respx.mock
+async def test_malformed_payload_raises_unavailable(payload):
+    """A 200 that doesn't look like a search result isn't a "no match" answer."""
+    respx.get(NominatimClient.BASE_URL).mock(return_value=httpx.Response(200, json=payload))
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        with pytest.raises(GeocoderUnavailable):
+            await client.geocode("Chicago")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 404, 422])
+@respx.mock
+async def test_client_error_for_the_query_returns_none(status):
+    """Nominatim rejects some queries outright (whitespace-only gets 400 "Nothing to
+    search for"). That's a definitive answer about this address, not an outage —
+    retrying it hourly would also cut every batch short."""
+    respx.get(NominatimClient.BASE_URL).mock(
+        return_value=httpx.Response(status, json={"error": {"code": status}})
+    )
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        assert await client.geocode(" ") is None
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_undecodable_response_raises_unavailable():
+    """httpx.DecodingError (e.g. a corrupt gzip body from a proxy) isn't a TransportError."""
+    respx.get(NominatimClient.BASE_URL).mock(side_effect=httpx.DecodingError("bad gzip"))
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        with pytest.raises(GeocoderUnavailable):
+            await client.geocode("Chicago")
     finally:
         await client.aclose()
