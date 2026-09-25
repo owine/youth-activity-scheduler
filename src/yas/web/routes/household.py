@@ -14,8 +14,12 @@ from yas.config import Settings
 from yas.crawl.normalize import normalize_name
 from yas.db.models import GeocodeAttempt, HouseholdSettings, Location
 from yas.db.session import session_scope
-from yas.geo.client import Geocoder
+from yas.geo.client import Geocoder, GeocoderUnavailable
+from yas.geo.enricher import record_geocode_attempt
+from yas.logging import get_logger
 from yas.web.routes.household_schemas import CredentialStatus, HouseholdOut, HouseholdPatch
+
+log = get_logger("yas.web.household")
 
 router = APIRouter(prefix="/api/household", tags=["household"])
 
@@ -180,43 +184,38 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                 s.add(loc)
                 await s.flush()
                 hh.home_location_id = loc.id
-            # Immediate geocode attempt.
+            # Immediate geocode attempt. On failure the Location keeps lat=None
+            # and the enricher picks it up once enricher.retry_due allows.
             if geocoder is not None:
+                result = None
+                outcome = "not_found"
+                detail: str | None = None
                 try:
                     result = await geocoder.geocode(address)
+                except GeocoderUnavailable as exc:
+                    log.warning(
+                        "household.geocode_unavailable", location_id=loc.id, reason=str(exc)
+                    )
+                    outcome, detail = "unavailable", str(exc)
                 except Exception as exc:
-                    # The client already absorbs transport/HTTP/JSON trouble, so
-                    # a raise here is a bug. Tagged by id, not address: the
-                    # address is the household's home.
+                    # The client turns transport/HTTP/parse trouble into
+                    # GeocoderUnavailable, so anything else is a bug. Tagged by
+                    # id, not address: the address is the household's home.
                     sentry_sdk.capture_exception(exc, tags={"location_id": str(loc.id)})
-                    result = None
+                    outcome, detail = "error", str(exc)
                 addr_norm = normalize_name(address)
                 prior = (
                     await s.execute(
                         select(GeocodeAttempt).where(GeocodeAttempt.address_norm == addr_norm)
                     )
                 ).scalar_one_or_none()
-                now = datetime.now(UTC)
                 if result is not None:
                     loc.lat = result.lat
                     loc.lon = result.lon
-                    if prior is None:
-                        s.add(GeocodeAttempt(address_norm=addr_norm, last_tried=now, result="ok"))
-                    else:
-                        prior.last_tried = now
-                        prior.result = "ok"
-                else:
-                    if prior is None:
-                        s.add(
-                            GeocodeAttempt(
-                                address_norm=addr_norm,
-                                last_tried=now,
-                                result="not_found",
-                            )
-                        )
-                    else:
-                        prior.last_tried = now
-                        prior.result = "not_found"
+                    outcome = "ok"
+                record_geocode_attempt(
+                    s, prior, addr_norm, outcome, now=datetime.now(UTC), detail=detail
+                )
 
         for key, value in data.items():
             setattr(hh, key, value)

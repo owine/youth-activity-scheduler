@@ -67,7 +67,8 @@ so each broken site becomes its own issue.
 | Crawl: `FetchError` (404, 5xx, transport) | no | | Expected per-site; backs off, and the third in a row sends the in-app `crawl_failed` alert |
 | Delivery: a channel fails permanently (bad token, SMTP auth) | yes | warning | one issue per channel |
 | Delivery: alert dropped after retries, or every channel failed | yes | error | one issue per alert type |
-| Geocoder raised (enricher or household save) | yes | error | stack trace, tagged `location_id` (never the address) |
+| Geocoder raised (enricher or household save) | yes | error | stack trace, tagged `location_id` (never the address). Recorded as `error` and retried daily, so a bug reports at most once per address per day |
+| `GeocoderUnavailable` (Nominatim 429, HTTP error, transport, non-JSON or malformed body) | no | | Expected outage; log warning, record `unavailable` and retry after an hour. The enricher stops that tick's batch |
 | Digest LLM summary failed (deterministic fallback used) | no | | Log warning; an Anthropic outage already shows up via crawl errors |
 | `/readyz` returning 503 | no | | Probes poll constantly; the 503 is the signal. A readiness check that *raises* is still reported. |
 | Unhandled API exception (500) | yes | error | FastAPI integration |

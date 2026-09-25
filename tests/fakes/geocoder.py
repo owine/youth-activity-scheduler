@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from yas.geo.client import GeocodeResult
+from yas.geo.client import GeocodeResult, GeocoderUnavailable
 
 
 @dataclass
@@ -12,6 +12,7 @@ class FakeGeocoder:
     fixtures: dict[str, GeocodeResult] = field(default_factory=dict)
     misses: set[str] = field(default_factory=set)
     errors: set[str] = field(default_factory=set)
+    unavailable: set[str] = field(default_factory=set)
     call_count: int = 0
 
     async def geocode(self, address: str) -> GeocodeResult | None:
@@ -19,6 +20,8 @@ class FakeGeocoder:
         key = address.lower().strip()
         if key in self.errors:
             raise RuntimeError(f"simulated geocode error for {address!r}")
+        if key in self.unavailable:
+            raise GeocoderUnavailable("simulated outage (HTTP 503)")
         if key in self.misses:
             return None
         return self.fixtures.get(key)
