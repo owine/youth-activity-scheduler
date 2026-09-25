@@ -50,3 +50,32 @@ def test_alembic_upgrade_creates_all_tables(tmp_path, monkeypatch):
     tables = {r[0] for r in rows}
     missing = EXPECTED_TABLES - tables
     assert not missing, f"missing tables after migration: {missing}"
+
+
+def test_upgrade_clears_not_found_geocodes_recorded_before_456(tmp_path, monkeypatch):
+    """Before #456's fix, outages were recorded as permanent not_found. They can't be
+    told apart from genuine misses, so the upgrade drops them all for one re-check;
+    genuine misses are simply recorded again."""
+    db_path = tmp_path / "mig.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    monkeypatch.setenv("YAS_DATABASE_URL", url)
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "0006_kid_max_drive_minutes")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "insert into geocode_attempts (address_norm, last_tried, result) values (?, ?, ?)",
+            [
+                ("outage victim", "2026-09-01 00:00:00", "not_found"),
+                ("geocoded", "2026-09-01 00:00:00", "ok"),
+                ("bug", "2026-09-01 00:00:00", "error"),
+            ],
+        )
+
+    command.upgrade(cfg, "head")
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("select address_norm, result from geocode_attempts").fetchall()
+    assert sorted(rows) == [("bug", "error"), ("geocoded", "ok")]

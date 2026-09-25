@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from tests.fakes.geocoder import FakeGeocoder
 from yas.db.base import Base
@@ -230,18 +230,92 @@ async def test_enricher_not_found_does_not_starve_batch(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enricher_handles_shared_address_in_one_batch(tmp_path):
-    """Two locations normalizing to one address share one GeocodeAttempt row."""
+@pytest.mark.parametrize(
+    ("script", "counter"),
+    [("misses", "not_found"), ("errors", "errored")],
+)
+async def test_enricher_handles_shared_address_in_one_batch(tmp_path, script, counter):
+    """Two locations normalizing to one address share one GeocodeAttempt row, and
+    the second is skipped rather than geocoded (or inserted) again."""
     engine = await _setup(tmp_path)
     async with session_scope(engine) as s:
         s.add(Location(id=1, name="A", address="Nowheresville, XX"))
         s.add(Location(id=2, name="B", address="nowheresville xx"))
-    geocoder = FakeGeocoder(misses={"nowheresville, xx", "nowheresville xx"})
+    geocoder = FakeGeocoder()
+    getattr(geocoder, script).update({"nowheresville, xx", "nowheresville xx"})
     async with session_scope(engine) as s:
         r = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
-    assert r.not_found + r.skipped == 2
+    assert getattr(r, counter) == 1
+    assert r.skipped == 1
+    assert geocoder.call_count == 1
     async with session_scope(engine) as s:
         assert len((await s.execute(select(GeocodeAttempt))).scalars().all()) == 1
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enricher_batch_bounds_geocoder_calls(tmp_path):
+    engine = await _setup(tmp_path)
+    async with session_scope(engine) as s:
+        for i in range(1, 6):
+            s.add(Location(id=i, name=f"L{i}", address=f"{i} Main St"))
+    geocoder = FakeGeocoder(fixtures={f"{i} main st": _CHICAGO for i in range(1, 6)})
+    async with session_scope(engine) as s:
+        r = await enrich_ungeocoded_locations(s, geocoder, batch_size=2)
+    assert r.updated == 2
+    assert geocoder.call_count == 2
+    async with session_scope(engine) as s:
+        rows = (await s.execute(select(GeocodeAttempt))).scalars().all()
+        assert sorted(row.address_norm for row in rows) == ["1 main st", "2 main st"]
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enricher_keeps_earlier_results_when_outage_stops_batch(tmp_path):
+    engine = await _setup(tmp_path)
+    async with session_scope(engine) as s:
+        s.add(Location(id=1, name="A", address="aaa"))
+        s.add(Location(id=2, name="B", address="bbb"))
+    geocoder = FakeGeocoder(fixtures={"aaa": _CHICAGO}, unavailable={"bbb"})
+    async with session_scope(engine) as s:
+        r = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
+    assert (r.updated, r.unavailable) == (1, 1)
+    async with session_scope(engine) as s:
+        loc = (await s.execute(select(Location).where(Location.id == 1))).scalar_one()
+        assert loc.lat == pytest.approx(41.88)
+        results = {
+            a.address_norm: a.result for a in (await s.execute(select(GeocodeAttempt))).scalars()
+        }
+        assert results == {"aaa": "ok", "bbb": "unavailable"}
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enricher_survives_more_addresses_than_sqlite_variables(tmp_path):
+    """Locations load without a LIMIT, so the attempt lookup must not bind one
+    variable per address in a single statement (SQLite caps it at 32766)."""
+    engine = await _setup(tmp_path)
+    n = 33_000
+    async with session_scope(engine) as s:
+        await s.execute(
+            insert(Location),
+            [{"id": i, "name": f"L{i}", "address": f"{i} nowhere"} for i in range(1, n + 1)],
+        )
+        await s.execute(
+            insert(GeocodeAttempt),
+            [
+                {
+                    "address_norm": f"{i} nowhere",
+                    "last_tried": datetime.now(UTC),
+                    "result": "not_found",
+                }
+                for i in range(1, n)
+            ],
+        )
+    geocoder = FakeGeocoder(fixtures={f"{n} nowhere": _CHICAGO})
+    async with session_scope(engine) as s:
+        r = await enrich_ungeocoded_locations(s, geocoder, batch_size=10)
+    assert (r.updated, r.skipped) == (1, n - 1)
     await engine.dispose()
 
 

@@ -40,6 +40,8 @@ RETRY_AFTER: dict[str, timedelta] = {
     "error": timedelta(days=1),
 }
 
+_LOOKUP_CHUNK = 500
+
 
 @dataclass(frozen=True)
 class EnrichResult:
@@ -117,16 +119,17 @@ async def enrich_ungeocoded_locations(
         .all()
     )
     addr_norms = {loc.id: normalize_name(loc.address or "") for loc in locations}
-    attempts: dict[str, GeocodeAttempt] = {
-        a.address_norm: a
+    # Chunked: one bound variable per address, and SQLite caps a statement at 32766.
+    attempts: dict[str, GeocodeAttempt] = {}
+    unique_norms = sorted(set(addr_norms.values()))
+    for i in range(0, len(unique_norms), _LOOKUP_CHUNK):
+        chunk = unique_norms[i : i + _LOOKUP_CHUNK]
         for a in (
             await session.execute(
-                select(GeocodeAttempt).where(
-                    GeocodeAttempt.address_norm.in_(set(addr_norms.values()))
-                )
+                select(GeocodeAttempt).where(GeocodeAttempt.address_norm.in_(chunk))
             )
-        ).scalars()
-    }
+        ).scalars():
+            attempts[a.address_norm] = a
 
     calls = 0
     for loc in locations:

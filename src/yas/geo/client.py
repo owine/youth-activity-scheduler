@@ -2,8 +2,9 @@
 
 Respects Nominatim's usage policy: 1 req/s max, identifying User-Agent.
 Rate-limit is internal (asyncio.Lock + monotonic timestamp). `None` means
-Nominatim answered with no match; failing to get an answer (transport, HTTP,
-parse) raises GeocoderUnavailable, which callers record as retryable.
+Nominatim answered with no match (or rejected the query itself with a 4xx);
+failing to get an answer (transport, 429/403/408/5xx, parse) raises
+GeocoderUnavailable, which callers record as retryable.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ class GeocodeResult:
 
 class GeocoderUnavailable(Exception):
     """The geocoder couldn't be asked, or didn't answer usably: transport failure,
-    429, any HTTP error, or a body that isn't a search result. Transient — retry
+    429/403/408/5xx, or a body that isn't a search result. Transient — retry
     later. Distinct from `None`, which means the geocoder answered "no match"."""
 
 
@@ -43,6 +44,9 @@ class NominatimClient:
     BASE_URL = "https://nominatim.openstreetmap.org/search"
     USER_AGENT = "yas/0.1 (+https://github.com/example/youth-activity-scheduler)"
     _MAX_INTERVAL_S = 10.0
+    # 4xx that say "not now" rather than "not this query": 403 is Nominatim's
+    # User-Agent/IP block, 408 a request timeout. 429 is handled separately.
+    _UNAVAILABLE_4XX = frozenset({403, 408})
 
     def __init__(
         self,
@@ -78,11 +82,17 @@ class NominatimClient:
                 await asyncio.sleep(2.0)
                 return await self._do_geocode(address, attempt=1)
             raise GeocoderUnavailable(f"transport error: {type(exc).__name__}") from exc
+        except httpx.RequestError as exc:  # e.g. DecodingError: not transport, not retried
+            raise GeocoderUnavailable(f"request error: {type(exc).__name__}") from exc
         if r.status_code == 429:
             self._min_interval_s = min(self._min_interval_s * 2 or 1.0, self._MAX_INTERVAL_S)
             raise GeocoderUnavailable("rate limited (HTTP 429)")
-        if r.status_code >= 400:
+        if r.status_code in self._UNAVAILABLE_4XX or r.status_code >= 500:
             raise GeocoderUnavailable(f"HTTP {r.status_code}")
+        if r.status_code >= 400:
+            # Any other 4xx rejects this query itself (whitespace-only gets 400
+            # "Nothing to search for"), so asking again won't help.
+            return None
         try:
             data = r.json()
         except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError both subclass it

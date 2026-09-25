@@ -96,7 +96,7 @@ async def test_non_json_body_raises_unavailable():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [403, 500, 503])
+@pytest.mark.parametrize("status", [403, 408, 500, 503])
 @respx.mock
 async def test_http_error_raises_unavailable(status):
     respx.get(NominatimClient.BASE_URL).mock(return_value=httpx.Response(status))
@@ -121,6 +121,36 @@ async def test_http_error_raises_unavailable(status):
 async def test_malformed_payload_raises_unavailable(payload):
     """A 200 that doesn't look like a search result isn't a "no match" answer."""
     respx.get(NominatimClient.BASE_URL).mock(return_value=httpx.Response(200, json=payload))
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        with pytest.raises(GeocoderUnavailable):
+            await client.geocode("Chicago")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 404, 422])
+@respx.mock
+async def test_client_error_for_the_query_returns_none(status):
+    """Nominatim rejects some queries outright (whitespace-only gets 400 "Nothing to
+    search for"). That's a definitive answer about this address, not an outage —
+    retrying it hourly would also cut every batch short."""
+    respx.get(NominatimClient.BASE_URL).mock(
+        return_value=httpx.Response(status, json={"error": {"code": status}})
+    )
+    client = NominatimClient(min_interval_s=0.0)
+    try:
+        assert await client.geocode(" ") is None
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_undecodable_response_raises_unavailable():
+    """httpx.DecodingError (e.g. a corrupt gzip body from a proxy) isn't a TransportError."""
+    respx.get(NominatimClient.BASE_URL).mock(side_effect=httpx.DecodingError("bad gzip"))
     client = NominatimClient(min_interval_s=0.0)
     try:
         with pytest.raises(GeocoderUnavailable):
