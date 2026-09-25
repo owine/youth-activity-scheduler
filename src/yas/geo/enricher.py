@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import sentry_sdk
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -73,6 +74,11 @@ async def enrich_ungeocoded_locations(
         try:
             result = await geocoder.geocode(loc.address or "")
         except Exception as exc:
+            # The client already absorbs transport/HTTP/JSON trouble, so a raise
+            # here is a bug — and the `error` row below means this address is
+            # never retried. Tagged by id, not address, to keep addresses out of
+            # tag indexes.
+            sentry_sdk.capture_exception(exc, tags={"location_id": str(loc.id)})
             errored += 1
             session.add(
                 GeocodeAttempt(

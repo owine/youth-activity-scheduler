@@ -172,7 +172,7 @@ def _school_holidays(kid: Kid) -> set[date]:
     for d in kid.school_holidays or []:
         try:
             result.add(date.fromisoformat(d) if isinstance(d, str) else d)
-        except Exception:
+        except ValueError:
             continue
     return result
 

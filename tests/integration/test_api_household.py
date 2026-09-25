@@ -143,3 +143,17 @@ async def test_get_household_returns_null_address_when_unset(client):
     body = r.json()
     assert body["home_address"] is None
     assert body["home_location_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_home_address_reports_geocoder_errors(client, sentry_events):
+    c, _, geocoder = client
+    geocoder.errors.add("error-please")
+
+    r = await c.patch("/api/household", json={"home_address": "error-please"})
+
+    # The save still succeeds; the failure is recorded as not_found and never
+    # retried (#456), which is why it has to be reported.
+    assert r.status_code == 200
+    [event] = sentry_events
+    assert event["exception"]["values"][-1]["type"] == "RuntimeError"

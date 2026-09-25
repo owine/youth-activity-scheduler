@@ -101,3 +101,42 @@ async def test_readyz_503_when_db_unreachable(app_with_db):
     assert body["db_reachable"] is False
     assert body["heartbeat_fresh"] is False
     await broken.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failing_readiness_probe_sends_no_events(sentry_events, app_with_db):
+    """An unreachable DB is an operational state the probe reports, not an error to page on.
+
+    Probes poll every few seconds; if each 503 raised an event, one outage
+    would bury GlitchTip.
+    """
+    app, engine = app_with_db
+    await engine.dispose()
+    broken = create_engine_for("sqlite+aiosqlite:///nonexistent_dir/does/not/exist.db")
+    app.state.yas.engine = broken
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        for _ in range(3):
+            assert (await c.get("/readyz")).status_code == 503
+            assert (await c.get("/healthz")).status_code == 200
+
+    assert sentry_events == []
+    await broken.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crashing_readiness_check_is_reported(sentry_events, app_with_db, monkeypatch):
+    """Positive control for the test above: the FastAPI integration is live, so a
+    probe that *raises* (a bug, not an outage) still reaches GlitchTip."""
+    app, _ = app_with_db
+
+    async def _broken_check(*_args, **_kwargs):
+        raise RuntimeError("readiness check bug")
+
+    monkeypatch.setattr("yas.web.app.check_readiness", _broken_check)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        assert (await c.get("/readyz")).status_code == 500
+
+    [event] = sentry_events
+    assert event["exception"]["values"][-1]["type"] == "RuntimeError"

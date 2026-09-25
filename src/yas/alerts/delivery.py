@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.channels.base import Notifier, NotifierCapability, NotifierMessage
@@ -261,6 +262,15 @@ async def send_alert_group(
                 channel=channel_name,
                 detail=result.detail,
             )
+            # Warning, not error: usually a channel config problem (bad token,
+            # SMTP auth). One issue per channel rather than one per alert.
+            sentry_sdk.capture_message(
+                "Alert channel failed permanently",
+                level="warning",
+                fingerprint=["delivery.permanent_failure", channel_name],
+                tags={"channel": channel_name, "alert_type": group.alert_type},
+                extras={"detail": result.detail},
+            )
             # Continue to next channel (one channel's permanent failure does not
             # block others from being tried).
 
@@ -305,6 +315,13 @@ async def send_alert_group(
                 attempts=current_attempts,
                 detail=detail,
             )
+            sentry_sdk.capture_message(
+                "Alert dropped after exhausting retries",
+                level="error",
+                fingerprint=["delivery.gave_up", group.alert_type],
+                tags={"alert_type": group.alert_type},
+                extras={"alert_ids": [a.id for a in members], "detail": detail},
+            )
         else:
             delay = _RETRY_DELAYS[new_attempts]
             scheduled_for = now + delay
@@ -328,6 +345,13 @@ async def send_alert_group(
             "delivery.all_channels_failed",
             alert_type=group.alert_type,
             errors=errors_summary,
+        )
+        sentry_sdk.capture_message(
+            "Alert dropped: every channel failed permanently",
+            level="error",
+            fingerprint=["delivery.all_channels_failed", group.alert_type],
+            tags={"alert_type": group.alert_type},
+            extras={"errors": permanent_errors},
         )
 
 

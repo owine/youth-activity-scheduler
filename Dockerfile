@@ -13,7 +13,21 @@ COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml 
 RUN pnpm install --frozen-lockfile
 # Build
 COPY frontend/ ./
-RUN pnpm run build  # emits /build/dist with index.html + assets/
+# Optional source-map upload to GlitchTip (frontend/vite.config.ts). URL, org
+# and project only identify where to upload, so plain ARGs are fine. The auth
+# token is a write credential: it comes in as a buildkit secret mounted into
+# this one RUN as an env var, so it never lands in a layer or image history
+# (buildkit's SecretsUsedInArgOrEnv lint flags the ARG/ENV alternative):
+#   docker build --secret id=sentry_auth_token,src=/path/to/token ...
+# Without the secret the env var is unset and the Vite plugin disables itself.
+#
+# No GIT_SHA here on purpose: maps are matched by debug ID, not release, so
+# this layer stays cacheable across commits that don't touch frontend/.
+ARG SENTRY_URL
+ARG SENTRY_ORG
+ARG SENTRY_PROJECT
+RUN --mount=type=secret,id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
+    pnpm run build  # emits /build/dist with index.html + assets/
 
 # --- Stage 2: uv, for build-time use only ---
 # Named stage rather than a repeated inline image ref: the digest lives in one

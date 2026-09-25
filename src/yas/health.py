@@ -51,6 +51,10 @@ async def check_readiness(engine: AsyncEngine, staleness_s: int) -> Readiness:
                 hb_fresh = hb_age <= staleness_s
     except Exception as exc:
         # Fail-closed for readiness, but log so an outage isn't invisible.
+        # Deliberately not reported to GlitchTip: probes poll every few seconds,
+        # so one outage would become thousands of events. /readyz answering 503
+        # is the signal; a check that *raises* still reaches the FastAPI
+        # integration (tests/integration/test_health.py).
         log.warning("readiness.db_unreachable", error=str(exc))
         db_ok = False
     return Readiness(db_reachable=db_ok, heartbeat_fresh=hb_fresh, heartbeat_age_s=hb_age)

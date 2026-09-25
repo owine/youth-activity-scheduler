@@ -366,7 +366,7 @@ docker run -e YAS_ANTHROPIC_API_KEY=sk-ant-... \
 |---|---|---|
 | `YAS_DATABASE_URL` | `sqlite+aiosqlite:////data/activities.db` | DB connection string |
 | `YAS_DATA_DIR` | `/data` | Data root |
-| `YAS_GIT_SHA` | commit SHA at build (or `unknown`) | Reported by `/healthz` |
+| `YAS_GIT_SHA` | commit SHA at build (or `unknown`) | Reported by `/healthz`; the error-reporting `release` |
 
 Override only if you know why (e.g., pointing at an external Postgres).
 
@@ -461,6 +461,18 @@ Whatever name you put in the config must be set in the container's
 environment, otherwise the channel silently fails to construct. Same
 pattern for ForwardEmail (`api_token_env`), ntfy (`auth_token_env`), and
 Pushover (`user_key_env`, `app_token_env`).
+
+### Error reporting (optional)
+
+Errors go to a Sentry-protocol endpoint (a self-hosted GlitchTip). These use the Sentry
+SDK's unprefixed names; with none set, nothing is initialised. Details, including what
+gets reported and source-map upload, are in [docs/observability.md](docs/observability.md).
+
+| Var | Purpose |
+|---|---|
+| `SENTRY_DSN` | Backend DSN |
+| `SENTRY_BROWSER_DSN` | Browser DSN: a separate project, since it is rendered into public HTML |
+| `SENTRY_ENVIRONMENT` | Event environment (default `production`) |
 
 ## Development
 

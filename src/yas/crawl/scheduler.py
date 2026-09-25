@@ -6,6 +6,7 @@ import asyncio
 import traceback
 from datetime import UTC, datetime
 
+import sentry_sdk
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -16,6 +17,7 @@ from yas.db.models import Page, Site
 from yas.db.session import session_scope
 from yas.llm.client import LLMClient
 from yas.logging import get_logger
+from yas.observability import crawl_scope
 
 log = get_logger("yas.crawl.scheduler")
 
@@ -82,7 +84,7 @@ async def _tick(
     # results must still be inspected — discarding them means an exception that
     # escapes crawl_page (its run-finalizing writes sit outside the internal
     # try) disappears with no log and no traceback.
-    for (page, _site), result in zip(rows, results, strict=True):
+    for (page, site), result in zip(rows, results, strict=True):
         if isinstance(result, BaseException):
             log.error(
                 "scheduler.page_failed",
@@ -96,3 +98,4 @@ async def _tick(
                     traceback.format_exception(type(result), result, result.__traceback__)
                 )[:2000],
             )
+            sentry_sdk.capture_exception(result, **crawl_scope(site, page))

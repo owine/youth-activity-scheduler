@@ -13,6 +13,7 @@ import uvicorn
 from yas.config import get_settings
 from yas.db.session import create_engine_for
 from yas.logging import configure_logging, get_logger
+from yas.observability import init_sentry
 from yas.web.app import create_app
 from yas.worker.runner import run_worker
 
@@ -85,6 +86,10 @@ def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_logging(level=settings.log_level)
     log = get_logger("yas.main")
+    # Before migrations (a failed upgrade is worth reporting) and before
+    # create_app (the FastAPI integration patches at init). No-op without a DSN.
+    if init_sentry(settings):
+        log.info("sentry.enabled", environment=settings.sentry_environment)
 
     from yas.db.migrations import upgrade_to_head
 

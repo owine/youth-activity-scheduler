@@ -184,3 +184,44 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
     # row condition per spec §3.6 → so neither site gets crawled.
     assert llm.call_count == 0
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_reports_exceptions_escaping_crawl_page(
+    tmp_path, monkeypatch, sentry_events
+):
+    monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
+    settings = Settings(_env_file=None, crawl_scheduler_batch_size=5)  # type: ignore[call-arg]
+    engine = await _init(tmp_path)
+
+    async with session_scope(engine) as s:
+        site = Site(name="Test", base_url="https://example.com", default_cadence_s=3600)
+        s.add(site)
+        await s.flush()
+        s.add(
+            Page(
+                site_id=site.id,
+                url="https://example.com/p",
+                next_check_at=datetime.now(UTC) - timedelta(seconds=1),
+            )
+        )
+        site_id = site.id
+
+    async def _boom(**kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("finalize blew up")
+
+    monkeypatch.setattr("yas.crawl.scheduler.crawl_page", _boom)
+
+    fetcher = DefaultFetcher()
+    try:
+        await _tick(engine=engine, settings=settings, fetcher=fetcher, llm=FakeLLMClient())
+    finally:
+        await fetcher.aclose()
+
+    [event] = sentry_events
+    [exc] = event["exception"]["values"]
+    assert exc["type"] == "RuntimeError"
+    # Captured from the gathered exception object, so its own stack survives.
+    assert "_boom" in [f["function"] for f in exc["stacktrace"]["frames"]]
+    assert event["tags"]["site_id"] == str(site_id)
+    await engine.dispose()

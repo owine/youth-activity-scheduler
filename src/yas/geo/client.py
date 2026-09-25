@@ -74,7 +74,7 @@ class NominatimClient:
             return None
         try:
             data = r.json()
-        except Exception:
+        except ValueError:  # JSONDecodeError and UnicodeDecodeError both subclass it
             return None
         if not data:
             return None

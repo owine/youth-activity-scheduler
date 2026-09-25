@@ -8,6 +8,10 @@
 # a newer pnpm means bumping packageManager in the same commit.
 # https://pnpm.io/settings
 allowBuilds:
+  # Its postinstall only downloads the binary as a fallback. The binary already
+  # arrives as a per-platform optionalDependency (@sentry/cli-linux-x64 etc.,
+  # static builds that run on Alpine), so the network-fetching script stays off.
+  '@sentry/cli': false
   msw: true
 
 # Supply-chain hardening.

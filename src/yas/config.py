@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
+    # Error reporting (Sentry protocol; GlitchTip in practice). Unprefixed names
+    # because they're the Sentry SDK's own conventions. Empty DSN = reporting off.
+    sentry_dsn: str | None = Field(None, validation_alias="SENTRY_DSN")
+    # Separate project from sentry_dsn: this one is rendered into public HTML.
+    sentry_browser_dsn: str | None = Field(None, validation_alias="SENTRY_BROWSER_DSN")
+    sentry_environment: str = Field("production", validation_alias="SENTRY_ENVIRONMENT")
+    # Baked into the image by the Dockerfile; doubles as the Sentry release.
+    git_sha: str = "unknown"
+
     # Worker
     worker_heartbeat_interval_s: int = 10
     worker_heartbeat_staleness_s: int = 60
