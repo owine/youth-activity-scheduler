@@ -173,13 +173,13 @@ async def gather_digest_payload(
     # populate site_name on each dict. Without this the digest showed no site
     # (site_name defaulted to "" and the row macro guard dropped it).
     if new_matches:
-        site_ids = {m["site_id"] for m in new_matches}
+        site_ids = {nm["site_id"] for nm in new_matches}
         name_rows = (
             await session.execute(select(Site.id, Site.name).where(Site.id.in_(site_ids)))
         ).all()
         site_names = {row.id: row.name for row in name_rows}
-        for m in new_matches:
-            m["site_name"] = site_names.get(m["site_id"], "")
+        for nm in new_matches:
+            nm["site_name"] = site_names.get(nm["site_id"], "")
 
     new_match_groups = _group_matches_by_site(new_matches)
 
