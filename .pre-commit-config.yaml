@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.16.9
     hooks:
       - id: ruff
         args: [--fix]
@@ -17,7 +17,7 @@ repos:
           - fastapi
           - structlog
   - repo: https://github.com/gitguardian/ggshield
-    rev: v1.54.0
+    rev: v1.55.0
     hooks:
       - id: ggshield
         language_version: python3
