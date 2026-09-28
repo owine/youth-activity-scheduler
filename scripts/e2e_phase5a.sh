@@ -24,7 +24,7 @@ $COMPOSE exec -T yas python - "sqlite+aiosqlite:////data/activities.db" < script
 
 echo "--- run playwright ---"
 cd frontend
-PLAYWRIGHT_BASE_URL=http://localhost:8080 npx playwright test
+PLAYWRIGHT_BASE_URL=http://localhost:8080 pnpm exec playwright test
 cd ..
 
 $COMPOSE down -v
