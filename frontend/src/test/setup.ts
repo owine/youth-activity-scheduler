@@ -34,6 +34,6 @@ if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'func
   Object.defineProperty(globalThis, 'localStorage', { value: mockStorage, writable: true });
 }
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
