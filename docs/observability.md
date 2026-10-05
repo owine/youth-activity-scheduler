@@ -78,7 +78,10 @@ so each broken site becomes its own issue.
 
 ## Privacy
 
-- `send_default_pii=False` / `sendDefaultPii: false`; no tracing, profiling or session replay.
+- `send_default_pii=False` in Python; no tracing, profiling or session replay.
+- Browser SDK v11 replaced `sendDefaultPii` with `dataCollection`, which defaults to
+  collecting. `userInfo`, `cookies`, `httpHeaders` and `urlQueryParams` are pinned to
+  `false`; `userInfo: false` is what stops the ingest server inferring the visitor's IP.
 - `trace_propagation_targets=[]`: the FastAPI integration opens an (unsampled)
   transaction per request even at `traces_sample_rate=0`, and within one the httpx
   integration would otherwise add `sentry-trace` and `baggage` (which embeds the DSN

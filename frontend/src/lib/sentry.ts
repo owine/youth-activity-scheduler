@@ -48,7 +48,10 @@ export function initSentry(config: SentryConfig | null = readSentryConfig()): bo
   if (!config) return false;
   Sentry.init({
     ...config,
-    sendDefaultPii: false,
+    // v11 replaced `sendDefaultPii: false` with `dataCollection`, whose
+    // defaults are permissive: omitting `userInfo: false` lets the ingest
+    // server infer the visitor's IP from the connection.
+    dataCollection: { userInfo: false, cookies: false, httpHeaders: false, urlQueryParams: false },
     // Tracing is off (no browserTracingIntegration, no tracesSampleRate), so
     // no trace headers go out anyway; pinned empty so adding tracing later
     // can't start sending them to the API by default.
