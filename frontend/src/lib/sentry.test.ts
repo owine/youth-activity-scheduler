@@ -70,7 +70,12 @@ describe('initSentry', () => {
     expect(options.dsn).toBe(DSN);
     expect(options.release).toBe('abc123');
     expect(options.environment).toBe('production');
-    expect(options.sendDefaultPii).toBe(false);
+    expect(options.dataCollection).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: false,
+      urlQueryParams: false,
+    });
     expect(options.tracesSampleRate).toBeUndefined();
     expect(options.tracePropagationTargets).toEqual([]);
     expect(options.replaysSessionSampleRate).toBeUndefined();
