@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 _NOISE_TAGS = ("script", "style", "noscript", "nav", "footer", "header", "aside")
 _NOISE_CLASS_TERMS = ("cookie", "banner", "notification", "timestamp", "csrf", "track")
@@ -16,7 +16,7 @@ _WS_RE = re.compile(r"\s+")
 
 def normalize(html: str) -> str:
     """Strip dynamic/navigational noise; return canonical visible text."""
-    tree = HTMLParser(html)
+    tree = LexborHTMLParser(html)
     # 1. Kill whole subtrees that never contribute stable content.
     for tag in _NOISE_TAGS:
         for node in tree.css(tag):

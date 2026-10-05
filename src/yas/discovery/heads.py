@@ -12,7 +12,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ async def scrape_head(
     title = ""
     meta_description: str | None = None
     try:
-        tree = HTMLParser(r.text)
+        tree = LexborHTMLParser(r.text)
         title_el = tree.css_first("title")
         if title_el is not None and title_el.text():
             title = title_el.text().strip()
