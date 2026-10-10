@@ -272,3 +272,44 @@ async def test_digest_empty_skip_false_always_enqueues(tmp_path):  # type: ignor
             .all()
         )
     assert len(alerts) == 1, "Empty-skip=False must still enqueue on empty days"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivered", ["sent", "skipped"])
+async def test_digest_loop_restart_does_not_resend_delivered_digest(  # type: ignore[no-untyped-def]
+    tmp_path, delivered
+):
+    """A process restart after today's digest went out must not enqueue another.
+
+    ``last_run`` resets on restart, and the enqueuer's upsert only merges into
+    *unsent* rows — so the loop itself has to notice the delivered row.
+    """
+    engine = await _make_engine(tmp_path)
+
+    async with session_scope(engine) as s:
+        s.add(_active_kid(kid_id=1, days_old=1))
+        s.add(HouseholdSettings(id=1))
+
+    settings = _settings(alert_no_matches_kid_days=7)
+
+    await _run_one_tick(engine, settings, FakeLLMClient())
+
+    async with session_scope(engine) as s:
+        alert = (
+            await s.execute(select(Alert).where(Alert.type == AlertType.digest.value))
+        ).scalar_one()
+        if delivered == "sent":
+            alert.sent_at = datetime.now(UTC)
+        else:
+            alert.skipped = True
+
+    # Simulated restart: a fresh loop invocation with last_run=None.
+    await _run_one_tick(engine, settings, FakeLLMClient())
+
+    async with session_scope(engine) as s:
+        alerts = (
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
+    assert len(alerts) == 1, "Restart must not re-enqueue an already-delivered digest"

@@ -14,12 +14,13 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from yas.alerts.enqueuer import enqueue_digest
+from yas.alerts.enqueuer import dedup_key_for, enqueue_digest
 from yas.config import Settings
-from yas.db.models import HouseholdSettings
+from yas.db.models import Alert, HouseholdSettings
+from yas.db.models._types import AlertType
 from yas.db.models.kid import Kid
 from yas.db.session import session_scope
 from yas.email import render_digest_payload
@@ -32,6 +33,22 @@ from yas.worker.sweep import _parse_hhmm
 log = get_logger("yas.worker.digest")
 
 _DEFAULT_COST_CAP_USD = 1.0
+
+
+async def _already_delivered(session: AsyncSession, *, kid_id: int, for_date: date) -> bool:
+    """True if this kid's digest for ``for_date`` was already sent or skipped."""
+    dk = dedup_key_for(AlertType.digest, kid_id=kid_id, for_date=for_date)
+    row = (
+        await session.execute(
+            select(Alert.id)
+            .where(
+                Alert.dedup_key == dk,
+                or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return row is not None
 
 
 async def daily_digest_loop(
@@ -70,6 +87,18 @@ async def daily_digest_loop(
                     )
 
                     for kid in kids:
+                        # last_run is in-memory, so a restart after the target
+                        # time re-enters this block. The enqueuer only dedups
+                        # against *unsent* rows, so check for a delivered one here.
+                        if await _already_delivered(session, kid_id=kid.id, for_date=today):
+                            log.debug(
+                                "digest.skipped.already_delivered",
+                                kid_id=kid.id,
+                                kid_name=kid.name,
+                                for_date=today.isoformat(),
+                            )
+                            continue
+
                         window_start = now - timedelta(hours=24)
                         window_end = now
 
