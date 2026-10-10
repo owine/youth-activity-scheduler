@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from yas.alerts.enqueuer import dedup_key_for, enqueue_digest
@@ -35,18 +35,11 @@ log = get_logger("yas.worker.digest")
 _DEFAULT_COST_CAP_USD = 1.0
 
 
-async def _already_delivered(session: AsyncSession, *, kid_id: int, for_date: date) -> bool:
-    """True if this kid's digest for ``for_date`` was already sent or skipped."""
+async def _already_enqueued(session: AsyncSession, *, kid_id: int, for_date: date) -> bool:
+    """True if this kid has any digest row for ``for_date`` — pending, sent, or skipped."""
     dk = dedup_key_for(AlertType.digest, kid_id=kid_id, for_date=for_date)
     row = (
-        await session.execute(
-            select(Alert.id)
-            .where(
-                Alert.dedup_key == dk,
-                or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)),
-            )
-            .limit(1)
-        )
+        await session.execute(select(Alert.id).where(Alert.dedup_key == dk).limit(1))
     ).scalar_one_or_none()
     return row is not None
 
@@ -89,10 +82,12 @@ async def daily_digest_loop(
                     for kid in kids:
                         # last_run is in-memory, so a restart after the target
                         # time re-enters this block. The enqueuer only dedups
-                        # against *unsent* rows, so check for a delivered one here.
-                        if await _already_delivered(session, kid_id=kid.id, for_date=today):
+                        # against *unsent* rows, so skip on ANY existing row:
+                        # a pending one may be delivered during the LLM call
+                        # below, leaving enqueue nothing to merge into.
+                        if await _already_enqueued(session, kid_id=kid.id, for_date=today):
                             log.debug(
-                                "digest.skipped.already_delivered",
+                                "digest.skipped.already_enqueued",
                                 kid_id=kid.id,
                                 kid_name=kid.name,
                                 for_date=today.isoformat(),

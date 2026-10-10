@@ -224,8 +224,8 @@ async def test_digest_loop_skips_inactive_kids(tmp_path):  # type: ignore[no-unt
 async def test_digest_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no-untyped-def]
     """Running the loop twice produces at most one digest alert per kid.
 
-    Because last_run is coroutine-local state, two separate invocations both
-    fire, but the enqueuer dedup_key collapses duplicate unsent rows into one.
+    last_run is coroutine-local state, so the second invocation re-enters the
+    run block — but it finds today's row already enqueued and skips the kid.
     """
     engine = await _make_engine(tmp_path)
 
@@ -244,7 +244,6 @@ async def test_digest_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no
             .scalars()
             .all()
         )
-    # Dedup upsert merges duplicate unsent rows into one.
     assert len(alerts) == 1, "Duplicate digest runs must be collapsed to one row"
 
 
@@ -313,3 +312,46 @@ async def test_digest_loop_restart_does_not_resend_delivered_digest(  # type: ig
             .all()
         )
     assert len(alerts) == 1, "Restart must not re-enqueue an already-delivered digest"
+
+
+@pytest.mark.asyncio
+async def test_digest_loop_restart_with_pending_digest_does_not_duplicate(  # type: ignore[no-untyped-def]
+    tmp_path,
+):
+    """A pending digest delivered mid-run must not be followed by a fresh insert.
+
+    On restart, today's digest may still be unsent. If the loop rebuilt it, the
+    delivery loop could send the pending row during the (slow) LLM top-line
+    call, leaving the enqueuer no unsent row to merge into — so it would insert
+    a duplicate. The fake LLM below performs that delivery mid-call.
+    """
+    engine = await _make_engine(tmp_path)
+
+    async with session_scope(engine) as s:
+        s.add(_active_kid(kid_id=1, days_old=1))
+        s.add(HouseholdSettings(id=1))
+
+    settings = _settings(alert_no_matches_kid_days=7)
+
+    # First run leaves today's digest pending (unsent).
+    await _run_one_tick(engine, settings, FakeLLMClient())
+
+    class _DeliverDuringCall(FakeLLMClient):
+        async def call_tool(self, **kwargs: Any) -> tuple[dict[str, Any], str, float]:
+            async with session_scope(engine) as s2:
+                pending = (
+                    await s2.execute(select(Alert).where(Alert.type == AlertType.digest.value))
+                ).scalar_one()
+                pending.sent_at = datetime.now(UTC)
+            return await super().call_tool(**kwargs)
+
+    # Simulated restart while the digest is still pending.
+    await _run_one_tick(engine, settings, _DeliverDuringCall())
+
+    async with session_scope(engine) as s:
+        alerts = (
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
+    assert len(alerts) == 1, "Pending digest delivered mid-run must not be duplicated"
