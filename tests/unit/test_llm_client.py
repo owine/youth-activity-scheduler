@@ -193,6 +193,27 @@ async def test_cost_is_priced_from_the_model_that_answered():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("model", "expected"),
+    [
+        # Sonnet 5's launch price became standard; the planned $3/$15 never happened.
+        ("claude-sonnet-5", 2.00 + 10.00),
+        # Must not fall through to the shorter claude-opus-5 prefix ($5/$25).
+        ("claude-opus-5-5", 4.00 + 20.00),
+    ],
+)
+async def test_cost_uses_the_published_rate_card(model: str, expected: float):
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model=model, usage_in=1_000_000, usage_out=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert result.cost_usd == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("usage_in", "expected"),
     [
         # At the threshold: $0.10/MTok in + $0.50/MTok out on 1M output.
