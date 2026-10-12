@@ -9,6 +9,7 @@ discovery-specific tool calls (e.g. the classifier)."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -28,6 +29,7 @@ log = get_logger("yas.llm.client")
 # per call behind a content-hash cache, so there is no reusable prefix to cache.
 _PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (1.00, 5.00),
+    "claude-haiku-5-5": (0.10, 0.50),
     "claude-sonnet-4-6": (3.00, 15.00),
     # Standard rate. Introductory pricing ($2.00/$10.00) applies through 2026-08-31;
     # priced at standard here so we over-estimate rather than under-report.
@@ -36,6 +38,13 @@ _PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-opus-4-8": (5.00, 25.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-fable-5": (10.00, 50.00),
+}
+
+# Models with a second rate card for long prompts, as prefix -> (max prompt tokens
+# at the base rate, input, output). Past the threshold the whole call, output
+# included, bills at the higher rate. Matched by the same prefix rules as above.
+_LONG_PROMPT_PRICING_PER_MTOK: dict[str, tuple[int, float, float]] = {
+    "claude-haiku-5-5": (100_000, 0.50, 2.50),
 }
 
 # Enough headroom for a listing page of many sessions. Truncation is now a hard
@@ -236,11 +245,21 @@ def _dump_msg(msg: Any) -> str:
     )
 
 
-def _rate_for(model: str) -> tuple[float, float] | None:
+def _longest_prefix(model: str, prefixes: Iterable[str]) -> str:
     match = ""
-    for prefix in _PRICING_PER_MTOK:
+    for prefix in prefixes:
         if model.startswith(prefix) and len(prefix) > len(match):
             match = prefix
+    return match
+
+
+def _rate_for(model: str, prompt_tokens: int) -> tuple[float, float] | None:
+    long_match = _longest_prefix(model, _LONG_PROMPT_PRICING_PER_MTOK)
+    if long_match:
+        threshold, in_per_mtok, out_per_mtok = _LONG_PROMPT_PRICING_PER_MTOK[long_match]
+        if prompt_tokens > threshold:
+            return in_per_mtok, out_per_mtok
+    match = _longest_prefix(model, _PRICING_PER_MTOK)
     return _PRICING_PER_MTOK[match] if match else None
 
 
@@ -255,11 +274,11 @@ def _estimate_cost_usd(msg: Any) -> float:
     if usage is None:
         return 0.0
     model = str(getattr(msg, "model", "") or "")
-    rate = _rate_for(model)
+    inp = getattr(usage, "input_tokens", 0) or 0
+    out = getattr(usage, "output_tokens", 0) or 0
+    rate = _rate_for(model, prompt_tokens=inp)
     if rate is None:
         log.warning("llm.unknown_model_pricing", model=model)
         return 0.0
     in_per_mtok, out_per_mtok = rate
-    inp = getattr(usage, "input_tokens", 0) or 0
-    out = getattr(usage, "output_tokens", 0) or 0
     return (inp / 1_000_000) * in_per_mtok + (out / 1_000_000) * out_per_mtok

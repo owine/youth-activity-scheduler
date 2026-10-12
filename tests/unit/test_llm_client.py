@@ -192,6 +192,27 @@ async def test_cost_is_priced_from_the_model_that_answered():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("usage_in", "expected"),
+    [
+        # At the threshold: $0.10/MTok in + $0.50/MTok out on 1M output.
+        (100_000, 0.01 + 0.50),
+        # One token past it, the whole call moves to $0.50/MTok in + $2.50/MTok out.
+        (100_001, 100_001 * 0.50 / 1_000_000 + 2.50),
+    ],
+)
+async def test_haiku_5_5_rate_card_steps_up_past_100k_prompt_tokens(usage_in: int, expected: float):
+    fake = _FakeAnthropicClient(
+        messages=_FakeAnthropicMessages(
+            {"offerings": []}, model="claude-haiku-5-5", usage_in=usage_in, usage_out=1_000_000
+        )
+    )
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert result.cost_usd == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
 async def test_unknown_model_reports_zero_cost_rather_than_guessing():
     """A missing number is honest; a plausible wrong one silently corrupts spend totals."""
     fake = _FakeAnthropicClient(
