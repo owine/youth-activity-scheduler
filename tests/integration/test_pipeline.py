@@ -192,7 +192,9 @@ async def test_crawl_page_survives_and_reports_a_failing_backoff_write(tmp_path)
     engine = await _init_db(tmp_path)
 
     def _boom(_html, _url, _site):
-        raise RuntimeError("ORIGINAL_CRAWL_ERROR")
+        # Long enough that the chained traceback overruns the log limit on any
+        # checkout path, so the assertions below also pin which end is kept.
+        raise RuntimeError("ORIGINAL_CRAWL_ERROR " + "x" * 2000)
 
     async def _failing_backoff(*_args, **_kwargs):
         raise RuntimeError("BACKOFF_WRITE_FAILED")
@@ -228,6 +230,44 @@ async def test_crawl_page_survives_and_reports_a_failing_backoff_write(tmp_path)
     tb = backoff_logs[0]["traceback"]
     assert tb.rstrip().endswith("RuntimeError: BACKOFF_WRITE_FAILED")
     assert "During handling of the above exception" in tb
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crawl_page_unexpected_error_log_keeps_the_raising_line(tmp_path):
+    """A traceback over the log limit loses its opening frames, not its last line.
+
+    The line naming the exception is printed last, so truncating from the front
+    would drop exactly the part a reader opens the log for.
+    """
+    import structlog
+
+    engine = await _init_db(tmp_path)
+
+    def _boom(_html, _url, _site):
+        try:
+            raise ValueError("x" * 3000)
+        except ValueError as err:
+            raise RuntimeError("UNEXPECTED_CRAWL_ERROR") from err
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(on_call=_boom)
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            with structlog.testing.capture_logs() as logs:
+                await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+        finally:
+            await fetcher.aclose()
+
+    unexpected = [entry for entry in logs if entry.get("event") == "pipeline.unexpected"]
+    assert len(unexpected) == 1
+    tb = unexpected[0]["traceback"]
+    assert len(tb) <= 2000
+    assert tb.rstrip().endswith("RuntimeError: UNEXPECTED_CRAWL_ERROR")
     await engine.dispose()
 
 

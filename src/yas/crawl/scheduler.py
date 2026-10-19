@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import traceback
 from datetime import UTC, datetime
 
 import sentry_sdk
@@ -16,7 +15,7 @@ from yas.crawl.pipeline import crawl_page
 from yas.db.models import Page, Site
 from yas.db.session import session_scope
 from yas.llm.client import LLMClient
-from yas.logging import get_logger
+from yas.logging import get_logger, traceback_tail
 from yas.observability import crawl_scope
 
 log = get_logger("yas.crawl.scheduler")
@@ -94,8 +93,6 @@ async def _tick(
                 # as the only identifying detail. It also aggregates cleanly.
                 error_type=type(result).__name__,
                 error=str(result),
-                traceback="".join(
-                    traceback.format_exception(type(result), result, result.__traceback__)
-                )[:2000],
+                traceback=traceback_tail(result),
             )
             sentry_sdk.capture_exception(result, **crawl_scope(site, page))

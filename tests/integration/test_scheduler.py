@@ -100,7 +100,12 @@ async def test_scheduler_logs_exceptions_escaping_crawl_page(tmp_path, monkeypat
         page_id = page.id
 
     async def _boom(**kwargs):  # type: ignore[no-untyped-def]
-        raise RuntimeError("finalize blew up")
+        # Chained onto a long context so the traceback overruns the log limit,
+        # which is when keeping the wrong end would lose the lines checked below.
+        try:
+            raise ValueError("x" * 2000)
+        except ValueError as err:
+            raise RuntimeError("finalize blew up") from err
 
     monkeypatch.setattr("yas.crawl.scheduler.crawl_page", _boom)
 
@@ -125,7 +130,7 @@ async def test_scheduler_logs_exceptions_escaping_crawl_page(tmp_path, monkeypat
     assert failed[0]["error_type"] == "RuntimeError"
     # Pin the rest of the debugging contract so these fields can't quietly go.
     assert failed[0]["page_id"] == page_id
-    assert "RuntimeError: finalize blew up" in failed[0]["traceback"]
+    assert failed[0]["traceback"].rstrip().endswith("RuntimeError: finalize blew up")
     assert "_boom" in failed[0]["traceback"], "traceback must retain the raising frame"
     await engine.dispose()
 
