@@ -18,9 +18,9 @@ dependencies = [
   "python-multipart==0.0.32",
   "aiosqlite==0.22.1",
   "selectolax==1.0.0",
-  "playwright==1.63.0",
+  "playwright==1.64.0",
   "aiosmtplib==5.1.3",
-  "sentry-sdk==2.71.0",
+  "sentry-sdk==2.72.0",
 ]
 
 [dependency-groups]
@@ -33,7 +33,7 @@ dev = [
   "mypy==2.4.0",
   "types-requests==2.33.0.20261006",
   "pre-commit==4.6.2",
-  "aiohttp==3.14.4",
+  "aiohttp==3.14.5",
   "aiosmtpd==1.4.6",
   # Used by tests/unit/test_compose_files.py. Present transitively via
   # uvicorn[standard] and pre-commit, but declared so the tests don't silently
