@@ -7,7 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `yas` — a self-hosted crawler + matcher + alerter for youth activity / sports / enrichment
 websites. It crawls registered site pages, extracts program offerings with Claude Haiku,
 matches them against kid profiles, and alerts via email / ntfy / Pushover / Home Assistant.
-Python 3.14 backend (FastAPI + SQLAlchemy async + SQLite), React 19 SPA frontend.
+Python 3.15 backend (FastAPI + SQLAlchemy async + SQLite), React 19 SPA frontend.
+
+The runtime is pinned exactly in `.python-version` and the Dockerfile's `base` stage, which
+Renovate bumps together as the `python runtime` group. `requires-python = ">=3.14"` is a floor,
+and mypy's `python_version = "3.14"` checks against it, so code must stay 3.14-compatible.
 
 ## Commands
 
