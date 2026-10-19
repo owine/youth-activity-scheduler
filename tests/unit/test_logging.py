@@ -56,16 +56,50 @@ def _chained_error(context_len: int) -> RuntimeError:
 
 def test_traceback_tail_returns_a_short_traceback_whole():
     exc = _chained_error(context_len=10)
-    assert traceback_tail(exc, limit=10_000) == "".join(traceback.format_exception(exc))
+    assert traceback_tail(exc) == "".join(traceback.format_exception(exc))
 
 
 def test_traceback_tail_keeps_the_end_of_a_long_traceback():
     exc = _chained_error(context_len=5000)
-    tb = traceback_tail(exc, limit=2000)
+    tb = traceback_tail(exc)
     assert len(tb) <= 2000
     assert tb.rstrip().endswith("RuntimeError: THE_ERROR")
     # Marked, so a reader knows the opening frames are missing, not corrupt.
     assert tb.startswith("[truncated")
+
+
+def _raise_with_huge_message() -> None:
+    raise RuntimeError("HUGE " + "p" * 5000)
+
+
+def test_traceback_tail_keeps_the_raising_frame_when_the_message_alone_is_too_long():
+    """A message over the limit must not crowd out the frame that raised it.
+
+    SQLAlchemy errors embed the statement's parameters in str(exc), and the
+    backoff write's parameters carry the crawl error's text, so this happens.
+    The full message is logged separately as `error`.
+    """
+    try:
+        _raise_with_huge_message()
+    except RuntimeError as caught:
+        exc = caught
+    tb = traceback_tail(exc)
+    assert len(tb) <= 2000
+    assert "in _raise_with_huge_message" in tb
+    assert "RuntimeError: HUGE ppp" in tb
+
+
+def test_traceback_tail_keeps_a_true_suffix_of_an_exception_group():
+    # A group prints its members *after* its own lines, so splitting off the
+    # final lines would splice the text; it falls back to a plain tail.
+    try:
+        raise ExceptionGroup("GROUP", [ValueError("m" * 3000), RuntimeError("LAST_MEMBER")])
+    except ExceptionGroup as caught:
+        exc = caught
+    tb = traceback_tail(exc)
+    assert len(tb) <= 2000
+    assert tb.startswith("[truncated]\n")
+    assert "".join(traceback.format_exception(exc)).endswith(tb.removeprefix("[truncated]\n"))
 
 
 def teardown_function():
