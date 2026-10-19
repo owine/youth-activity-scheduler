@@ -40,10 +40,18 @@ FROM ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef302
 # --- Stage 3: Python backend ---
 FROM python:3.15.0-slim@sha256:2da676046630d7bf14c6764ae1143dc7fa0377a53f94bf5a642f0b214aca5bce AS base
 
+# UV_PYTHON_DOWNLOADS / UV_PYTHON_PREFERENCE: the venv must be built on this
+# image's interpreter. Without them, a Python request the image can't satisfy
+# (requires-python raised past the base tag, say) makes uv quietly download a
+# managed CPython under /root and point the venv at it, an interpreter outside
+# the digest pin that a non-root user can't reach. With them, that mismatch
+# fails `uv sync`, and so the build.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_NO_CACHE=1 \
     UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PYTHON_PREFERENCE=only-system \
     PATH="/app/.venv/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
