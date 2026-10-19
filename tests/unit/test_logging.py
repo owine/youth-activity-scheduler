@@ -1,9 +1,10 @@
 import json
 import logging
+import traceback
 
 import structlog
 
-from yas.logging import configure_logging, get_logger
+from yas.logging import configure_logging, get_logger, traceback_tail
 
 
 def test_configure_logging_emits_json(capsys):
@@ -35,6 +36,36 @@ def test_get_logger_returns_structlog():
     log = get_logger("x")
     # BoundLogger has .bind()
     assert hasattr(log, "bind")
+
+
+def _chained_error(context_len: int) -> RuntimeError:
+    """A RuntimeError raised while handling a ValueError with a long message.
+
+    The chained context is printed first, so its length pushes the final line —
+    the one naming the error being reported — as far from the start as we like.
+    """
+    try:
+        try:
+            raise ValueError("x" * context_len)
+        except ValueError as err:
+            raise RuntimeError("THE_ERROR") from err
+    except RuntimeError as exc:
+        return exc
+    raise AssertionError("unreachable")
+
+
+def test_traceback_tail_returns_a_short_traceback_whole():
+    exc = _chained_error(context_len=10)
+    assert traceback_tail(exc, limit=10_000) == "".join(traceback.format_exception(exc))
+
+
+def test_traceback_tail_keeps_the_end_of_a_long_traceback():
+    exc = _chained_error(context_len=5000)
+    tb = traceback_tail(exc, limit=2000)
+    assert len(tb) <= 2000
+    assert tb.rstrip().endswith("RuntimeError: THE_ERROR")
+    # Marked, so a reader knows the opening frames are missing, not corrupt.
+    assert tb.startswith("[truncated")
 
 
 def teardown_function():

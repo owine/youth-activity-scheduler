@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import traceback
 from typing import Any
 
 import structlog
@@ -42,3 +43,20 @@ def configure_logging(level: str = "INFO") -> None:
 
 def get_logger(name: str) -> Any:
     return structlog.get_logger(name)
+
+
+_TRUNCATED_MARKER = "[truncated]\n"
+
+
+def traceback_tail(exc: BaseException, limit: int = 2000) -> str:
+    """Format ``exc``'s traceback for a log field, keeping at most ``limit`` chars.
+
+    Over the limit the *end* is kept: a traceback prints its innermost frame and
+    the line naming the exception last, and in a chained traceback the exception
+    being reported comes after all of its context. A head slice drops exactly
+    those lines.
+    """
+    tb = "".join(traceback.format_exception(exc))
+    if len(tb) <= limit:
+        return tb
+    return _TRUNCATED_MARKER + tb[len(tb) - (limit - len(_TRUNCATED_MARKER)) :]

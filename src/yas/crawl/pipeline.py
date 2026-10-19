@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -23,7 +22,7 @@ from yas.db.models import CrawlRun, Kid, Match, Offering, Page, Site
 from yas.db.models._types import CrawlStatus
 from yas.db.session import session_scope
 from yas.llm.client import ExtractionError, LLMClient
-from yas.logging import get_logger
+from yas.logging import get_logger, traceback_tail
 from yas.observability import crawl_scope
 
 log = get_logger("yas.crawl.pipeline")
@@ -60,8 +59,7 @@ async def crawl_page(
     try:
         result = await _do_crawl(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
     except Exception as exc:
-        tb = traceback.format_exc()
-        log.error("pipeline.unexpected", error=str(exc), traceback=tb[:2000])
+        log.error("pipeline.unexpected", error=str(exc), traceback=traceback_tail(exc))
         # Default (stack-based) grouping: a code bug hitting every site is one
         # issue, with the site tag showing which ones.
         sentry_sdk.capture_exception(exc, **crawl_scope(site, page))
@@ -73,14 +71,14 @@ async def crawl_page(
         try:
             await _apply_failure(engine, page, site, error_text=f"unexpected: {exc}")
         except Exception as backoff_exc:
-            # Deliberately not `tb` — that is the crawl error we are already
-            # handling. This branch means the DB write itself failed, and its
-            # own stack is the one worth having.
+            # Deliberately `backoff_exc`, not `exc` — that is the crawl error we
+            # are already handling. This branch means the DB write itself
+            # failed, and its own stack is the one worth having.
             log.error(
                 "pipeline.backoff_failed",
                 page_id=page.id,
                 error=str(backoff_exc),
-                traceback=traceback.format_exc()[:2000],
+                traceback=traceback_tail(backoff_exc),
             )
             sentry_sdk.capture_exception(backoff_exc, **crawl_scope(site, page))
         result = CrawlResult(
