@@ -48,7 +48,7 @@ jobs:
         with:
           enable-cache: true
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.15
       - name: Install deps
         run: uv sync --all-extras --dev
       - name: Lint
@@ -101,7 +101,7 @@ jobs:
           cache: true
           require-lockfile: true
       - name: Set up Python
-        run: uv python install 3.14
+        run: uv python install 3.15
       - name: Install backend deps
         run: uv sync --all-extras --dev
       - name: Build frontend
