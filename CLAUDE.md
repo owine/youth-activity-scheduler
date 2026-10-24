@@ -96,6 +96,14 @@ points `X.Y.Z` / `X.Y` / `X` / `latest` at that commit's existing `sha-<full>` d
 drop the `v`). The floating tags only move forward, so re-running an old release moves `X.Y.Z`
 alone.
 
+Release notes come from release-drafter (`.github/release-drafter.yml` extends the shared
+`owine/renovate-config` base): every push to main refreshes one **draft** release, sorted by the
+Conventional Commit type of each squash-merged PR title, and the draft's version follows from
+those types (`feat` minor, `!` major, else patch). Only the **title's** `!` marks a breaking
+change; a `BREAKING CHANGE:` footer is ignored. Release by publishing that draft in the UI, which
+fires `release: published` as you. Never set `publish: true`: a release published by
+`GITHUB_TOKEN` would not trigger release.yml.
+
 Two things follow from retagging. `ci-pass` must keep `docker-publish` in its `needs`: release.yml
 reads a green `ci-pass` as "this commit's image exists", and without it a failed publish would
 let the walk-back to the nearest built ancestor ship an older image. And the image cannot know
