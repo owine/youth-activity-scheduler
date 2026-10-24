@@ -10,7 +10,7 @@ export function Footer() {
     <footer className="border-t border-border mt-8 px-4 py-3 text-xs text-muted-foreground">
       <div className="container max-w-5xl flex items-center justify-between">
         <span>
-          YAS v{data.version}
+          YAS
           {shortSha && (
             <>
               {' · '}

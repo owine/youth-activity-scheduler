@@ -31,7 +31,9 @@ async def test_healthz_returns_ok(app_with_db):
     body = r.json()
     assert body["status"] == "ok"
     assert "git_sha" in body  # default "unknown" outside CI; SHA in CI builds
-    assert body["version"] == "0.1.0"
+    # No semver: a release retags an already-built image, so nothing baked in
+    # at build time can know the release number. The commit SHA is the identity.
+    assert "version" not in body
 
 
 @pytest.mark.asyncio
@@ -63,6 +65,7 @@ async def test_readyz_200_when_fresh_heartbeat(app_with_db):
     body = r.json()
     assert body["heartbeat_fresh"] is True
     assert body["db_reachable"] is True
+    assert "version" not in body
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,7 @@
 [project]
 name = "yas"
+# Package metadata only, never reported. Releases are vX.Y.Z git tags that
+# retag an existing image (.github/workflows/release.yml), not this field.
 version = "0.1.0"
 description = "Youth Activity Scheduler — self-hosted crawler + alerter for youth program sites"
 requires-python = ">=3.14"

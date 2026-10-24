@@ -21,18 +21,17 @@ function renderFooter() {
 }
 
 describe('Footer', () => {
-  it('renders version and short git sha as a commit link', async () => {
+  it('renders the name and short git sha as a commit link', async () => {
     server.use(
       http.get('/healthz', () =>
         HttpResponse.json({
           status: 'ok',
           git_sha: '6871d4e94bc681a4c0c0d7ff02b81eaf0801c572',
-          version: '0.1.0',
         }),
       ),
     );
     renderFooter();
-    expect(await screen.findByText(/YAS v0\.1\.0/)).toBeInTheDocument();
+    expect(await screen.findByText(/^YAS/)).toBeInTheDocument();
     const link = await screen.findByRole('link', { name: '6871d4e' });
     expect(link).toHaveAttribute(
       'href',
@@ -41,14 +40,10 @@ describe('Footer', () => {
     expect(link).toHaveAttribute('title', '6871d4e94bc681a4c0c0d7ff02b81eaf0801c572');
   });
 
-  it('renders only version when git_sha is unknown (local dev)', async () => {
-    server.use(
-      http.get('/healthz', () =>
-        HttpResponse.json({ status: 'ok', git_sha: 'unknown', version: '0.1.0' }),
-      ),
-    );
+  it('renders only the name when git_sha is unknown (local dev)', async () => {
+    server.use(http.get('/healthz', () => HttpResponse.json({ status: 'ok', git_sha: 'unknown' })));
     renderFooter();
-    expect(await screen.findByText(/YAS v0\.1\.0/)).toBeInTheDocument();
+    expect(await screen.findByText('YAS')).toBeInTheDocument();
     expect(screen.queryByRole('link')).toBeNull();
   });
 
