@@ -48,7 +48,8 @@ Available image tags:
 - `:main` — main HEAD (bleeding edge; ahead of `latest` between releases)
 - `:sha-<full>` / `:sha-<short>` — a specific main commit
 
-Releases are cut by publishing a GitHub Release tagged `vX.Y.Z`. That doesn't
+Releases are cut by publishing a GitHub Release tagged `vX.Y.Z`, normally the
+draft release-drafter keeps up to date from merged PR titles. That doesn't
 rebuild anything: `.github/workflows/release.yml` retags the exact image `main`
 already built and tested for that commit, so `:1.2.3` and that commit's `:sha-`
 tag share one digest. The running app reports its commit, not a release number,
