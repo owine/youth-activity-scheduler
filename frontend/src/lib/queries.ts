@@ -49,7 +49,6 @@ export function useKids() {
 interface HealthzResponse {
   status: string;
   git_sha: string;
-  version: string;
 }
 
 export function useHealthz() {

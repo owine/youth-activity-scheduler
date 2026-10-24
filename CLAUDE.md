@@ -57,7 +57,7 @@ uv run python -m yas api      # FastAPI only
 uv run python -m yas worker   # background loops only
 uv run python -m yas migrate  # apply schema and exit
 
-docker compose up -d          # one `yas` container; pulls ghcr.io/owine/…:latest
+docker compose up -d          # one `yas` container; pulls ghcr.io/owine/…:latest (newest release)
 ./scripts/e2e_phase5a.sh      # full docker e2e: build, seed, playwright, teardown
 ```
 
@@ -75,7 +75,7 @@ the same file, so the overlay stays until someone reproduces its absence.
 `docker-compose.yml` targets prod: it pins `image: ghcr.io/...:latest` with **no `build:`**. So
 any script that must exercise local source has to layer in `-f docker-compose.dev.yml` (last —
 it overrides `image:` with `build: .`). Omit it and `docker compose build` prints
-`No services to build` and exits 0, `up` pulls the published image, and the run silently
+`No services to build` and exits 0, `up` pulls the newest release, and the run silently
 validates GHCR instead of your working tree. `scripts/lib.sh::assert_local_build` asserts a
 `build:` on each **named service** for exactly this reason — a whole-config check would pass on
 a phantom service that a stale override added, since compose adds services an override names
@@ -84,7 +84,24 @@ but the base lacks rather than erroring.
 `scripts/smoke_phase2.sh` is the exception: it reads `data/activities.db` from the host via
 `sqlite3`, so it needs the base file's `./data` bind mount and cannot use `compose_cmd()` (which
 would layer in `macos.yml` on Darwin and swap that for a named volume). It consequently still
-runs against the published image.
+runs against the newest release (`:latest`), not main HEAD.
+
+### Releases
+
+`latest` is the **newest release**, not main HEAD. A push to main publishes the multi-arch
+image as `main`, `sha-<full>` and `sha-<short>` only (ci.yml `docker-publish`). Publishing a
+GitHub Release tagged `vX.Y.Z` runs `.github/workflows/release.yml`, which **retags, never
+rebuilds**: after requiring the commit be on main and its main CI run's `ci-pass` be green, it
+points `X.Y.Z` / `X.Y` / `X` / `latest` at that commit's existing `sha-<full>` digest (image tags
+drop the `v`). The floating tags only move forward, so re-running an old release moves `X.Y.Z`
+alone.
+
+Two things follow from retagging. `ci-pass` must keep `docker-publish` in its `needs`: release.yml
+reads a green `ci-pass` as "this commit's image exists", and without it a failed publish would
+let the walk-back to the nearest built ancestor ship an older image. And the image cannot know
+its release number, since it was built before the release existed, so `/healthz`, `/readyz` and
+the UI footer report the commit (`YAS_GIT_SHA`), never a semver. `pyproject.toml`'s `version`
+is package metadata only; don't bump it for releases.
 
 ## Architecture
 

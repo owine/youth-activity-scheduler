@@ -37,7 +37,10 @@ def create_app(
         # Shutdown: release the SQLAlchemy engine pool.
         await state.engine.dispose()
 
-    app = FastAPI(title="yas", version="0.1.0", lifespan=lifespan)
+    # Releases retag an already-built image (.github/workflows/release.yml), so
+    # nothing baked in at build time can know the release number; the commit
+    # SHA is the only version that stays true.
+    app = FastAPI(title="yas", version=s.git_sha, lifespan=lifespan)
     app.state.yas = state
 
     @app.get("/healthz")
@@ -47,7 +50,6 @@ def create_app(
         return {
             "status": "ok",
             "git_sha": os.environ.get("YAS_GIT_SHA", "unknown"),
-            "version": app.version,
         }
 
     @app.get("/readyz")
@@ -61,7 +63,6 @@ def create_app(
             "heartbeat_fresh": readiness.heartbeat_fresh,
             "heartbeat_age_s": readiness.heartbeat_age_s,
             "git_sha": os.environ.get("YAS_GIT_SHA", "unknown"),
-            "version": app.version,
         }
 
     from yas.web.routes import (

@@ -6,7 +6,7 @@ See `docs/superpowers/specs/` for the design spec.
 ## Quickstart (Docker, prod)
 
 The base compose pulls a pre-built multi-arch image from GHCR
-(`ghcr.io/owine/youth-activity-scheduler:latest`, published from `main`).
+(`ghcr.io/owine/youth-activity-scheduler:latest`, the newest release).
 No local build — just pull and run:
 
 ```bash
@@ -42,9 +42,17 @@ background worker in one process.
 To upgrade later: `docker compose pull && docker compose up -d`.
 
 Available image tags:
-- `:latest` — main HEAD (default; bleeding edge)
-- `:main` — alias of latest
-- `:sha-<short>` — pin to a specific commit (recommended for production)
+- `:latest` — the newest release (default)
+- `:1.2.3` / `:1.2` / `:1` — a release, or the newest release in that minor /
+  major line. Pin one of these for production.
+- `:main` — main HEAD (bleeding edge; ahead of `latest` between releases)
+- `:sha-<full>` / `:sha-<short>` — a specific main commit
+
+Releases are cut by publishing a GitHub Release tagged `vX.Y.Z`. That doesn't
+rebuild anything: `.github/workflows/release.yml` retags the exact image `main`
+already built and tested for that commit, so `:1.2.3` and that commit's `:sha-`
+tag share one digest. The running app reports its commit, not a release number,
+at `/healthz` and in the UI footer.
 
 ### Local dev (build from source)
 

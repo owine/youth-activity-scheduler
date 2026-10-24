@@ -284,14 +284,14 @@ jobs:
 
   docker-publish:
     # Stitch the per-arch digests pushed by docker-build into a single
-    # multi-arch manifest, tagged `latest`, `main`, and `sha-<short>`.
+    # multi-arch manifest, tagged `main`, `sha-<full>`, and `sha-<short>`.
     #
-    # Future (semver releases): when cutting `git tag v1.0.0 && git push --tags`,
-    # add a parallel job triggered on `push: tags: ['v*']` that uses
-    # docker/metadata-action to compute v1.0.0 / v1.0 / v1 / latest tags from
-    # the git ref. At that point, the `latest` tag below should drop in favor
-    # of the tag-driven version so `latest` always tracks releases, not main
-    # HEAD. See PR #16 description (or the docs/) for the full sketch.
+    # This job never touches `latest` or any semver tag. Publishing a GitHub
+    # Release runs release.yml, which finds this job's `sha-<full>` image for
+    # the tagged commit and RETAGS that digest as X.Y.Z / X.Y / X / latest
+    # (no rebuild), so `latest` means newest release, not main HEAD.
+    # `sha-<full>` exists so that lookup is unambiguous; `sha-<short>` stays
+    # because the README offers it for pinning.
     needs: docker-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
@@ -359,8 +359,8 @@ jobs:
           done <<< "$ANNOTATIONS"
           # shellcheck disable=SC2046
           docker buildx imagetools create \
-            --tag "${IMAGE}:latest" \
             --tag "${IMAGE}:main" \
+            --tag "${IMAGE}:sha-${SHA}" \
             --tag "${IMAGE}:sha-${short_sha}" \
             "${ann_args[@]}" \
             $(printf "${IMAGE}@sha256:%s " *)
@@ -368,8 +368,9 @@ jobs:
       - name: Inspect manifest
         env:
           IMAGE: ${{ steps.image.outputs.name }}
+          SHA: ${{ github.sha }}
         run: |
-          docker buildx imagetools inspect "${IMAGE}:latest"
+          docker buildx imagetools inspect "${IMAGE}:sha-${SHA}"
 
   # Stable-named aggregator so the branch ruleset can require a single
   # `ci-pass` check regardless of the matrix dimensions (the per-axis
@@ -381,8 +382,12 @@ jobs:
   # `changes`, and the aggregator must not block those merges.
   # Pattern: owine/house-manager#191 (aggregator) + owine/trip-tracker
   # ci.yml `docker-build` (skipped-as-success).
+  # docker-publish is in `needs` because release.yml treats a green `ci-pass`
+  # on a main commit as "this commit's image is published". Without it, a
+  # failed publish would leave ci-pass green and the release's walk-back would
+  # silently ship the parent commit's image. PRs skip it, which passes.
   ci-pass:
-    needs: [changes, check, frontend-check, e2e, docker-build]
+    needs: [changes, check, frontend-check, e2e, docker-build, docker-publish]
     if: always()
     runs-on: ubuntu-26.04
     steps:
