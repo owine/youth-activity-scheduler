@@ -23,6 +23,12 @@ COPY frontend/ ./
 #
 # No GIT_SHA here on purpose: maps are matched by debug ID, not release, so
 # this layer stays cacheable across commits that don't touch frontend/.
+#
+# The upload goes through the `sentry` CLI SDK, which otherwise reports its own
+# errors and traces to sentry.io. vite.config.ts defaults this too; setting it
+# here keeps the opt-out independent of the config. Stage-local, so it never
+# reaches the runtime image.
+ENV SENTRY_CLI_NO_TELEMETRY=1
 ARG SENTRY_URL
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
