@@ -11,6 +11,12 @@ import path from 'node:path';
 // output untouched (no debug IDs injected, maps kept as before).
 const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || undefined;
 
+// The plugin uploads through the `sentry` CLI SDK, which reports its own errors
+// and traces to sentry.io by default. `telemetry: false` below does not reach
+// it; only this env var (or DO_NOT_TRACK=1) does, read from process.env at
+// each command.
+process.env.SENTRY_CLI_NO_TELEMETRY ??= '1';
+
 export default defineConfig({
   plugins: [
     TanStackRouterVite(),
