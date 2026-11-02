@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 import pytest
 from sqlalchemy import select
@@ -164,4 +164,96 @@ async def test_location_name_creates_or_reuses_location(tmp_path):
         rows = (await s.execute(select(Location))).scalars().all()
         assert len(rows) == 1
         assert rows[0].name == "Lincoln Park Rec"
+    await engine.dispose()
+
+
+async def _run(engine, page_id, extracted):
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        return await reconcile(s, page, extracted)
+
+
+async def _active(engine):
+    async with session_scope(engine) as s:
+        rows = (
+            await s.execute(select(Offering).where(Offering.status == OfferingStatus.active))
+        ).scalars()
+        return sorted((tuple(r.days_of_week), r.time_start) for r in rows)
+
+
+def _slots(*specs):
+    """Same name and start date, different weekly slots, as Johnny's Junior Jets lists."""
+    return [
+        _offering(
+            "Junior Jets",
+            program_type=ProgramType.hockey,
+            start_date=date(2026, 9, 7),
+            days_of_week=days,
+            time_start=t,
+        )
+        for days, t in specs
+    ]
+
+
+_JETS = (
+    (["wed"], time(16, 45)),
+    (["sat"], time(9, 0)),
+    (["sat"], time(9, 50)),
+    (["sun"], time(9, 0)),
+    (["sun"], time(9, 50)),
+)
+
+
+@pytest.mark.asyncio
+async def test_same_name_slots_are_reconciled_one_to_one(tmp_path):
+    """Slots sharing (name, start_date) used to collapse into one dict entry on the
+    second crawl: every slot overwrote one row and the rest stayed active, stale."""
+    engine, _, page_id = await _setup(tmp_path)
+    first = await _run(engine, page_id, _slots(*_JETS))
+    assert len(first.new) == 5
+
+    again = await _run(engine, page_id, _slots(*_JETS))
+    assert again.new == [] and again.updated == [] and again.withdrawn == []
+    assert sorted(again.unchanged) == sorted(first.new)
+    assert len(await _active(engine)) == 5
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_removing_one_slot_withdraws_only_that_slot(tmp_path):
+    engine, _, page_id = await _setup(tmp_path)
+    await _run(engine, page_id, _slots(*_JETS))
+
+    result = await _run(engine, page_id, _slots(*_JETS[:4]))
+    assert len(result.withdrawn) == 1 and len(result.unchanged) == 4
+    assert result.new == [] and result.updated == []
+    assert (("sun",), time(9, 50)) not in await _active(engine)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_moved_slot_is_an_update_not_a_withdraw_and_new(tmp_path):
+    """A slot whose time changes keeps its row (and its matches and enrollments)."""
+    engine, _, page_id = await _setup(tmp_path)
+    first = await _run(engine, page_id, _slots(*_JETS))
+
+    moved = (*_JETS[:4], (["sun"], time(10, 30)))
+    result = await _run(engine, page_id, _slots(*moved))
+    assert result.new == [] and result.withdrawn == []
+    assert len(result.updated) == 1 and len(result.unchanged) == 4
+    assert result.updated[0] in first.new
+    assert (("sun",), time(10, 30)) in await _active(engine)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_existing_duplicate_rows_are_cleaned_up(tmp_path):
+    """Prod already holds same-name rows left behind by the old collapse. When the
+    page now lists fewer slots, the extras are withdrawn rather than left active."""
+    engine, _, page_id = await _setup(tmp_path)
+    await _run(engine, page_id, _slots(*_JETS))
+
+    result = await _run(engine, page_id, _slots(*_JETS[:2]))
+    assert len(result.unchanged) == 2 and len(result.withdrawn) == 3
+    assert len(await _active(engine)) == 2
     await engine.dispose()

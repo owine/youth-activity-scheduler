@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -61,22 +63,21 @@ async def reconcile(
         .scalars()
         .all()
     )
-    existing_by_key: dict[tuple[str, Any], Offering] = {
-        (r.normalized_name, r.start_date): r for r in existing_rows
-    }
-
     now = datetime.now(UTC)
     result = ReconcileResult()
-    matched_keys: set[tuple[str, Any]] = set()
 
-    for e in extracted:
+    # Pair each extracted item with at most one existing row. A page can list
+    # several offerings that share (normalized_name, start_date): a program run in
+    # several weekly time slots. A dict on that pair alone collapsed them: every
+    # slot overwrote one row and the others stayed active with stale schedules.
+    pairs = _pair(existing_rows, extracted)
+
+    claimed: set[int] = set()
+    for e, existing in pairs:
         norm = normalize_name(e.name)
-        key = (norm, e.start_date)
-        matched_keys.add(key)
         location_id = await _location_id(session, page.site_id, e)
         desired = _offering_fields(e, norm, location_id)
 
-        existing = existing_by_key.get(key)
         if existing is None:
             row = Offering(
                 site_id=page.site_id,
@@ -91,6 +92,7 @@ async def reconcile(
             await session.flush()  # populate id
             result.new.append(row.id)
         else:
+            claimed.add(existing.id)
             # Compare the subset of fields we treat as user-visible.
             differs = any(
                 getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS if f in desired
@@ -105,13 +107,60 @@ async def reconcile(
             else:
                 result.unchanged.append(existing.id)
 
-    for key, row in existing_by_key.items():
-        if key not in matched_keys:
+    for row in existing_rows:
+        if row.id not in claimed:
             row.status = OfferingStatus.withdrawn
             row.last_seen = now
             result.withdrawn.append(row.id)
 
     return result
+
+
+def _slot_key(norm: str, start: Any, days: Any, time_start: Any) -> tuple[Any, ...]:
+    return (norm, start, tuple(sorted(str(getattr(d, "value", d)) for d in days or [])), time_start)
+
+
+def _pair(
+    existing_rows: Sequence[Offering], extracted: list[ExtractedOffering]
+) -> list[tuple[ExtractedOffering, Offering | None]]:
+    """Match extracted items to existing rows one-to-one, in two passes.
+
+    1. Same name, start date, days and start time: the same slot, unchanged or
+       with other fields edited.
+    2. What's left, on name and start date alone, in page order: a slot whose
+       days or time moved stays an update of its row, so the row keeps its
+       matches and enrollments instead of becoming a withdraw plus a new row.
+
+    Anything still unpaired is new; existing rows nobody claimed are withdrawn.
+    """
+    rows = sorted(existing_rows, key=lambda r: r.id)
+    taken: set[int] = set()
+    paired: list[Offering | None] = [None] * len(extracted)
+
+    by_slot: dict[tuple[Any, ...], list[Offering]] = defaultdict(list)
+    for r in rows:
+        by_slot[_slot_key(r.normalized_name, r.start_date, r.days_of_week, r.time_start)].append(r)
+    for i, e in enumerate(extracted):
+        key = _slot_key(normalize_name(e.name), e.start_date, e.days_of_week, e.time_start)
+        candidates = [r for r in by_slot.get(key, []) if r.id not in taken]
+        if candidates:
+            paired[i] = candidates[0]
+            taken.add(candidates[0].id)
+
+    by_name: dict[tuple[str, Any], list[Offering]] = defaultdict(list)
+    for r in rows:
+        by_name[(r.normalized_name, r.start_date)].append(r)
+    for i, e in enumerate(extracted):
+        if paired[i] is not None:
+            continue
+        loose = [
+            r for r in by_name.get((normalize_name(e.name), e.start_date), []) if r.id not in taken
+        ]
+        if loose:
+            paired[i] = loose[0]
+            taken.add(loose[0].id)
+
+    return list(zip(extracted, paired, strict=True))
 
 
 def _offering_fields(e: ExtractedOffering, norm: str, location_id: int | None) -> dict[str, Any]:
