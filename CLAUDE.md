@@ -149,11 +149,13 @@ runs the stages:
 3. `extractor.py` — checks `extraction_cache` by content hash first; on miss calls the LLM
    via structured tool use (`llm/client.py` prompts Claude to call a `report_offerings` tool,
    validates with `llm/schemas.py`, and computes per-call cost from token usage).
-4. `reconciler.py` — pairs extracted offerings with active DB rows one-to-one (first
-   on name + start date + days + start time, then on name + start date alone, so a
-   moved slot is an update), classifying new / updated / withdrawn / unchanged. A
-   page can list several time slots under one name, so never key rows on
-   `(normalized_name, start_date)` alone.
+4. `reconciler.py` — pairs extracted offerings with active DB rows one-to-one, in
+   tiers from most to least specific on top of name + start date (cohort, slot,
+   same days, same time, then name + start date alone), so a moved or edited slot
+   is an update of its row, and classifies new / updated / withdrawn / unchanged.
+   A page can list several slots or age cohorts under one name, so never key rows
+   on `(normalized_name, start_date)` alone. Withdrawing a row deletes its match
+   rows, since match readers don't filter on offering status.
 5. Rematch + alert enqueue, inside the same session as the reconcile.
 
 Failures increment `page.consecutive_failures` and back off exponentially (capped at 4×

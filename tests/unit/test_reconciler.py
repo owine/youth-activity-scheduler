@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from yas.crawl.reconciler import reconcile
 from yas.db.base import Base
-from yas.db.models import Offering, Page, Site
+from yas.db.models import Kid, Match, Offering, Page, Site
 from yas.db.models._types import OfferingStatus, ProgramType
 from yas.db.session import create_engine_for, session_scope
 from yas.llm.schemas import ExtractedOffering
@@ -256,4 +256,75 @@ async def test_existing_duplicate_rows_are_cleaned_up(tmp_path):
     result = await _run(engine, page_id, _slots(*_JETS[:2]))
     assert len(result.unchanged) == 2 and len(result.withdrawn) == 3
     assert len(await _active(engine)) == 2
+    await engine.dispose()
+
+
+def _cohort(name, ages, days, t):
+    return _offering(
+        name,
+        program_type=ProgramType.baseball,
+        start_date=date(2026, 3, 2),
+        age_min=ages[0],
+        age_max=ages[1],
+        days_of_week=days,
+        time_start=t,
+    )
+
+
+@pytest.mark.asyncio
+async def test_same_slot_cohorts_keep_their_rows_when_the_page_reorders(tmp_path):
+    """Two age groups in one slot under one name are not interchangeable: matches and
+    enrollments hang off each row, so a reorder must not swap their details."""
+    engine, _, page_id = await _setup(tmp_path)
+    young = _cohort("T-Ball", (4, 5), ["mon"], time(16, 0))
+    older = _cohort("T-Ball", (6, 8), ["mon"], time(16, 0))
+    first = await _run(engine, page_id, [young, older])
+
+    again = await _run(engine, page_id, [older, young])
+    assert again.updated == [] and again.new == [] and again.withdrawn == []
+    async with session_scope(engine) as s:
+        ages = {r.id: (r.age_min, r.age_max) for r in (await s.execute(select(Offering))).scalars()}
+    assert ages == {first.new[0]: (4, 5), first.new[1]: (6, 8)}
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_moved_slots_pair_by_the_part_that_did_not_move(tmp_path):
+    """Saturday and Sunday both move 9:00 -> 9:30 and the page lists Sunday first.
+    Each row keeps its own day rather than pairing by row order."""
+    engine, _, page_id = await _setup(tmp_path)
+    first = await _run(engine, page_id, _slots((["sat"], time(9, 0)), (["sun"], time(9, 0))))
+    sat_id, sun_id = first.new
+
+    result = await _run(engine, page_id, _slots((["sun"], time(9, 30)), (["sat"], time(9, 30))))
+    assert sorted(result.updated) == sorted([sat_id, sun_id])
+    async with session_scope(engine) as s:
+        days = {r.id: r.days_of_week for r in (await s.execute(select(Offering))).scalars()}
+    assert days == {sat_id: ["sat"], sun_id: ["sun"]}
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_withdrawing_an_offering_deletes_its_matches(tmp_path):
+    """The sweep never revisits withdrawn offerings and match readers don't filter
+    on offering status, so a kept match would show a removed program forever."""
+    engine, _, page_id = await _setup(tmp_path)
+    first = await _run(engine, page_id, _slots(*_JETS[:2]))
+    kept_id, gone_id = first.new
+    async with session_scope(engine) as s:
+        kid = Kid(name="Sam", dob=date(2019, 1, 1))
+        s.add(kid)
+        await s.flush()
+        s.add_all(
+            [
+                Match(kid_id=kid.id, offering_id=kept_id, score=0.9, reasons={}),
+                Match(kid_id=kid.id, offering_id=gone_id, score=0.9, reasons={}),
+            ]
+        )
+
+    result = await _run(engine, page_id, _slots(*_JETS[:1]))
+    assert result.withdrawn == [gone_id]
+    async with session_scope(engine) as s:
+        remaining = [m.offering_id for m in (await s.execute(select(Match))).scalars()]
+    assert remaining == [kept_id]
     await engine.dispose()

@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.crawl.normalize import normalize_name
-from yas.db.models import Location, Offering, Page
+from yas.db.models import Location, Match, Offering, Page
 from yas.db.models._types import OfferingStatus
 from yas.llm.schemas import ExtractedOffering
 
@@ -112,53 +112,76 @@ async def reconcile(
             row.status = OfferingStatus.withdrawn
             row.last_seen = now
             result.withdrawn.append(row.id)
+    if result.withdrawn:
+        # The daily sweep only visits active offerings, so nothing else would ever
+        # remove these, and match readers don't filter on offering status.
+        await session.execute(delete(Match).where(Match.offering_id.in_(result.withdrawn)))
 
     return result
 
 
-def _slot_key(norm: str, start: Any, days: Any, time_start: Any) -> tuple[Any, ...]:
-    return (norm, start, tuple(sorted(str(getattr(d, "value", d)) for d in days or [])), time_start)
+def _days(days: Any) -> tuple[str, ...]:
+    return tuple(sorted(str(getattr(d, "value", d)) for d in days or []))
+
+
+def _value(v: Any) -> Any:
+    return getattr(v, "value", v)
+
+
+# Identity tiers, most specific first. Each tier only pairs what the tiers above it
+# left, and pairing is one-to-one. Same-name offerings are common: one program in
+# several weekly slots, or several age cohorts in the same slot.
+_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
+    # The same cohort in the same slot.
+    lambda o: (
+        _days(o.days_of_week),
+        o.time_start,
+        o.time_end,
+        o.age_min,
+        o.age_max,
+        _value(o.program_type),
+        o.end_date,
+    ),
+    # The same slot, with other details edited.
+    lambda o: (_days(o.days_of_week), o.time_start),
+    # The slot's time moved.
+    lambda o: (_days(o.days_of_week),),
+    # The slot's days moved.
+    lambda o: (o.time_start,),
+    # Anything else under this name and start date.
+    lambda o: (),
+)
 
 
 def _pair(
     existing_rows: Sequence[Offering], extracted: list[ExtractedOffering]
 ) -> list[tuple[ExtractedOffering, Offering | None]]:
-    """Match extracted items to existing rows one-to-one, in two passes.
+    """Match extracted items to existing rows one-to-one, tier by tier.
 
-    1. Same name, start date, days and start time: the same slot, unchanged or
-       with other fields edited.
-    2. What's left, on name and start date alone, in page order: a slot whose
-       days or time moved stays an update of its row, so the row keeps its
-       matches and enrollments instead of becoming a withdraw plus a new row.
-
-    Anything still unpaired is new; existing rows nobody claimed are withdrawn.
+    Every tier keys on (normalized name, start date) plus the tier's own fields,
+    so a moved or edited slot stays an update of its row, keeping its matches and
+    enrollments, instead of becoming a withdraw plus a new row. Within a tier,
+    ties go to the lowest row id in page order. Unpaired items are new; rows
+    nobody claimed are withdrawn.
     """
     rows = sorted(existing_rows, key=lambda r: r.id)
+    names = [normalize_name(e.name) for e in extracted]
     taken: set[int] = set()
     paired: list[Offering | None] = [None] * len(extracted)
 
-    by_slot: dict[tuple[Any, ...], list[Offering]] = defaultdict(list)
-    for r in rows:
-        by_slot[_slot_key(r.normalized_name, r.start_date, r.days_of_week, r.time_start)].append(r)
-    for i, e in enumerate(extracted):
-        key = _slot_key(normalize_name(e.name), e.start_date, e.days_of_week, e.time_start)
-        candidates = [r for r in by_slot.get(key, []) if r.id not in taken]
-        if candidates:
-            paired[i] = candidates[0]
-            taken.add(candidates[0].id)
-
-    by_name: dict[tuple[str, Any], list[Offering]] = defaultdict(list)
-    for r in rows:
-        by_name[(r.normalized_name, r.start_date)].append(r)
-    for i, e in enumerate(extracted):
-        if paired[i] is not None:
-            continue
-        loose = [
-            r for r in by_name.get((normalize_name(e.name), e.start_date), []) if r.id not in taken
-        ]
-        if loose:
-            paired[i] = loose[0]
-            taken.add(loose[0].id)
+    for tier in _TIERS:
+        pool: dict[tuple[Any, ...], list[Offering]] = defaultdict(list)
+        for r in rows:
+            if r.id not in taken:
+                pool[(r.normalized_name, r.start_date, *tier(r))].append(r)
+        for i, e in enumerate(extracted):
+            if paired[i] is not None:
+                continue
+            candidates = pool.get((names[i], e.start_date, *tier(e)))
+            if candidates:
+                row = candidates.pop(0)
+                paired[i] = row
+                taken.add(row.id)
 
     return list(zip(extracted, paired, strict=True))
 
