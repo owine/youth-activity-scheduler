@@ -179,7 +179,7 @@ async def send_alert_group(
             subject=rendered.subject,
             body_plain=rendered.body_plain,
             body_html=rendered.body_html,
-            url=lead.payload_json.get("registration_url"),
+            url=rendered.url or lead.payload_json.get("registration_url"),
             urgent=(group.alert_type == AlertType.reg_opens_now.value),
         )
 

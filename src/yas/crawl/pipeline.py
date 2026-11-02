@@ -215,8 +215,8 @@ async def _do_crawl(
         page_row.next_check_at = _schedule_next(site)
         # Rematch each new/updated offering in the same session so matches land
         # atomically with the reconcile. Withdrawn offerings don't need a
-        # rematch call — they're filtered out by the matcher's active status
-        # check and any stale match rows become invisible on read.
+        # rematch call: reconcile() deletes their match rows, because match
+        # readers don't filter on offering status and the sweep skips them.
         for oid in reconcile_result.new + reconcile_result.updated:
             await rematch_offering(s, oid)
 

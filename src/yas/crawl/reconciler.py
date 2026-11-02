@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.crawl.normalize import normalize_name
-from yas.db.models import Location, Offering, Page
+from yas.db.models import Location, Match, Offering, Page
 from yas.db.models._types import OfferingStatus
 from yas.llm.schemas import ExtractedOffering
 
@@ -61,22 +63,21 @@ async def reconcile(
         .scalars()
         .all()
     )
-    existing_by_key: dict[tuple[str, Any], Offering] = {
-        (r.normalized_name, r.start_date): r for r in existing_rows
-    }
-
     now = datetime.now(UTC)
     result = ReconcileResult()
-    matched_keys: set[tuple[str, Any]] = set()
 
-    for e in extracted:
+    # Pair each extracted item with at most one existing row. A page can list
+    # several offerings that share (normalized_name, start_date): a program run in
+    # several weekly time slots. A dict on that pair alone collapsed them: every
+    # slot overwrote one row and the others stayed active with stale schedules.
+    pairs = _pair(existing_rows, extracted)
+
+    claimed: set[int] = set()
+    for e, existing in pairs:
         norm = normalize_name(e.name)
-        key = (norm, e.start_date)
-        matched_keys.add(key)
         location_id = await _location_id(session, page.site_id, e)
         desired = _offering_fields(e, norm, location_id)
 
-        existing = existing_by_key.get(key)
         if existing is None:
             row = Offering(
                 site_id=page.site_id,
@@ -91,6 +92,7 @@ async def reconcile(
             await session.flush()  # populate id
             result.new.append(row.id)
         else:
+            claimed.add(existing.id)
             # Compare the subset of fields we treat as user-visible.
             differs = any(
                 getattr(existing, f) != desired[f] for f in _COMPARE_FIELDS if f in desired
@@ -105,13 +107,154 @@ async def reconcile(
             else:
                 result.unchanged.append(existing.id)
 
-    for key, row in existing_by_key.items():
-        if key not in matched_keys:
+    for row in existing_rows:
+        if row.id not in claimed:
             row.status = OfferingStatus.withdrawn
             row.last_seen = now
             result.withdrawn.append(row.id)
+    if result.withdrawn:
+        # The daily sweep only visits active offerings, so nothing else would ever
+        # remove these, and match readers don't filter on offering status.
+        await session.execute(delete(Match).where(Match.offering_id.in_(result.withdrawn)))
 
     return result
+
+
+def _days(days: Any) -> tuple[str, ...]:
+    return tuple(sorted(str(getattr(d, "value", d)) for d in days or []))
+
+
+def _value(v: Any) -> Any:
+    return getattr(v, "value", v)
+
+
+# Identity tiers, most specific first. Each tier only pairs what the tiers above it
+# left, and pairing is one-to-one. Same-name offerings are common: one program in
+# several weekly slots, or several age cohorts in the same slot. So every schedule
+# tier is preceded by the same tier plus the age range: a cohort pairs with its own
+# row by age before rows in its slot become interchangeable.
+def _ages(o: Any) -> tuple[Any, ...]:
+    return (o.age_min, o.age_max)
+
+
+_SCHEDULE_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
+    # The same slot.
+    lambda o: (_days(o.days_of_week), o.time_start),
+    # The slot's time moved.
+    lambda o: (_days(o.days_of_week),),
+    # The slot's days moved.
+    lambda o: (o.time_start,),
+    # Anything else under this name and start date.
+    lambda o: (),
+)
+
+_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
+    # The same cohort in the same slot, unchanged.
+    lambda o: (
+        _days(o.days_of_week),
+        o.time_start,
+        o.time_end,
+        *_ages(o),
+        _value(o.program_type),
+        o.end_date,
+    ),
+    *(
+        tier
+        for schedule in _SCHEDULE_TIERS
+        for tier in (
+            (lambda o, schedule=schedule: (*schedule(o), *_ages(o))),
+            schedule,
+        )
+    ),
+)
+
+
+def _schedule_order(o: Any) -> tuple[Any, ...]:
+    t = o.time_start
+    return (_days(o.days_of_week), t is None, t or time.min)
+
+
+def _distance(a: Any, b: Any) -> float:
+    """How far apart two slots are: start-time minutes plus a day per mismatch."""
+    ta, tb = a.time_start, b.time_start
+    if ta == tb:
+        minutes = 0.0
+    elif ta is None or tb is None:
+        minutes = 12 * 60.0
+    else:
+        minutes = float(abs((ta.hour * 60 + ta.minute) - (tb.hour * 60 + tb.minute)))
+    days = len(set(_days(a.days_of_week)) ^ set(_days(b.days_of_week)))
+    return minutes + 24 * 60.0 * days
+
+
+def _assign(items: list[Any], rows: list[Offering]) -> list[tuple[int, int]]:
+    """Pair two schedule-sorted lists, returning (item position, row position).
+
+    An order-preserving assignment with the least total `_distance`, where the
+    shorter side is paired in full and the longer side may skip entries. So when
+    slots shift together and one is dropped in the same crawl (9:00, 10:00, 11:00
+    becoming 10:15, 11:15), the dropped slot's own row is the one left unpaired,
+    rather than every row sliding onto its neighbour. Ties skip later entries, so
+    identical rows pair lowest-id first.
+    """
+    swap = len(items) > len(rows)
+    short: list[Any] = list(rows) if swap else items
+    long: list[Any] = items if swap else list(rows)
+    n, m = len(short), len(long)
+    inf = float("inf")
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    cost[0] = [0.0] * (m + 1)
+    for i in range(1, n + 1):
+        for j in range(i, m + 1):
+            take = cost[i - 1][j - 1] + _distance(short[i - 1], long[j - 1])
+            cost[i][j] = min(cost[i][j - 1], take)
+    pairs: list[tuple[int, int]] = []
+    i, j = n, m
+    while i > 0:
+        if j > i and cost[i][j] == cost[i][j - 1]:
+            j -= 1
+        else:
+            pairs.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+    return [(b, a) for a, b in pairs] if swap else pairs
+
+
+def _pair(
+    existing_rows: Sequence[Offering], extracted: list[ExtractedOffering]
+) -> list[tuple[ExtractedOffering, Offering | None]]:
+    """Match extracted items to existing rows one-to-one, tier by tier.
+
+    Every tier keys on (normalized name, start date) plus the tier's own fields,
+    so a moved or edited slot stays an update of its row, keeping its matches and
+    enrollments, instead of becoming a withdraw plus a new row. Within a tier,
+    ties go to the lowest row id in page order. Unpaired items are new; rows
+    nobody claimed are withdrawn.
+    """
+    rows = sorted(existing_rows, key=lambda r: r.id)
+    names = [normalize_name(e.name) for e in extracted]
+    taken: set[int] = set()
+    paired: list[Offering | None] = [None] * len(extracted)
+
+    for tier in _TIERS:
+        pool: dict[tuple[Any, ...], list[Offering]] = defaultdict(list)
+        for r in rows:
+            if r.id not in taken:
+                pool[(r.normalized_name, r.start_date, *tier(r))].append(r)
+        waiting: dict[tuple[Any, ...], list[int]] = defaultdict(list)
+        for i, e in enumerate(extracted):
+            if paired[i] is None:
+                waiting[(names[i], e.start_date, *tier(e))].append(i)
+        for key, indices in waiting.items():
+            candidates = pool.get(key)
+            if not candidates:
+                continue
+            items = sorted(indices, key=lambda i: _schedule_order(extracted[i]))
+            rows_here = sorted(candidates, key=_schedule_order)
+            for item_pos, row_pos in _assign([extracted[i] for i in items], rows_here):
+                paired[items[item_pos]] = rows_here[row_pos]
+                taken.add(rows_here[row_pos].id)
+
+    return list(zip(extracted, paired, strict=True))
 
 
 def _offering_fields(e: ExtractedOffering, norm: str, location_id: int | None) -> dict[str, Any]:

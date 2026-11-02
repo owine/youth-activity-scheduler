@@ -172,6 +172,113 @@ async def test_build_new_match_coalesced(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
+async def test_build_new_match_leaves_out_offerings_that_are_gone(tmp_path: Any) -> None:
+    """A coalesced group whose member offering was withdrawn (its match deleted)
+    still renders for the offerings that remain. Failing the render would skip
+    every member, losing the alert for the current offering too."""
+    from yas.db.models._types import OfferingStatus
+
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Park", base_url="https://p.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+        s.add(page)
+        await s.flush()
+        kid = Kid(name="Ada", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
+        s.add(kid)
+        await s.flush()
+        live = Offering(
+            site_id=site.id, page_id=page.id, name="Soccer Camp", normalized_name="soccer camp"
+        )
+        gone = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Tennis Camp",
+            normalized_name="tennis camp",
+            status=OfferingStatus.withdrawn,
+        )
+        s.add_all([live, gone])
+        await s.flush()
+        s.add(Match(kid_id=kid.id, offering_id=live.id, score=0.8, computed_at=NOW))
+        alerts = [
+            Alert(
+                type=AlertType.new_match.value,
+                kid_id=kid.id,
+                channels=[],
+                scheduled_for=NOW,
+                dedup_key=f"x{o.id}",
+                payload_json={"offering_id": o.id},
+                skipped=False,
+            )
+            for o in (gone, live)
+        ]
+        s.add_all(alerts)
+        await s.flush()
+
+        payload = await build_new_match(s, alerts[0], alerts)
+
+    assert [m["offering_name"] for m in payload.matches] == ["Soccer Camp"]
+
+
+@pytest.mark.asyncio
+async def test_rendered_url_follows_the_offerings_the_email_shows(tmp_path: Any) -> None:
+    """When the lead alert's offering is the one left out, the push tap-through
+    must not open the withdrawn program."""
+    from yas.db.models._types import OfferingStatus
+    from yas.email import render_email
+
+    eng = await _engine(tmp_path)
+    async with session_scope(eng) as s:
+        site = Site(name="Park", base_url="https://p.example.com", active=True)
+        s.add(site)
+        await s.flush()
+        page = Page(site_id=site.id, url="https://p.example.com/s", kind=PageKind.schedule)
+        s.add(page)
+        await s.flush()
+        kid = Kid(name="Ada", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
+        s.add(kid)
+        await s.flush()
+        live = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Soccer Camp",
+            normalized_name="soccer camp",
+            registration_url="https://p.example.com/r/live",
+        )
+        gone = Offering(
+            site_id=site.id,
+            page_id=page.id,
+            name="Tennis Camp",
+            normalized_name="tennis camp",
+            registration_url="https://p.example.com/r/gone",
+            status=OfferingStatus.withdrawn,
+        )
+        s.add_all([live, gone])
+        await s.flush()
+        s.add(Match(kid_id=kid.id, offering_id=live.id, score=0.8, computed_at=NOW))
+        lead, other = (
+            Alert(
+                type=AlertType.new_match.value,
+                kid_id=kid.id,
+                channels=[],
+                scheduled_for=NOW,
+                dedup_key=f"x{o.id}",
+                payload_json={"offering_id": o.id, "registration_url": o.registration_url},
+                skipped=False,
+            )
+            for o in (gone, live)
+        )
+        s.add_all([lead, other])
+        await s.flush()
+
+        rendered = await render_email(s, AlertType.new_match, lead, [lead, other])
+
+    assert rendered.url == "https://p.example.com/r/live"
+
+
+@pytest.mark.asyncio
 async def test_build_new_match_missing_offering(tmp_path: Any) -> None:
     """payload_json points at a non-existent offering -> EmailRenderError."""
     eng = await _engine(tmp_path)
