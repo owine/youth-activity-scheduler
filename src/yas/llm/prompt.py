@@ -2,9 +2,11 @@
 
 The system prompt declares the role, the fixed `program_type` vocabulary, date
 format conventions, and a "prefer null to guessing" instruction. The user
-message carries the (normalized) HTML, URL, and site name."""
+message carries the crawl date, the (normalized) HTML, URL, and site name."""
 
 from __future__ import annotations
+
+from datetime import UTC, date, datetime
 
 from yas.db.models._types import ProgramType
 
@@ -42,12 +44,36 @@ Strict rules:
    their own. "Mon-Fri 10:30 am & 4:00 pm, Sat 9:00 am" is three items (mon-fri
    10:30, mon-fri 16:00, sat 09:00); "Saturday 9:00 am, Sunday 9:00 am" is two.
    If the page states how long a class lasts, derive time_end from it.
-3. If the page lists no offerings, return an empty list."""
+3. If the page lists no offerings, return an empty list.
+4. When a date omits the year ("October 26th - December 19th"), infer the year
+   from the crawl date given with the page. This is inference from context under
+   rule 1, not guessing. Pages list current and upcoming sessions, and sometimes
+   ones that just finished, so:
+   - give end_date (start_date, if there is no end) the earliest year that puts it
+     no more than two months before the crawl date;
+   - give start_date the latest year that keeps it on or before end_date, so a
+     session crossing New Year starts in the earlier year;
+   - give registration_opens_at the latest year that keeps it on or before
+     start_date.
+   If the page pairs a date with a weekday ("Sat, Oct 24"), use the year in which
+   they match instead."""
 
 
-def build_extraction_prompt(*, html: str, url: str, site_name: str) -> tuple[str, str]:
-    """Return (system_prompt, user_prompt) for the extraction call."""
+def build_extraction_prompt(
+    *, html: str, url: str, site_name: str, today: date | None = None
+) -> tuple[str, str]:
+    """Return (system_prompt, user_prompt) for the extraction call.
+
+    `today` is the crawl date, defaulting to today in UTC. Some pages give dates
+    without a year, and rule 4 resolves them against it, looking forward: a summer
+    camp advertised in November is next summer's, not the one just gone. Without
+    the date, Haiku 4.5 guessed (2024 and 2025 for pages crawled in 2026) and
+    Haiku 5.5 returns null.
+    The date goes in the user message, which already varies per page.
+    """
+    crawled = (today or datetime.now(UTC).date()).isoformat()
     user = (
-        f"Site: {site_name}\nURL: {url}\n\n--- page content ---\n{html}\n--- end page content ---"
+        f"Site: {site_name}\nURL: {url}\nCrawled on: {crawled}\n\n"
+        f"--- page content ---\n{html}\n--- end page content ---"
     )
     return _SYSTEM, user
