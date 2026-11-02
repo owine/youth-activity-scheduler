@@ -74,3 +74,32 @@ async def test_extract_propagates_extraction_error(tmp_path):
         rows = (await s.execute(select(ExtractionCache))).scalars().all()
         assert rows == []
     await engine.dispose()
+
+
+async def test_concurrent_extractions_of_identical_content_both_succeed(tmp_path):
+    """Two pages with the same normalized content (two JS-only pages that both
+    normalize to "") crawled in one tick: both miss the cache before either
+    writes it, so the second insert used to fail on the primary key."""
+    import asyncio
+
+    engine = await _mk_engine(tmp_path)
+    both_missed = asyncio.Barrier(2)
+
+    class _OverlappingLLM(FakeLLMClient):
+        async def extract_offerings(self, *, html, url, site_name):
+            await both_missed.wait()
+            return await super().extract_offerings(html=html, url=url, site_name=site_name)
+
+    llm = _OverlappingLLM(
+        default=[ExtractedOffering(name="Soccer", program_type=ProgramType.soccer)]
+    )
+    a, b = await asyncio.gather(
+        extract(engine=engine, llm=llm, html=PAGE, url="a", site_name="s"),
+        extract(engine=engine, llm=llm, html=PAGE, url="b", site_name="s"),
+    )
+    assert llm.call_count == 2
+    assert [o.name for o in a.offerings] == [o.name for o in b.offerings] == ["Soccer"]
+    async with session_scope(engine) as s:
+        rows = (await s.execute(select(ExtractionCache))).scalars().all()
+        assert [r.content_hash for r in rows] == [content_hash(normalize(PAGE))]
+    await engine.dispose()
