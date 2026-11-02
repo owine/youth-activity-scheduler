@@ -254,6 +254,48 @@ async def test_call_tool_stays_forced_on_haiku_5_5():
     [call] = messages.calls
     assert call["tool_choice"] == {"type": "tool", "name": "report_offerings"}
     assert "output_config" not in call
+    assert call["max_tokens"] == 256  # no thinking, so the caller's cap stands
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model", ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-mythos-5-1"]
+)
+async def test_call_tool_uses_auto_where_forced_tool_choice_is_rejected(model):
+    """These models 400 on a forced tool_choice. They get auto + low effort, and the
+    cap is raised to the floor because they may think (Opus 5.5 can't turn it off)."""
+    messages = _FakeAnthropicMessages({"top_line": "x"}, model=model)
+    client = AnthropicClient(
+        api_key="sk-test", model=model, sdk_client=_FakeAnthropicClient(messages)
+    )
+    await client.call_tool(
+        system="s",
+        user="u",
+        tool_name="report_offerings",
+        tool_description="d",
+        input_schema={"type": "object"},
+        max_tokens=256,
+    )
+
+    [call] = messages.calls
+    assert call["tool_choice"] == {"type": "auto"}
+    assert call["output_config"] == {"effort": "low"}
+    assert call["max_tokens"] == 2048
+
+
+@pytest.mark.asyncio
+async def test_extraction_on_a_forced_rejecting_model_keeps_extraction_effort():
+    """Extraction already uses auto; only call_tool's choice depends on this list."""
+    messages = _FakeAnthropicMessages({"offerings": []}, model="claude-sonnet-5-5")
+    client = AnthropicClient(
+        api_key="sk-test", model="claude-sonnet-5-5", sdk_client=_FakeAnthropicClient(messages)
+    )
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+    [call] = messages.calls
+    assert call["tool_choice"] == {"type": "auto"}
+    assert call["output_config"] == {"effort": "medium"}
+    assert call["max_tokens"] == 20000
 
 
 @pytest.mark.asyncio

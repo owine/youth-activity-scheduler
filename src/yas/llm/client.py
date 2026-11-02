@@ -80,6 +80,23 @@ _NO_EFFORT_PREFIXES = (
     "claude-3",
 )
 
+# Models that reject a forced tool_choice with a 400 ("tool_choice: type "tool" and
+# "any" are not supported for this model"). call_tool, which forces its tool
+# everywhere else, sends them tool_choice auto at CALL_TOOL_EFFORT instead.
+_NO_FORCED_TOOL_PREFIXES = (
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+)
+CALL_TOOL_EFFORT = "low"
+
+# Whenever a call can think, its max_tokens is raised to at least this, because
+# thinking spends from the same budget. The digest top-line asks for 256, which is
+# sized for an answer with no thinking. Opus 5.5 and Fable 5.1 can't turn thinking
+# off, and unused tokens aren't billed, so the floor costs nothing.
+_THINKING_MAX_TOKENS_FLOOR = 2048
+
 
 @dataclass(frozen=True)
 class ExtractionResult:
@@ -215,6 +232,8 @@ class AnthropicClient:
             if effort is None
             else {"tool_choice": {"type": "auto"}, "output_config": {"effort": effort}}
         )
+        if effort is not None:
+            max_tokens = max(max_tokens, _THINKING_MAX_TOKENS_FLOOR)
         msg = await self._client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
@@ -270,8 +289,10 @@ class AnthropicClient:
         input_schema: dict[str, Any],
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]:
-        # Stays forced (no thinking). The digest top-line runs at max_tokens=256,
-        # which thinking could use up, and neither caller was in the Haiku 5.5 eval.
+        # Forced (no thinking) wherever the model allows it, including the default
+        # Haiku 5.5: neither the digest top-line nor the /discover classifier was in
+        # the Haiku 5.5 eval, so they keep the request they always sent.
+        forced_rejected = self._model.startswith(_NO_FORCED_TOOL_PREFIXES)
         try:
             return await self._call_messages(
                 system=system,
@@ -280,6 +301,7 @@ class AnthropicClient:
                 tool_description=tool_description,
                 input_schema=input_schema,
                 max_tokens=max_tokens,
+                effort=CALL_TOOL_EFFORT if forced_rejected else None,
             )
         except _ToolUseFailure as exc:
             raise ToolCallError(raw=exc.raw, detail=exc.detail, cost_usd=exc.cost_usd) from exc
