@@ -284,9 +284,13 @@ jobs:
 
   docker-publish:
     # Stitch the per-arch digests pushed by docker-build into a single
-    # multi-arch manifest, tagged `main`, `sha-<full>`, and `sha-<short>`.
+    # multi-arch manifest, tagged `sha-<full>` and `sha-<short>`. These tags
+    # are immutable per commit, so concurrent runs cannot clobber each other.
+    # The mutable `main` tag is moved by `tag-main` below, which is serialized
+    # and forward-only. This job runs unserialized so that every main commit
+    # gets its `sha-<full>` image, which ci-pass and release.yml depend on.
     #
-    # This job never touches `latest` or any semver tag. Publishing a GitHub
+    # This job never touches `main`, `latest` or any semver tag. Publishing a GitHub
     # Release runs release.yml, which finds this job's `sha-<full>` image for
     # the tagged commit and RETAGS that digest as X.Y.Z / X.Y / X / latest
     # (no rebuild), so `latest` means newest release, not main HEAD.
@@ -359,7 +363,6 @@ jobs:
           done <<< "$ANNOTATIONS"
           # shellcheck disable=SC2046
           docker buildx imagetools create \
-            --tag "${IMAGE}:main" \
             --tag "${IMAGE}:sha-${SHA}" \
             --tag "${IMAGE}:sha-${short_sha}" \
             "${ann_args[@]}" \
@@ -371,6 +374,97 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           docker buildx imagetools inspect "${IMAGE}:sha-${SHA}"
+
+  tag-main:
+    # Point the mutable `main` tag at this commit's `sha-<full>` image, but
+    # only forward. ci.yml has no workflow-level concurrency, so two pushes to
+    # main build in parallel; when `main` was written by docker-publish, the
+    # older run could finish last and roll `main` back to a stale image.
+    #
+    # Serialized like release.yml's `release-retag`, so the read-compare-write
+    # below cannot interleave. Forward-only: `main` moves only when this
+    # commit descends from the one it currently names (read from the index's
+    # org.opencontainers.image.revision annotation). A late run for an older
+    # commit leaves `main` alone, and a newer commit whose build failed does
+    # not hold `main` back from the green commits before it.
+    #
+    # Deliberately NOT in ci-pass's `needs`. GitHub keeps one pending job per
+    # concurrency group, so a burst of merges cancels the queued middle
+    # tag-main. That is harmless (a newer run moves `main` past it), but a
+    # cancelled job in ci-pass would turn that commit red, and release.yml
+    # reads a red ci-pass as "this commit has no image".
+    needs: docker-publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    concurrency:
+      group: main-tag
+      cancel-in-progress: false
+    permissions:
+      contents: read   # compare commits for the forward-only check
+      packages: write  # move the `main` tag
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image name (lowercase)
+        id: image
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          echo "name=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Move main forward to this commit
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Which commit does `main` name now? A missing tag (first publish)
+          # or a missing annotation means there is nothing to protect.
+          current=""
+          if raw=$(docker buildx imagetools inspect --raw "${IMAGE}:main" 2>/tmp/inspect.err); then
+            current=$(jq -r '.annotations["org.opencontainers.image.revision"] // empty' <<<"$raw")
+          elif ! grep -qi 'not found' /tmp/inspect.err; then
+            # Any other failure (auth, network) must not be read as "no tag".
+            cat /tmp/inspect.err >&2
+            exit 1
+          fi
+
+          if [ -n "$current" ] && [ "$current" != "$SHA" ]; then
+            # status of SHA relative to current: ahead = SHA descends from it.
+            status=$(gh api "repos/${REPO}/compare/${current}...${SHA}" --jq .status)
+            if [ "$status" != "ahead" ]; then
+              echo "::notice::main is at ${current}; ${SHA} does not descend from it (compare: ${status}). Leaving main alone."
+              echo "\`main\` left at \`${current}\` (compare: ${status})." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+
+          # Retag sha-<full>, carrying its index annotations so imagetools
+          # re-emits the index byte-for-byte and `main` shares its digest.
+          ann_args=()
+          while IFS= read -r kv; do
+            ann_args+=(--annotation "index:${kv}")
+          done < <(docker buildx imagetools inspect --raw "${IMAGE}:sha-${SHA}" \
+            | jq -r '.annotations // {} | to_entries[] | "\(.key)=\(.value)"')
+          docker buildx imagetools create --tag "${IMAGE}:main" "${ann_args[@]}" "${IMAGE}:sha-${SHA}"
+
+          want=$(docker buildx imagetools inspect "${IMAGE}:sha-${SHA}" --format '{{.Manifest.Digest}}')
+          got=$(docker buildx imagetools inspect "${IMAGE}:main" --format '{{.Manifest.Digest}}')
+          if [ "$got" != "$want" ]; then
+            echo "::error::${IMAGE}:main is ${got}, expected ${want} (sha-${SHA})"
+            exit 1
+          fi
+          echo "\`main\` moved ${current:-<none>} → \`${SHA}\` (\`${want}\`)." >> "$GITHUB_STEP_SUMMARY"
 
   # Stable-named aggregator so the branch ruleset can require a single
   # `ci-pass` check regardless of the matrix dimensions (the per-axis
@@ -386,6 +480,7 @@ jobs:
   # on a main commit as "this commit's image is published". Without it, a
   # failed publish would leave ci-pass green and the release's walk-back would
   # silently ship the parent commit's image. PRs skip it, which passes.
+  # tag-main is the one job left out on purpose; see its comment.
   ci-pass:
     needs: [changes, check, frontend-check, e2e, docker-build, docker-publish]
     if: always()

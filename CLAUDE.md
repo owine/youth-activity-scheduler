@@ -90,7 +90,9 @@ runs against the newest release (`:latest`), not main HEAD.
 ### Releases
 
 `latest` is the **newest release**, not main HEAD. A push to main publishes the multi-arch
-image as `main`, `sha-<full>` and `sha-<short>` only (ci.yml `docker-publish`). Publishing a
+image as `sha-<full>` and `sha-<short>` (ci.yml `docker-publish`), then `tag-main` moves `main`
+onto it. That job is serialized and forward-only, so an older run that finishes last cannot roll
+`main` back, and it is the one job deliberately left out of `ci-pass`. Publishing a
 GitHub Release tagged `vX.Y.Z` runs `.github/workflows/release.yml`, which **retags, never
 rebuilds**: after requiring the commit be on main and its main CI run's `ci-pass` be green, it
 points `X.Y.Z` / `X.Y` / `X` / `latest` at that commit's existing `sha-<full>` digest (image tags
@@ -273,6 +275,7 @@ specs live in `e2e/` and run against a real API.
 - `frontend/pnpm-workspace.yaml` uses the single `allowBuilds` key introduced in pnpm 11, not the
   older `onlyBuiltDependencies` family, and camelCase settings (`preferFrozenLockfile`,
   `saveExact`, `audit.level`) rather than the kebab-case `.npmrc` spellings.
-- CI's `ci-pass` job is a stable-named aggregator over all other jobs and treats `skipped` as
-  success — docs-only PRs skip `docker-build` via the `changes` paths-filter and must still merge.
+- CI's `ci-pass` job is a stable-named aggregator over all other jobs (except `tag-main`, see
+  Releases) and treats `skipped` as success — docs-only PRs skip `docker-build` via the `changes`
+  paths-filter and must still merge.
 - The HTTP API is unauthenticated by design and intended for trusted networks only.
