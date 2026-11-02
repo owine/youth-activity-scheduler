@@ -32,7 +32,7 @@ const makeQc = () =>
   new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
 describe('AlertRoutingSection', () => {
-  it('renders rows for each alert type with columns [Enabled, email, ntfy, pushover]', () => {
+  it('renders rows for each alert type with columns [Enabled, email, ntfy, pushover, any push]', () => {
     const routing: AlertRouting[] = [
       { type: 'new_match', channels: ['email'], enabled: true },
       { type: 'watchlist_hit', channels: ['email', 'ntfy'], enabled: true },
@@ -52,9 +52,9 @@ describe('AlertRoutingSection', () => {
     expect(screen.getByText(/new_match/i)).toBeInTheDocument();
     expect(screen.getByText(/watchlist_hit/i)).toBeInTheDocument();
 
-    // Check that checkboxes are rendered (2 rows * 4 columns = 8 checkboxes)
+    // Check that checkboxes are rendered (2 rows * 5 columns = 10 checkboxes)
     const checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes.length).toBe(8);
+    expect(checkboxes.length).toBe(10);
   });
 
   it('unconfigured channel column is disabled with title attribute', () => {
@@ -79,6 +79,45 @@ describe('AlertRoutingSection', () => {
       'title',
       expect.stringMatching(/Configure.*pushover/i),
     );
+  });
+
+  it('shows the "push" alias the default routing uses, and gates it on any push channel', () => {
+    // reg_opens_1h defaults to ["push"]; without this column the row looked
+    // like it routed nowhere and the alias could not be removed.
+    const routing: AlertRouting[] = [{ type: 'reg_opens_1h', channels: ['push'], enabled: true }];
+    const qc = makeQc();
+    qc.setQueryData(['household'], {
+      ...baseHh,
+      ntfy_configured: false,
+      pushover_configured: false,
+    });
+    qc.setQueryData(['alert_routing'], routing);
+    render(<AlertRoutingSection />, { wrapper: wrap(qc) });
+
+    const push = screen.getByRole('checkbox', { name: 'reg_opens_1h push' });
+    expect(push).toBeChecked();
+    // Last channel of an enabled row: removal is blocked by the guard.
+    expect(push).toBeDisabled();
+    // Adding the alias elsewhere is blocked until a push channel exists.
+    expect(screen.getByRole('checkbox', { name: 'reg_opens_1h ntfy' })).toBeDisabled();
+  });
+
+  it('lets an unconfigured channel that is already routed be removed', () => {
+    const routing: AlertRouting[] = [
+      { type: 'watchlist_hit', channels: ['push', 'email'], enabled: true },
+    ];
+    const qc = makeQc();
+    qc.setQueryData(['household'], {
+      ...baseHh,
+      ntfy_configured: false,
+      pushover_configured: false,
+    });
+    qc.setQueryData(['alert_routing'], routing);
+    render(<AlertRoutingSection />, { wrapper: wrap(qc) });
+
+    const push = screen.getByRole('checkbox', { name: 'watchlist_hit push' });
+    expect(push).toBeChecked();
+    expect(push).toBeEnabled();
   });
 
   it('shows inline note about last-channel guard', () => {

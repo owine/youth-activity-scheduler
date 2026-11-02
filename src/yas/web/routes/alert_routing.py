@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.alerts.routing import KNOWN_CHANNELS
+from yas.alerts.routing import KNOWN_CHANNELS, ROUTABLE_CHANNELS
 from yas.db.models import AlertRouting, HouseholdSettings
 from yas.db.models._types import AlertType
 from yas.db.session import session_scope
@@ -58,7 +58,8 @@ async def patch_alert_routing(
     """Update alert routing for a specific alert type.
 
     Validate channels against configured notifiers:
-    - Unknown channel names (not in {email, ntfy, pushover}) → 422.
+    - Unknown channel names (not email, ntfy, pushover, or the "push" alias)
+      → 422.
     - Known but unconfigured channels → 200 (warn log, pass validation).
     """
     # Check that at least one field is being updated
@@ -88,7 +89,7 @@ async def patch_alert_routing(
 
             # Check for unknown channel names
             for ch in body.channels:
-                if ch not in KNOWN_CHANNELS:
+                if ch not in ROUTABLE_CHANNELS:
                     raise HTTPException(
                         status_code=422,
                         detail=f"unknown channel type: {ch}",

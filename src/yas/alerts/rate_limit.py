@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.db.models import Alert
@@ -85,35 +85,26 @@ async def count_pushes_sent_in_last_hour(
     kid_id: int,
     push_channels: list[str],
 ) -> int:
-    """Count alerts.sent_at >= now-1h where any configured push channel was used."""
+    """Count pushes sent to this kid in the last hour on any configured push channel.
+
+    Counts sends, not alert rows: a coalesced group of N alerts goes out as one
+    message, and send_alert_group stamps every member with the same ``sent_at``.
+    So distinct ``sent_at`` values among push-delivered rows are distinct sends.
+    """
     if not push_channels:
         return 0
     window_start = datetime.now(UTC) - timedelta(hours=1)
-    count = (
+    rows = (
         await session.execute(
-            select(func.count(Alert.id)).where(
+            select(Alert.sent_at, Alert.channels).where(
                 Alert.kid_id == kid_id,
                 Alert.sent_at.isnot(None),
                 Alert.sent_at >= window_start,
             )
         )
-    ).scalar_one()
-    if count == 0:
-        return 0
-    alerts = (
-        (
-            await session.execute(
-                select(Alert).where(
-                    Alert.kid_id == kid_id,
-                    Alert.sent_at.isnot(None),
-                    Alert.sent_at >= window_start,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return sum(1 for a in alerts if any(c in push_channels for c in (a.channels or [])))
+    ).all()
+    pushed = set(push_channels)
+    return len({sent_at for sent_at, channels in rows if pushed.intersection(channels or [])})
 
 
 def _parse_hhmm(s: str) -> time:

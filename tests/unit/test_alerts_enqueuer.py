@@ -315,7 +315,10 @@ async def test_enqueue_push_cap_dedups_per_hour_bucket(tmp_path):
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 1
-        assert rows[0].payload_json["suppressed_count"] == 7
+        # Counts every alert held back in the hour, not just the last group.
+        assert rows[0].payload_json["suppressed_count"] == 10
+        # Sent once, when the hour ends.
+        assert rows[0].scheduled_for.replace(tzinfo=UTC) == datetime(2026, 4, 22, 16, tzinfo=UTC)
     # Different hour bucket → separate row
     async with session_scope(engine) as s:
         await enqueue_push_cap(s, kid_id=1, hour_bucket="2026-04-22T16", suppressed_count=1)
