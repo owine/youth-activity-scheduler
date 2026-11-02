@@ -80,8 +80,15 @@ async def _upsert_alert(
         )
     ).scalar_one_or_none()
     if existing is not None:
-        existing.payload_json = payload
-        existing.scheduled_for = scheduled_for
+        # Keep delivery's bookkeeping (`_attempts`, `_errors`) and a retry's
+        # backoff time: the matcher re-enqueues an unsent match alert on every
+        # recompute, which would otherwise reset its retries each time.
+        kept = {k: v for k, v in (existing.payload_json or {}).items() if k.startswith("_")}
+        existing.payload_json = {**payload, **kept}
+        current = existing.scheduled_for
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=UTC)
+        existing.scheduled_for = max(current, scheduled_for)
         return existing.id
     row = Alert(
         type=alert_type.value,

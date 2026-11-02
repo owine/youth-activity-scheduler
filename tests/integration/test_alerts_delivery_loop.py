@@ -930,3 +930,27 @@ async def test_group_with_no_notifier_for_any_channel_is_skipped(tmp_path):  # t
         assert updated.sent_at is None
         assert updated.payload_json.get("_skipped_reason") == "no notifier for push"
     assert email_notifier.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_group_whose_known_channel_is_unconfigured_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
+    """new_match routes to email. With no email notifier (not configured yet, or
+    it failed to build this tick) the group is held, not skipped: a skipped
+    match alert counts as alerted, so skipping would lose it for good."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        a = _alert(alert_type=AlertType.new_match.value, scheduled_for=now)
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, {}, _settings(), None)
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is False
+        assert updated.sent_at is None
+        later = updated.scheduled_for.replace(tzinfo=UTC)
+        assert timedelta(minutes=59) < later - now < timedelta(minutes=61)

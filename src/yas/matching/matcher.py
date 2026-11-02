@@ -340,7 +340,8 @@ async def _alert_match_once(
     score: float,
     reasons: dict[str, Any],
 ) -> None:
-    """Enqueue the match's alert unless one was already sent or skipped.
+    """Enqueue the match's alert unless one was already sent or skipped, of
+    either type.
 
     A match becomes alert-worthy when it hits a watchlist pattern, or else when
     its score reaches the kid's threshold. That can happen on insert or on a
@@ -349,19 +350,26 @@ async def _alert_match_once(
     pipeline used to enqueue for every recomputed match, so each edit to an
     alerted offering re-sent "New match". An unsent row is still updated in
     place by `_upsert_alert`.
+
+    A skipped alert counts as alerted, so delivery must not skip what it can
+    still deliver later (it defers a group whose channel isn't configured yet).
+    Prod's new_match rows skipped as unrenderable before #640 count too, which
+    is what keeps the deploy from sending a catch-up wave.
     """
     watchlist_hit = (reasons or {}).get("watchlist_hit")
-    if watchlist_hit:
-        alert_type = AlertType.watchlist_hit
-    elif score >= kid.alert_score_threshold:
-        alert_type = AlertType.new_match
-    else:
+    if not watchlist_hit and score < kid.alert_score_threshold:
         return
-    dk = dedup_key_for(alert_type, kid_id=kid.id, offering_id=offering_id)
+    # Either type counts: a match is alerted once, whichever it was. Otherwise
+    # deleting a watchlist entry turns its sent watchlist_hit matches into
+    # new_match ones, and each would alert again.
+    keys = [
+        dedup_key_for(t, kid_id=kid.id, offering_id=offering_id)
+        for t in (AlertType.new_match, AlertType.watchlist_hit)
+    ]
     already = (
         await session.execute(
             select(Alert.id)
-            .where(Alert.dedup_key == dk)
+            .where(Alert.dedup_key.in_(keys))
             .where(or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)))
             .limit(1)
         )

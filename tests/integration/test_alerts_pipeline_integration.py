@@ -574,3 +574,44 @@ async def test_match_that_becomes_alert_worthy_on_update_alerts_once(tmp_path: A
     async with session_scope(engine) as s:
         await rematch_kid(s, kid_id)
     assert [a.id for a in await _new_match_alerts()] == [alert.id]
+
+
+@pytest.mark.asyncio
+async def test_removing_a_watchlist_entry_does_not_realert_as_new_match(tmp_path: Any) -> None:
+    """A match alerted as a watchlist hit becomes a plain match once its entry is
+    deleted. Checking only the current type's key found no new_match row, so the
+    next rematch sent "New match" for a program the user had already been told
+    about."""
+    from yas.matching.matcher import rematch_kid
+
+    engine = await _make_engine(tmp_path, "wl-removed.db")
+    await _seed_household(engine)
+    kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
+    async with session_scope(engine) as s:
+        entry = WatchlistEntry(kid_id=kid_id, pattern="soccer")
+        s.add(entry)
+        await s.flush()
+        entry_id = entry.id
+    _site_id, _page_id, site, page = await _seed_site_and_page(engine)
+    llm = FakeLLMClient(
+        default=[
+            ExtractedOffering(
+                name="Soccer Camp", program_type=ProgramType.soccer, age_min=5, age_max=12
+            )
+        ]
+    )
+    await crawl_page(engine=engine, fetcher=FakeFetcher(), llm=llm, page=page, site=site)
+    async with session_scope(engine) as s:
+        (hit,) = (await s.execute(select(Alert))).scalars().all()
+        assert hit.type == AlertType.watchlist_hit.value
+        hit.sent_at = datetime.now(UTC)
+        await s.delete(
+            (
+                await s.execute(select(WatchlistEntry).where(WatchlistEntry.id == entry_id))
+            ).scalar_one()
+        )
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    async with session_scope(engine) as s:
+        types = [a.type for a in (await s.execute(select(Alert))).scalars().all()]
+    assert types == [AlertType.watchlist_hit.value]

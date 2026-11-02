@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from yas.alerts.routing import KNOWN_CHANNELS
 from yas.db.models import AlertRouting, HouseholdSettings
 from yas.db.models._types import AlertType
 from yas.db.session import session_scope
@@ -17,7 +18,6 @@ log = get_logger("yas.web.alert_routing")
 router = APIRouter(prefix="/api/alert_routing", tags=["alert_routing"])
 
 # Known channel types in the system
-_KNOWN_CHANNELS = {"email", "ntfy", "pushover"}
 
 
 def _engine(req: Request) -> AsyncEngine:
@@ -88,7 +88,7 @@ async def patch_alert_routing(
 
             # Check for unknown channel names
             for ch in body.channels:
-                if ch not in _KNOWN_CHANNELS:
+                if ch not in KNOWN_CHANNELS:
                     raise HTTPException(
                         status_code=422,
                         detail=f"unknown channel type: {ch}",
@@ -96,7 +96,7 @@ async def patch_alert_routing(
 
             # Warn about known but unconfigured channels
             for ch in body.channels:
-                if ch in _KNOWN_CHANNELS and ch not in configured:
+                if ch in KNOWN_CHANNELS and ch not in configured:
                     log.warning(
                         "channel.not_configured",
                         channel=ch,
