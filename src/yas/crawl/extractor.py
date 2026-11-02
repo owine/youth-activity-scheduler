@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.crawl.change_detector import content_hash, normalize
@@ -59,10 +60,13 @@ async def extract(
     # Cache miss — call LLM.
     result = await llm.extract_offerings(html=norm, url=url, site_name=site_name)
 
-    # Persist to cache.
+    # Persist to cache. Two pages with the same content (two JS-only pages that
+    # both normalize to "") can be extracted concurrently and both miss the
+    # lookup above; the first writer's row wins and the second insert is a no-op.
     async with session_scope(engine) as s:
-        s.add(
-            ExtractionCache(
+        await s.execute(
+            insert(ExtractionCache)
+            .values(
                 content_hash=h,
                 extracted_json={
                     "offerings": [json.loads(o.model_dump_json()) for o in result.offerings]
@@ -70,6 +74,7 @@ async def extract(
                 llm_model=result.model,
                 cost_usd=result.cost_usd,
             )
+            .on_conflict_do_nothing(index_elements=[ExtractionCache.content_hash])
         )
 
     return ExtractionResult(
