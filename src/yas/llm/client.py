@@ -38,6 +38,7 @@ _PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-5-5": (4.00, 20.00),
     "claude-fable-5": (10.00, 50.00),
+    "claude-mythos-5-1": (10.00, 50.00),
 }
 
 # Models with a second rate card for long prompts, as prefix -> (max prompt tokens

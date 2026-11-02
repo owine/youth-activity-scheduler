@@ -540,3 +540,11 @@ async def test_effort_is_sent_only_to_models_that_accept_it(model, forced):
     assert ("output_config" not in call) is forced
     expected = {"type": "tool", "name": "report_offerings"} if forced else {"type": "auto"}
     assert call["tool_choice"] == expected
+
+
+def test_every_model_call_tool_can_route_to_is_priced():
+    """A model the client sends requests to but can't price is reported as free."""
+    from yas.llm.client import _NO_FORCED_TOOL_PREFIXES, _rate_for
+
+    for model in _NO_FORCED_TOOL_PREFIXES:
+        assert _rate_for(model, prompt_tokens=1000) is not None, model
