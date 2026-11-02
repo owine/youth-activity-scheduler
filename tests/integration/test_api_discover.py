@@ -87,6 +87,33 @@ async def test_discover_returns_candidates(client):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_discover_502_when_model_does_not_call_the_tool(client):
+    """A ToolCallError (no tool call, truncation, refusal) is the classifier failing,
+    the same as a schema violation: 502 classification_failed, not an unhandled 500."""
+    from yas.llm.client import ToolCallError
+
+    c, _, llm = client
+
+    async def _no_call(**_):
+        raise ToolCallError(raw="id=msg_1", detail="model stopped without calling the tool")
+
+    llm.call_tool = _no_call
+    respx.get("https://ysi.test/").mock(return_value=httpx.Response(200, text=_SEED))
+    respx.get("https://ysi.test/sitemap.xml").mock(
+        return_value=httpx.Response(200, content=_SITEMAP)
+    )
+    respx.get("https://ysi.test/programs/summer/").mock(
+        return_value=httpx.Response(200, text=_PAGE)
+    )
+    respx.get("https://ysi.test/programs/").mock(return_value=httpx.Response(200, text=_PAGE))
+
+    r = await c.post("/api/sites/1/discover")
+    assert r.status_code == 502
+    assert r.json()["detail"] == ("classification_failed: model stopped without calling the tool")
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_discover_404_when_site_missing(client):
     c, _, _ = client
     r = await c.post("/api/sites/999/discover")

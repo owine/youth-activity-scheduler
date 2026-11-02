@@ -71,6 +71,7 @@ so each broken site becomes its own issue.
 | `GeocoderUnavailable` (Nominatim 429/403/408/5xx, transport, non-JSON or malformed body) | no | | Expected outage; log warning, record `unavailable` and retry after an hour. The enricher stops that tick's batch. Other 4xx reject the query itself and count as `not_found` |
 | Digest LLM summary failed (deterministic fallback used) | no | | Log warning; an Anthropic outage already shows up via crawl errors |
 | `/readyz` returning 503 | no | | Probes poll constantly; the 503 is the signal. A readiness check that *raises* is still reported. |
+| `/discover` seed fetch or classifier failed (`DiscoveryError`, 502) | no | | User-triggered, and the error is shown in the UI. Covers the LLM not calling its tool, truncation and refusals |
 | Unhandled API exception (500) | yes | error | FastAPI integration |
 | Worker loop crash (exits the process) | yes | error | uncaught-exception hook, flushed at exit |
 | Browser: route render error | yes | error | router `defaultOnCatch` |
