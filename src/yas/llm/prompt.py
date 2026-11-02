@@ -2,9 +2,11 @@
 
 The system prompt declares the role, the fixed `program_type` vocabulary, date
 format conventions, and a "prefer null to guessing" instruction. The user
-message carries the (normalized) HTML, URL, and site name."""
+message carries the crawl date, the (normalized) HTML, URL, and site name."""
 
 from __future__ import annotations
+
+from datetime import UTC, date, datetime
 
 from yas.db.models._types import ProgramType
 
@@ -42,12 +44,26 @@ Strict rules:
    their own. "Mon-Fri 10:30 am & 4:00 pm, Sat 9:00 am" is three items (mon-fri
    10:30, mon-fri 16:00, sat 09:00); "Saturday 9:00 am, Sunday 9:00 am" is two.
    If the page states how long a class lasts, derive time_end from it.
-3. If the page lists no offerings, return an empty list."""
+3. If the page lists no offerings, return an empty list.
+4. When a date omits the year ("October 26th - December 19th"), use the year that
+   puts it nearest the crawl date given with the page. If that would put an end
+   date before its start date, the session crosses New Year: give the end date the
+   following year."""
 
 
-def build_extraction_prompt(*, html: str, url: str, site_name: str) -> tuple[str, str]:
-    """Return (system_prompt, user_prompt) for the extraction call."""
+def build_extraction_prompt(
+    *, html: str, url: str, site_name: str, today: date | None = None
+) -> tuple[str, str]:
+    """Return (system_prompt, user_prompt) for the extraction call.
+
+    `today` is the crawl date, defaulting to today in UTC. Some pages give dates
+    without a year, and rule 4 resolves them against it. Without it Haiku 4.5
+    guessed (2024 and 2025 for pages crawled in 2026) and Haiku 5.5 returns null.
+    The date goes in the user message, which already varies per page.
+    """
+    crawled = (today or datetime.now(UTC).date()).isoformat()
     user = (
-        f"Site: {site_name}\nURL: {url}\n\n--- page content ---\n{html}\n--- end page content ---"
+        f"Site: {site_name}\nURL: {url}\nCrawled on: {crawled}\n\n"
+        f"--- page content ---\n{html}\n--- end page content ---"
     )
     return _SYSTEM, user

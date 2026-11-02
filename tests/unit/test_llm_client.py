@@ -548,3 +548,15 @@ def test_every_model_call_tool_can_route_to_is_priced():
 
     for model in _NO_FORCED_TOOL_PREFIXES:
         assert _rate_for(model, prompt_tokens=1000) is not None, model
+
+
+async def test_extract_offerings_sends_crawl_date():
+    from datetime import UTC, datetime
+
+    fake_messages = _FakeAnthropicMessages({"offerings": []}, model="claude-haiku-5-5")
+    client = AnthropicClient(
+        api_key="sk-test", model="claude-haiku-5-5", sdk_client=_FakeAnthropicClient(fake_messages)
+    )
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    user = fake_messages.calls[0]["messages"][0]["content"]
+    assert f"Crawled on: {datetime.now(UTC).date().isoformat()}" in str(user)
