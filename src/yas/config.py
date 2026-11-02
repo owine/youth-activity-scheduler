@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     crawl_scheduler_batch_size: int = 10
 
     # LLM extraction
-    llm_extraction_model: str = "claude-haiku-4-5-20251001"
+    llm_extraction_model: str = "claude-haiku-5-5"
 
     # Geocoder
     geocode_enabled: bool = True

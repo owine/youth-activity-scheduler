@@ -6,31 +6,12 @@ message carries the (normalized) HTML, URL, and site name."""
 
 from __future__ import annotations
 
-_PROGRAM_TYPES = (
-    # Team sports
-    "soccer",
-    "baseball",
-    "softball",
-    "basketball",
-    "hockey",
-    "football",
-    # Individual / other sports
-    "swim",
-    "martial_arts",
-    "gymnastics",
-    "dance",
-    "gym",
-    # Enrichment
-    "art",
-    "music",
-    "stem",
-    "academic",
-    # Umbrella
-    "multisport",
-    "outdoor",
-    "camp_general",
-    "unknown",
-)
+from yas.db.models._types import ProgramType
+
+# Derived from the enum the tool schema validates against, so the prompt can't
+# drift from it again. A hand-copied list had fallen 30+ values behind (no
+# "tennis"), which Haiku 5.5 followed literally and misfiled tennis as "racquet".
+_PROGRAM_TYPES = tuple(t.value for t in ProgramType)
 
 _SYSTEM = f"""You extract youth activity offerings from a single web page into a
 structured list. You are called with a tool named `report_offerings` — always
@@ -40,8 +21,9 @@ For each offering, fill these fields where the page makes them clear:
 - name (required, as the program is advertised)
 - description (optional, 1-2 sentences)
 - age_min / age_max (inclusive, integer years)
-- program_type: one of {", ".join(_PROGRAM_TYPES)}. Pick the closest match;
-  use "unknown" only when truly unclassifiable.
+- program_type: one of {", ".join(_PROGRAM_TYPES)}. Pick the most specific
+  match; use an umbrella value (racquet, multisport, camp_general) only when no
+  specific one fits, and "unknown" only when truly unclassifiable.
 - start_date / end_date (YYYY-MM-DD)
 - days_of_week: subset of ["mon","tue","wed","thu","fri","sat","sun"]
 - time_start / time_end (HH:MM, 24-hour)

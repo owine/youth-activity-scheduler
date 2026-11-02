@@ -49,8 +49,36 @@ _LONG_PROMPT_PRICING_PER_MTOK: dict[str, tuple[int, float, float]] = {
 
 # Enough headroom for a listing page of many sessions. Truncation is now a hard
 # error (see _call_messages), and unused output tokens are never billed, so the
-# only cost of a generous cap is the ceiling we never hit.
-DEFAULT_MAX_TOKENS = 16000
+# only cost of a generous cap is the ceiling we never hit. 20000 is the old 16000
+# scaled by Haiku 5.5's tokenizer, which counts the same text as ~25-30% more
+# tokens, and thinking now spends from the same budget. It stays under the
+# 21,333 the SDK allows without streaming.
+DEFAULT_MAX_TOKENS = 20000
+
+# Extraction lets the model think before it calls report_offerings: tool_choice
+# "auto" plus this effort, instead of a forced call, which skips thinking. On real
+# registered pages that cut omitted offerings and invented years for about
+# +$0.0002 a page. "medium" is Haiku 5.5's default; it is sent explicitly so an
+# upstream default change can't move it.
+EXTRACTION_EFFORT = "medium"
+
+# Models that reject `output_config.effort` with a 400: everything before Opus 4.5
+# and Sonnet 4.6, in both alias and dated forms (claude-sonnet-4-0,
+# claude-sonnet-4-20250514, claude-4-sonnet-20250514). They get the forced tool call
+# this client always sent, so setting YAS_LLM_EXTRACTION_MODEL back to
+# claude-haiku-4-5-20251001 restores the old request shape. Only the higher
+# DEFAULT_MAX_TOKENS differs, which only gives more room before truncation.
+_NO_EFFORT_PREFIXES = (
+    "claude-haiku-4-5",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-0",
+    "claude-sonnet-4-2",  # dated claude-sonnet-4-2025MMDD
+    "claude-opus-4-0",
+    "claude-opus-4-1",
+    "claude-opus-4-2",  # dated claude-opus-4-2025MMDD
+    "claude-4-",  # claude-4-sonnet-*, claude-4-opus-*
+    "claude-3",
+)
 
 
 @dataclass(frozen=True)
@@ -61,34 +89,64 @@ class ExtractionResult:
 
 
 class ExtractionError(Exception):
-    """LLM call succeeded but output didn't conform to our schema."""
+    """LLM call succeeded but output didn't conform to our schema.
 
-    def __init__(self, raw: str, detail: str):
+    `cost_usd` is what the failed call is estimated to have cost, from its usage,
+    so crawl-run totals include calls that produced nothing usable."""
+
+    def __init__(self, raw: str, detail: str, *, cost_usd: float = 0.0):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
+
+
+class ExtractionRefused(ExtractionError):
+    """The model's safety classifiers declined the page (`stop_reason: "refusal"`).
+
+    A subclass so every `except ExtractionError` still catches it, while callers that
+    care can tell a classifier decision from a parse failure. `category` is the API's
+    `stop_details.category` (e.g. "general_harms"), or None when it sends none.
+    """
+
+    def __init__(self, raw: str, detail: str, category: str | None, *, cost_usd: float = 0.0):
+        super().__init__(raw=raw, detail=detail, cost_usd=cost_usd)
+        self.category = category
 
 
 class ToolCallError(Exception):
     """Generic tool-use call failed — model did not invoke the requested tool."""
 
-    def __init__(self, raw: str, detail: str):
+    def __init__(self, raw: str, detail: str, *, cost_usd: float = 0.0):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
 
 
 class _ToolUseFailure(Exception):
     """Internal: the call returned, but not a usable tool input.
 
     Carries a ready-made `detail` so the public wrappers only have to pick which
-    exception type to re-raise as.
+    exception type to re-raise as. `refused` marks a `stop_reason: "refusal"`, with
+    the API's category when it sends one.
     """
 
-    def __init__(self, raw: str, detail: str):
+    def __init__(
+        self,
+        raw: str,
+        detail: str,
+        *,
+        cost_usd: float,
+        refused: bool = False,
+        category: str | None = None,
+    ):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
+        self.refused = refused
+        self.category = category
 
 
 class LLMClient(Protocol):
@@ -119,7 +177,7 @@ class AnthropicClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-haiku-4-5-20251001",
+        model: str = "claude-haiku-5-5",
         *,
         sdk_client: Any | None = None,
     ) -> None:
@@ -141,21 +199,45 @@ class AnthropicClient:
         tool_description: str,
         input_schema: dict[str, Any],
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        effort: str | None = None,
     ) -> tuple[dict[str, Any], str, float]:
+        """`effort=None` forces the tool call, so the model doesn't think first.
+        With an effort level the call is `tool_choice: auto` and the model may
+        think; the system prompt must then tell it to call the tool, and a reply
+        without the call fails below like any other missing call."""
         tool = {
             "name": tool_name,
             "description": tool_description,
             "input_schema": input_schema,
         }
+        mode: dict[str, Any] = (
+            {"tool_choice": {"type": "tool", "name": tool_name}}
+            if effort is None
+            else {"tool_choice": {"type": "auto"}, "output_config": {"effort": effort}}
+        )
         msg = await self._client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
             system=system,
             tools=[tool],
-            tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": user}],
+            **mode,
         )
         stop_reason = str(getattr(msg, "stop_reason", "?"))
+        # Priced up front so every failure below can report what the call cost.
+        cost = _estimate_cost_usd(msg)
+        # A refusal is an HTTP 200, so no SDK exception fires. It can also land
+        # mid-generation, leaving a partial tool input that parses as a short list,
+        # the same hazard as max_tokens below. Check it before reading content.
+        if stop_reason == "refusal":
+            category = getattr(getattr(msg, "stop_details", None), "category", None)
+            raise _ToolUseFailure(
+                raw=_dump_msg(msg),
+                detail=f"model declined the request (stop_reason=refusal, category={category})",
+                cost_usd=cost,
+                refused=True,
+                category=category,
+            )
         # A max_tokens cutoff truncates the tool input mid-JSON. It may still parse
         # into a well-formed-but-short result, which the reconciler would read as
         # "these offerings are gone" and withdraw. Never let it through.
@@ -166,14 +248,15 @@ class AnthropicClient:
                     f"response truncated at max_tokens={max_tokens} "
                     f"(stop_reason=max_tokens); result is incomplete"
                 ),
+                cost_usd=cost,
             )
         tool_input = _find_tool_input(msg, tool_name)
         if tool_input is None:
             raise _ToolUseFailure(
                 raw=_dump_msg(msg),
                 detail=f"model stopped without calling {tool_name} (stop_reason={stop_reason})",
+                cost_usd=cost,
             )
-        cost = _estimate_cost_usd(msg)
         model = str(getattr(msg, "model", self._model))
         return tool_input, model, cost
 
@@ -187,6 +270,8 @@ class AnthropicClient:
         input_schema: dict[str, Any],
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]:
+        # Stays forced (no thinking). The digest top-line runs at max_tokens=256,
+        # which thinking could use up, and neither caller was in the Haiku 5.5 eval.
         try:
             return await self._call_messages(
                 system=system,
@@ -197,7 +282,7 @@ class AnthropicClient:
                 max_tokens=max_tokens,
             )
         except _ToolUseFailure as exc:
-            raise ToolCallError(raw=exc.raw, detail=exc.detail) from exc
+            raise ToolCallError(raw=exc.raw, detail=exc.detail, cost_usd=exc.cost_usd) from exc
 
     async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
@@ -208,13 +293,18 @@ class AnthropicClient:
                 tool_name="report_offerings",
                 tool_description="Report the list of offerings extracted from the page.",
                 input_schema=_tool_schema(),
+                effort=None if self._model.startswith(_NO_EFFORT_PREFIXES) else EXTRACTION_EFFORT,
             )
         except _ToolUseFailure as exc:
-            raise ExtractionError(raw=exc.raw, detail=exc.detail) from exc
+            if exc.refused:
+                raise ExtractionRefused(
+                    raw=exc.raw, detail=exc.detail, category=exc.category, cost_usd=exc.cost_usd
+                ) from exc
+            raise ExtractionError(raw=exc.raw, detail=exc.detail, cost_usd=exc.cost_usd) from exc
         try:
             parsed = ExtractionResponse.model_validate(tool_input)
         except ValidationError as exc:
-            raise ExtractionError(raw=str(tool_input), detail=str(exc)) from exc
+            raise ExtractionError(raw=str(tool_input), detail=str(exc), cost_usd=cost) from exc
         return ExtractionResult(
             offerings=list(parsed.offerings),
             model=model,

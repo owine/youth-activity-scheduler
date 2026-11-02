@@ -409,7 +409,7 @@ Override only if you know why (e.g., pointing at an external Postgres).
 
 | Var | Default |
 |---|---|
-| `YAS_LLM_EXTRACTION_MODEL` | `claude-haiku-4-5-20251001` |
+| `YAS_LLM_EXTRACTION_MODEL` | `claude-haiku-5-5` |
 
 **Geocoder**
 

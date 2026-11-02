@@ -63,6 +63,7 @@ so each broken site becomes its own issue.
 | Crawl: unexpected exception (reconcile/matcher bug, DB error, Anthropic error after SDK retries) | yes | error | stack trace, site-tagged |
 | Crawl: exception escaping `crawl_page`, or the failure-backoff write failing | yes | error | stack trace, site-tagged |
 | Crawl: `ExtractionError` (fetched fine, couldn't be read into offerings) | yes | warning | one issue per site |
+| Crawl: `ExtractionRefused` (the model's safety classifiers declined the page, `stop_reason: "refusal"`) | yes | warning | one issue per site, tagged `refusal_category`. Like `ExtractionError`, it doesn't count toward `consecutive_failures`, so there is no backoff and no `crawl_failed` alert |
 | Crawl: page that listed offerings now extracts none (all withdrawn) | yes | warning | one issue per site |
 | Crawl: `FetchError` (404, 5xx, transport) | no | | Expected per-site; backs off, and the third in a row sends the in-app `crawl_failed` alert |
 | Delivery: a channel fails permanently (bad token, SMTP auth) | yes | warning | one issue per channel |

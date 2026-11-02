@@ -359,6 +359,48 @@ async def test_extraction_error_reports_a_warning_grouped_per_site(tmp_path, sen
 
 
 @pytest.mark.asyncio
+async def test_refusal_reports_its_own_warning_and_does_not_back_off(tmp_path, sentry_events):
+    """A safety-classifier decline is grouped apart from parse failures, and,
+    like them, never counts as a crawl failure (no backoff, no crawl_failed)."""
+    from yas.llm.client import ExtractionRefused
+
+    engine = await _init_db(tmp_path)
+
+    def _refuse(_html, _url, _site):
+        raise ExtractionRefused(
+            raw="id=msg_1", detail="declined", category="general_harms", cost_usd=0.0012
+        )
+
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+        try:
+            llm = FakeLLMClient(on_call=_refuse)
+            result = await _crawl(engine, fetcher, llm, site_id, page_id)
+        finally:
+            await fetcher.aclose()
+
+    assert result.status == CrawlStatus.failed
+    assert result.error_text == "extraction_refused: category=general_harms"
+    # The refused call was billed, so the crawl run records it.
+    assert result.llm_cost_usd == pytest.approx(0.0012)
+    async with session_scope(engine) as s:
+        run = (await s.execute(select(CrawlRun).where(CrawlRun.site_id == site_id))).scalar_one()
+        assert run.llm_cost_usd == pytest.approx(0.0012)
+    [event] = sentry_events
+    assert _exception_type(event) == "ExtractionRefused"
+    assert event["level"] == "warning"
+    assert event["tags"]["refusal_category"] == "general_harms"
+    assert event["fingerprint"] == ["crawl.extraction_refused", str(site_id)]
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        assert page.consecutive_failures == 0
+        # Not stored, so the next tick re-extracts instead of short-circuiting.
+        assert page.content_hash is None
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_page_that_suddenly_extracts_nothing_reports_a_warning(tmp_path, sentry_events):
     """A markup change usually yields a *valid* empty extraction, not an error.
 
