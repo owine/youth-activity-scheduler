@@ -130,19 +130,15 @@ def _value(v: Any) -> Any:
 
 # Identity tiers, most specific first. Each tier only pairs what the tiers above it
 # left, and pairing is one-to-one. Same-name offerings are common: one program in
-# several weekly slots, or several age cohorts in the same slot.
-_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
-    # The same cohort in the same slot.
-    lambda o: (
-        _days(o.days_of_week),
-        o.time_start,
-        o.time_end,
-        o.age_min,
-        o.age_max,
-        _value(o.program_type),
-        o.end_date,
-    ),
-    # The same slot, with other details edited.
+# several weekly slots, or several age cohorts in the same slot. So every schedule
+# tier is preceded by the same tier plus the age range: a cohort pairs with its own
+# row by age before rows in its slot become interchangeable.
+def _ages(o: Any) -> tuple[Any, ...]:
+    return (o.age_min, o.age_max)
+
+
+_SCHEDULE_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
+    # The same slot.
     lambda o: (_days(o.days_of_week), o.time_start),
     # The slot's time moved.
     lambda o: (_days(o.days_of_week),),
@@ -150,6 +146,26 @@ _TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
     lambda o: (o.time_start,),
     # Anything else under this name and start date.
     lambda o: (),
+)
+
+_TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
+    # The same cohort in the same slot, unchanged.
+    lambda o: (
+        _days(o.days_of_week),
+        o.time_start,
+        o.time_end,
+        *_ages(o),
+        _value(o.program_type),
+        o.end_date,
+    ),
+    *(
+        tier
+        for schedule in _SCHEDULE_TIERS
+        for tier in (
+            (lambda o, schedule=schedule: (*schedule(o), *_ages(o))),
+            schedule,
+        )
+    ),
 )
 
 

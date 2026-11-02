@@ -328,3 +328,20 @@ async def test_withdrawing_an_offering_deletes_its_matches(tmp_path):
         remaining = [m.offering_id for m in (await s.execute(select(Match))).scalars()]
     assert remaining == [kept_id]
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_cohort_withdraws_its_own_row_not_its_neighbours(tmp_path):
+    """Two cohorts share a slot; the page drops the younger one and edits the older
+    one's end date, so the most specific tier misses. Pairing must still go by age:
+    rewriting the younger row as the older cohort would move its enrollments."""
+    engine, _, page_id = await _setup(tmp_path)
+    young = _cohort("T-Ball", (5, 7), ["mon"], time(9, 0))
+    older = _cohort("T-Ball", (8, 10), ["mon"], time(9, 0))
+    young_id, older_id = (await _run(engine, page_id, [young, older])).new
+
+    edited = older.model_copy(update={"end_date": date(2026, 6, 1)})
+    result = await _run(engine, page_id, [edited])
+    assert result.updated == [older_id]
+    assert result.withdrawn == [young_id]
+    await engine.dispose()

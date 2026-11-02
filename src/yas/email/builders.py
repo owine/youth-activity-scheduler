@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
-from yas.db.models._types import AlertType, CrawlStatus
+from yas.db.models._types import AlertType, CrawlStatus, OfferingStatus
 from yas.db.models.alert import Alert
 from yas.db.models.crawl_run import CrawlRun
 from yas.db.models.kid import Kid
@@ -31,6 +31,9 @@ from yas.email.payloads import (
     TestSendPayload,
     WatchlistHitPayload,
 )
+from yas.logging import get_logger
+
+log = get_logger("yas.email.builders")
 
 _ERROR_SUMMARY_MAX = 200
 
@@ -346,13 +349,22 @@ async def _resolve_kid_matches(
         select(Offering, Match.score)
         .join(Match, (Match.offering_id == Offering.id) & (Match.kid_id == kid.id))
         .where(Offering.id.in_(offering_ids))
+        .where(Offering.status == OfferingStatus.active.value)
         .order_by(Match.score.desc())
     )
     rows = (await session.execute(stmt)).all()
+    # An offering withdrawn since its alert was queued, or whose match the sweep
+    # deleted, is left out of the email. Failing the render instead would skip the
+    # whole coalesced group, dropping alerts for offerings that are still current.
+    if not rows:
+        raise EmailRenderError(f"offerings not found: {offering_ids}", alert_id=lead.id)
     if len(rows) != len(offering_ids):
         found = {o.id for o, _ in rows}
-        missing = [oid for oid in offering_ids if oid not in found]
-        raise EmailRenderError(f"offerings not found: {missing}", alert_id=lead.id)
+        log.info(
+            "email.offerings_dropped",
+            alert_id=lead.id,
+            dropped=[oid for oid in offering_ids if oid not in found],
+        )
 
     site_ids = list({o.site_id for o, _ in rows})
     site_rows = (await session.execute(select(Site).where(Site.id.in_(site_ids)))).scalars().all()
