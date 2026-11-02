@@ -75,11 +75,13 @@ async def test_enqueued_new_match_renders(tmp_path: Any) -> None:
     await eng.dispose()
 
 
-async def test_enqueued_watchlist_hit_renders_with_its_entry_pattern(tmp_path: Any) -> None:
+async def test_enqueued_watchlist_hit_renders_with_its_hit_pattern(tmp_path: Any) -> None:
     eng, kid_id, off_id, entry_id = await _seed(tmp_path)
     async with session_scope(eng) as s:
+        # The reasons shape matcher._reasons_payload records at hit time.
+        reasons = {"watchlist_hit": {"entry_id": entry_id, "pattern": "soccer"}}
         await enqueue_watchlist_hit(
-            s, kid_id=kid_id, offering_id=off_id, watchlist_entry_id=entry_id, reasons={}
+            s, kid_id=kid_id, offering_id=off_id, watchlist_entry_id=entry_id, reasons=reasons
         )
     rendered = await _render(eng, AlertType.watchlist_hit)
     assert "Soccer Camp" in rendered.body_plain

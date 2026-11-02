@@ -16,7 +16,6 @@ from yas.db.models.kid import Kid
 from yas.db.models.match import Match
 from yas.db.models.offering import Offering
 from yas.db.models.site import Site
-from yas.db.models.watchlist import WatchlistEntry
 from yas.email._errors import EmailRenderError
 from yas.email.payloads import (
     CrawlFailedPayload,
@@ -327,17 +326,19 @@ async def gather_digest_payload(
 def _alert_offering_id(alert: Alert) -> int | None:
     """The offering an alert is about.
 
-    The enqueuers store it in the ``offering_id`` column, not in ``payload_json``.
-    Reading only the payload made every enqueued new_match, watchlist_hit and
-    reg_opens_now alert fail to render. Hand-built alerts (test fixtures, mostly)
-    may carry it in the payload instead, so that is the fallback. The column goes
-    NULL when the offering is deleted, which correctly leaves the alert
-    unrenderable.
+    The enqueuers store it only in the ``offering_id`` column. Reading it from
+    ``payload_json`` made every enqueued new_match, watchlist_hit and
+    reg_opens_now alert fail to render. There is deliberately no payload
+    fallback: the column goes NULL when the offering is deleted, and a stale
+    payload id could then resolve to a different offering that reused the id.
     """
-    if alert.offering_id is not None:
-        return alert.offering_id
-    raw = alert.payload_json.get("offering_id")
-    return int(raw) if raw is not None else None
+    return alert.offering_id
+
+
+def _watchlist_pattern(alert: Alert) -> str | None:
+    hit = (alert.payload_json.get("reasons") or {}).get("watchlist_hit") or {}
+    pattern = hit.get("pattern")
+    return pattern if isinstance(pattern, str) else None
 
 
 async def _resolve_kid_matches(
@@ -411,24 +412,20 @@ async def build_watchlist_hit(
 ) -> WatchlistHitPayload:
     """Build a WatchlistHitPayload from a coalesced group of watchlist_hit alerts.
 
-    Same shape as :func:`build_new_match`, plus the label of the watchlist entry
-    that hit: the enqueuer stores ``watchlist_entry_id``, and the label is that
-    entry's pattern. A ``watchlist_label`` already in the payload wins.
+    Same shape as :func:`build_new_match`, plus the pattern that hit. It is read
+    from each alert's ``reasons.watchlist_hit``, which the matcher records at hit
+    time: the entry itself may have been edited or deleted since. When members
+    hit different patterns, no single label is true for the email, so none is
+    shown.
     """
     kid, matches = await _resolve_kid_matches(session, lead, members)
-    label = lead.payload_json.get("watchlist_label")
-    entry_id = lead.payload_json.get("watchlist_entry_id")
-    if not isinstance(label, str) and isinstance(entry_id, int):
-        label = (
-            await session.execute(
-                select(WatchlistEntry.pattern).where(WatchlistEntry.id == entry_id)
-            )
-        ).scalar_one_or_none()
+    patterns = {_watchlist_pattern(a) for a in members}
+    label = patterns.pop() if len(patterns) == 1 else None
     return WatchlistHitPayload(
         kid_id=kid.id,
         kid_name=kid.name,
         matches=matches,
-        watchlist_label=label if isinstance(label, str) else None,
+        watchlist_label=label,
     )
 
 

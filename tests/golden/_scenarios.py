@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, CrawlStatus, PageKind
 from yas.db.models.crawl_run import CrawlRun
-from yas.db.models.watchlist import WatchlistEntry
 
 # Fixed timestamp -- goldens must be deterministic.
 GOLDEN_NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
@@ -174,8 +173,6 @@ async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]
     await session.flush()
     m = Match(kid_id=kid.id, offering_id=off.id, score=0.88, computed_at=GOLDEN_NOW)
     session.add(m)
-    entry = WatchlistEntry(kid_id=kid.id, pattern="robotics", created_at=GOLDEN_NOW)
-    session.add(entry)
     await session.flush()
     a = Alert(
         type=AlertType.watchlist_hit.value,
@@ -184,8 +181,11 @@ async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="watchlist_hit-golden",
-        # The shape enqueue_watchlist_hit writes; the label comes from the entry.
-        payload_json={"watchlist_entry_id": entry.id, "reasons": {}},
+        # The shape enqueue_watchlist_hit writes, with the matcher's hit-time reasons.
+        payload_json={
+            "watchlist_entry_id": 1,
+            "reasons": {"watchlist_hit": {"entry_id": 1, "pattern": "robotics"}},
+        },
         skipped=False,
     )
     session.add(a)

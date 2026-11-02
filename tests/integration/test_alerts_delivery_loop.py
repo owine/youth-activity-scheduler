@@ -44,10 +44,14 @@ def _alert(
     kid_id: int | None = 1,
     scheduled_for: datetime | None = None,
     payload: dict[str, Any] | None = None,
+    offering_id: int | None = None,
 ) -> Alert:
+    # The offering goes in the column, as the enqueuers write it; the builders
+    # don't read it from the payload.
     return Alert(
         type=alert_type,
         kid_id=kid_id,
+        offering_id=offering_id,
         channels=[],
         scheduled_for=scheduled_for or datetime.now(UTC),
         dedup_key=f"{alert_type}:{kid_id}:{datetime.now(UTC).isoformat()}",
@@ -169,7 +173,8 @@ async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-
         off_id = await _seed_offering_with_match(s, registration_opens_at=opens_at)
         a = _alert(
             alert_type=AlertType.reg_opens_now.value,
-            payload={"offering_id": off_id, "registration_url": "http://example.com"},
+            offering_id=off_id,
+            payload={"registration_url": "http://example.com"},
         )
         s.add(a)
         await s.flush()
@@ -226,7 +231,8 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
             alert_type=AlertType.new_match.value,
             kid_id=1,
             scheduled_for=now,
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(capped)
         await s.flush()
@@ -344,7 +350,8 @@ async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ig
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -387,7 +394,8 @@ async def test_transient_failure_retries_with_backoff(tmp_path):  # type: ignore
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -427,7 +435,8 @@ async def test_non_transient_failure_marks_skipped(tmp_path):  # type: ignore[no
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -468,7 +477,8 @@ async def test_quiet_hours_suppresses_push_but_not_email(tmp_path):  # type: ign
         a = _alert(
             alert_type=AlertType.watchlist_hit.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -555,7 +565,8 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
         a = _alert(
             alert_type=AlertType.watchlist_hit.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -606,8 +617,8 @@ async def test_retry_exhaustion_logs_an_error(tmp_path):  # type: ignore[no-unty
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
+            offering_id=off_id,
             payload={
-                "offering_id": off_id,
                 "kid_name": "Alice",
                 # Already exhausted: the next failure crosses _MAX_RETRIES.
                 "_attempts": 3,
@@ -740,7 +751,8 @@ async def test_immediate_alert_body_is_branded_html(tmp_path):  # type: ignore[n
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -816,7 +828,8 @@ async def test_permanent_failure_on_every_channel_reports_channel_and_lost_alert
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
@@ -852,7 +865,8 @@ async def test_retry_exhaustion_reports_the_lost_alert(tmp_path, sentry_events):
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice", "_attempts": 3},
+            offering_id=off_id,
+            payload={"kid_name": "Alice", "_attempts": 3},
         )
         s.add(a)
         await s.flush()
@@ -879,7 +893,8 @@ async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentr
         a = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
-            payload={"offering_id": off_id, "kid_name": "Alice"},
+            offering_id=off_id,
+            payload={"kid_name": "Alice"},
         )
         s.add(a)
         await s.flush()
