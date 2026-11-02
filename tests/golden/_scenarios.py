@@ -47,10 +47,12 @@ async def seed_new_match(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     a = Alert(
         type=AlertType.new_match.value,
         kid_id=kid.id,
+        offering_id=off.id,
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="new_match-golden",
-        payload_json={"offering_id": off.id},
+        # The shape enqueue_new_match writes: the offering is in the column only.
+        payload_json={"score": 0.91, "reasons": {}},
         skipped=False,
     )
     session.add(a)
@@ -91,7 +93,7 @@ async def seed_reg_opens_now(session: AsyncSession) -> tuple[Alert, list[Alert]]
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="reg_opens_now-golden",
-        payload_json={"offering_id": off.id},
+        payload_json={},  # enqueue_registration_countdowns: offering in the column only
         skipped=False,
     )
     session.add(a)
@@ -175,10 +177,15 @@ async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]
     a = Alert(
         type=AlertType.watchlist_hit.value,
         kid_id=kid.id,
+        offering_id=off.id,
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="watchlist_hit-golden",
-        payload_json={"offering_id": off.id, "watchlist_label": "robotics"},
+        # The shape enqueue_watchlist_hit writes, with the matcher's hit-time reasons.
+        payload_json={
+            "watchlist_entry_id": 1,
+            "reasons": {"watchlist_hit": {"entry_id": 1, "pattern": "robotics"}},
+        },
         skipped=False,
     )
     session.add(a)

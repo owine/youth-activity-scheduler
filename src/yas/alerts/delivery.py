@@ -15,7 +15,7 @@ from yas.alerts.rate_limit import (
     is_in_quiet_hours,
     should_rate_limit_push,
 )
-from yas.alerts.routing import get_routing
+from yas.alerts.routing import KNOWN_CHANNELS, get_routing
 from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings
 from yas.db.models._types import AlertType
@@ -33,6 +33,8 @@ _RETRY_DELAYS: dict[int, timedelta] = {
     3: timedelta(minutes=30),
 }
 _MAX_RETRIES = 3  # after attempt 3 → skipped
+# How long to hold a group whose routed channels are real but have no notifier.
+_NO_NOTIFIER_DEFER = timedelta(hours=1)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +108,8 @@ async def send_alert_group(
     - All transient failures   → retry scheduled via back-off table.
     - All permanent failures   → members marked skipped.
     - Routing disabled         → members marked skipped with "routing disabled".
+    - No routed channel has a notifier → deferred an hour if any is a known
+                                  channel, else members marked skipped.
     - Rate-capped              → members marked skipped with "rate capped",
                                   enqueue_push_cap called.
     - Quiet hours (push only)  → channel silently skipped (not retried).
@@ -130,6 +134,30 @@ async def send_alert_group(
         # from live state rather than reading these rows.
         _mark_all_skipped(members, "digest only")
         log.debug("delivery.no_channels", alert_type=group.alert_type)
+        return
+
+    if not any(name in notifiers for name in channels):
+        # No routed channel has a notifier. The send loop would skip each one and
+        # leave the rows unsent and unskipped, so the due query re-selected and
+        # re-rendered them every tick. Routing setup, not a failure, so no
+        # GlitchTip event either way.
+        if any(name in KNOWN_CHANNELS for name in channels):
+            # A real channel that isn't configured yet, or whose notifier failed
+            # to build this tick: hold the group and deliver once it exists.
+            # Skipping would lose it for good, since a skipped match alert
+            # counts as alerted.
+            later = datetime.now(UTC) + _NO_NOTIFIER_DEFER
+            for a in members:
+                a.scheduled_for = later
+            log.info(
+                "delivery.no_notifier_deferred",
+                alert_type=group.alert_type,
+                channels=list(channels),
+            )
+            return
+        # Only names no notifier can exist under (DEFAULT_ROUTING's "push").
+        _mark_all_skipped(members, f"no notifier for {', '.join(channels)}")
+        log.warning("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
         return
 
     # 2. Build message --------------------------------------------------------

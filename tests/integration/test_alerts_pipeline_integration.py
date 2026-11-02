@@ -475,3 +475,143 @@ async def test_enqueue_new_match_dedups_across_pipeline_and_matcher_paths(
         f"got {len(new_match_alerts)}"
     )
     assert new_match_alerts[0].kid_id == kid_id
+
+
+@pytest.mark.asyncio
+async def test_updated_offering_does_not_realert_an_existing_match(tmp_path: Any) -> None:
+    """An offering already matched and alerted, then edited on its page, is an
+    update of the same match, not a new one. The pipeline used to treat every
+    match it recomputed this tick as fresh, so once the first alert had been
+    sent, the edit inserted a second "New match" alert for the same program."""
+    engine = await _make_engine(tmp_path, "realert.db")
+    await _seed_household(engine)
+    await _seed_kid(engine, alert_score_threshold=0.0)
+    site_id, page_id, site, page = await _seed_site_and_page(engine)
+
+    def _llm(description: str) -> FakeLLMClient:
+        return FakeLLMClient(
+            default=[
+                ExtractedOffering(
+                    name="Soccer Camp",
+                    description=description,
+                    program_type=ProgramType.soccer,
+                    age_min=5,
+                    age_max=12,
+                )
+            ]
+        )
+
+    await crawl_page(engine=engine, fetcher=FakeFetcher(), llm=_llm("v1"), page=page, site=site)
+    async with session_scope(engine) as s:
+        (first,) = (
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
+        first.sent_at = datetime.now(UTC)
+
+    async with session_scope(engine) as s:
+        page2 = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        site2 = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+    edited = (
+        "<!doctype html><html><body><main><h1>Soccer Camp</h1><p>Edited.</p></main></body></html>"
+    )
+    await crawl_page(
+        engine=engine, fetcher=FakeFetcher(html=edited), llm=_llm("v2"), page=page2, site=site2
+    )
+
+    async with session_scope(engine) as s:
+        alerts = (
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
+    assert [a.id for a in alerts] == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_match_that_becomes_alert_worthy_on_update_alerts_once(tmp_path: Any) -> None:
+    """Alerting only on insert would miss a match that becomes alert-worthy later:
+    here the kid's threshold is above the score at first, then lowered, and the
+    next rematch updates the existing match. It alerts then, and not again."""
+    from yas.matching.matcher import rematch_kid
+
+    engine = await _make_engine(tmp_path, "becomes.db")
+    await _seed_household(engine)
+    kid_id = await _seed_kid(engine, alert_score_threshold=1.01)
+    _site_id, _page_id, site, page = await _seed_site_and_page(engine)
+    llm = FakeLLMClient(
+        default=[
+            ExtractedOffering(
+                name="Soccer Camp", program_type=ProgramType.soccer, age_min=5, age_max=12
+            )
+        ]
+    )
+    await crawl_page(engine=engine, fetcher=FakeFetcher(), llm=llm, page=page, site=site)
+
+    async def _new_match_alerts() -> list[Alert]:
+        async with session_scope(engine) as s:
+            return list(
+                (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+                .scalars()
+                .all()
+            )
+
+    assert await _new_match_alerts() == []
+
+    async with session_scope(engine) as s:
+        (
+            await s.execute(select(Kid).where(Kid.id == kid_id))
+        ).scalar_one().alert_score_threshold = 0.0
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    (alert,) = await _new_match_alerts()
+
+    async with session_scope(engine) as s:
+        (
+            await s.execute(select(Alert).where(Alert.id == alert.id))
+        ).scalar_one().sent_at = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    assert [a.id for a in await _new_match_alerts()] == [alert.id]
+
+
+@pytest.mark.asyncio
+async def test_removing_a_watchlist_entry_does_not_realert_as_new_match(tmp_path: Any) -> None:
+    """A match alerted as a watchlist hit becomes a plain match once its entry is
+    deleted. Checking only the current type's key found no new_match row, so the
+    next rematch sent "New match" for a program the user had already been told
+    about."""
+    from yas.matching.matcher import rematch_kid
+
+    engine = await _make_engine(tmp_path, "wl-removed.db")
+    await _seed_household(engine)
+    kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
+    async with session_scope(engine) as s:
+        entry = WatchlistEntry(kid_id=kid_id, pattern="soccer")
+        s.add(entry)
+        await s.flush()
+        entry_id = entry.id
+    _site_id, _page_id, site, page = await _seed_site_and_page(engine)
+    llm = FakeLLMClient(
+        default=[
+            ExtractedOffering(
+                name="Soccer Camp", program_type=ProgramType.soccer, age_min=5, age_max=12
+            )
+        ]
+    )
+    await crawl_page(engine=engine, fetcher=FakeFetcher(), llm=llm, page=page, site=site)
+    async with session_scope(engine) as s:
+        (hit,) = (await s.execute(select(Alert))).scalars().all()
+        assert hit.type == AlertType.watchlist_hit.value
+        hit.sent_at = datetime.now(UTC)
+        await s.delete(
+            (
+                await s.execute(select(WatchlistEntry).where(WatchlistEntry.id == entry_id))
+            ).scalar_one()
+        )
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    async with session_scope(engine) as s:
+        types = [a.type for a in (await s.execute(select(Alert))).scalars().all()]
+    assert types == [AlertType.watchlist_hit.value]

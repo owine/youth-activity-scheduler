@@ -323,6 +323,24 @@ async def gather_digest_payload(
     )
 
 
+def _alert_offering_id(alert: Alert) -> int | None:
+    """The offering an alert is about.
+
+    The enqueuers store it only in the ``offering_id`` column. Reading it from
+    ``payload_json`` made every enqueued new_match, watchlist_hit and
+    reg_opens_now alert fail to render. There is deliberately no payload
+    fallback: the column goes NULL when the offering is deleted, and a stale
+    payload id could then resolve to a different offering that reused the id.
+    """
+    return alert.offering_id
+
+
+def _watchlist_pattern(alert: Alert) -> str | None:
+    hit = (alert.payload_json.get("reasons") or {}).get("watchlist_hit") or {}
+    pattern = hit.get("pattern")
+    return pattern if isinstance(pattern, str) else None
+
+
 async def _resolve_kid_matches(
     session: AsyncSession,
     lead: Alert,
@@ -339,9 +357,7 @@ async def _resolve_kid_matches(
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
-    offering_ids = [
-        int(a.payload_json["offering_id"]) for a in members if "offering_id" in a.payload_json
-    ]
+    offering_ids = [oid for a in members if (oid := _alert_offering_id(a)) is not None]
     if not offering_ids:
         raise EmailRenderError(f"{lead.type} alert missing offering_id", alert_id=lead.id)
 
@@ -396,16 +412,20 @@ async def build_watchlist_hit(
 ) -> WatchlistHitPayload:
     """Build a WatchlistHitPayload from a coalesced group of watchlist_hit alerts.
 
-    Same shape as :func:`build_new_match`; additionally reads
-    ``watchlist_label`` from ``lead.payload_json`` (None if absent).
+    Same shape as :func:`build_new_match`, plus the pattern that hit. It is read
+    from each alert's ``reasons.watchlist_hit``, which the matcher records at hit
+    time: the entry itself may have been edited or deleted since. When members
+    hit different patterns, no single label is true for the email, so none is
+    shown.
     """
     kid, matches = await _resolve_kid_matches(session, lead, members)
-    label = lead.payload_json.get("watchlist_label")
+    patterns = {_watchlist_pattern(a) for a in members}
+    label = patterns.pop() if len(patterns) == 1 else None
     return WatchlistHitPayload(
         kid_id=kid.id,
         kid_name=kid.name,
         matches=matches,
-        watchlist_label=label if isinstance(label, str) else None,
+        watchlist_label=label,
     )
 
 
@@ -424,10 +444,9 @@ async def build_reg_opens_now(
     if lead.kid_id is None:
         raise EmailRenderError("reg_opens_now alert has no kid_id", alert_id=lead.id)
 
-    offering_id_raw = lead.payload_json.get("offering_id")
-    if offering_id_raw is None:
+    offering_id = _alert_offering_id(lead)
+    if offering_id is None:
         raise EmailRenderError("reg_opens_now alert missing offering_id", alert_id=lead.id)
-    offering_id = int(offering_id_raw)
 
     kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
     if kid is None:

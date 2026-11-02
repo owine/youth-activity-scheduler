@@ -8,6 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yas.db.models import AlertRouting
 from yas.db.models._types import AlertType
 
+# The channel names a notifier can be built under (alerts/notifier_builder.py).
+# Routing names anything else, such as DEFAULT_ROUTING's "push", can never be
+# delivered (#641).
+KNOWN_CHANNELS: frozenset[str] = frozenset({"email", "ntfy", "pushover"})
+
 DEFAULT_ROUTING: dict[str, list[str]] = {
     AlertType.watchlist_hit.value: ["push", "email"],
     AlertType.new_match.value: ["email"],

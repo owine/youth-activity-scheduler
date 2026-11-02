@@ -322,3 +322,23 @@ async def test_enqueue_push_cap_dedups_per_hour_bucket(tmp_path):
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Alert))).scalars().all()
         assert len(rows) == 2
+
+
+async def test_reenqueue_keeps_retry_state_of_an_unsent_alert(tmp_path):
+    """The matcher re-enqueues an unsent match alert on every recompute. That
+    must not wipe delivery's `_attempts` or pull a retry's backoff forward."""
+    engine = await _setup(tmp_path)
+    async with session_scope(engine) as s:
+        await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.5, reasons={})
+    backoff = datetime.now(UTC) + timedelta(minutes=30)
+    async with session_scope(engine) as s:
+        row = (await s.execute(select(Alert))).scalar_one()
+        row.payload_json = {**row.payload_json, "_attempts": 2}
+        row.scheduled_for = backoff
+    async with session_scope(engine) as s:
+        await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={"v": 2})
+    async with session_scope(engine) as s:
+        row = (await s.execute(select(Alert))).scalar_one()
+    assert row.payload_json["score"] == 0.9
+    assert row.payload_json["_attempts"] == 2
+    assert row.scheduled_for.replace(tzinfo=UTC) == backoff

@@ -84,7 +84,8 @@ async def test_build_new_match_single(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="x",
-            payload_json={"offering_id": off.id},
+            offering_id=off.id,
+            payload_json={},
             skipped=False,
         )
         s.add(a)
@@ -147,7 +148,8 @@ async def test_build_new_match_coalesced(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="x1",
-            payload_json={"offering_id": off1.id},
+            offering_id=off1.id,
+            payload_json={},
             skipped=False,
         )
         a2 = Alert(
@@ -156,7 +158,8 @@ async def test_build_new_match_coalesced(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="x2",
-            payload_json={"offering_id": off2.id},
+            offering_id=off2.id,
+            payload_json={},
             skipped=False,
         )
         s.add(a1)
@@ -209,7 +212,8 @@ async def test_build_new_match_leaves_out_offerings_that_are_gone(tmp_path: Any)
                 channels=[],
                 scheduled_for=NOW,
                 dedup_key=f"x{o.id}",
-                payload_json={"offering_id": o.id},
+                offering_id=o.id,
+                payload_json={},
                 skipped=False,
             )
             for o in (gone, live)
@@ -265,7 +269,8 @@ async def test_rendered_url_follows_the_offerings_the_email_shows(tmp_path: Any)
                 channels=[],
                 scheduled_for=NOW,
                 dedup_key=f"x{o.id}",
-                payload_json={"offering_id": o.id, "registration_url": o.registration_url},
+                offering_id=o.id,
+                payload_json={"registration_url": o.registration_url},
                 skipped=False,
             )
             for o in (gone, live)
@@ -364,7 +369,7 @@ async def _seed_reg_opens_now_minimal(
         channels=[],
         scheduled_for=NOW,
         dedup_key="r1",
-        payload_json={"offering_id": off.id},
+        payload_json={},
         skipped=False,
     )
     s.add(a)
@@ -614,7 +619,8 @@ async def test_build_watchlist_hit_single_with_label(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="wh1",
-            payload_json={"offering_id": off.id, "watchlist_label": "robotics camps"},
+            offering_id=off.id,
+            payload_json={"reasons": {"watchlist_hit": {"pattern": "robotics camps"}}},
             skipped=False,
         )
         s.add(a)
@@ -640,7 +646,8 @@ async def test_build_watchlist_hit_single_no_label(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="wh2",
-            payload_json={"offering_id": off.id},
+            offering_id=off.id,
+            payload_json={},
             skipped=False,
         )
         s.add(a)
@@ -653,8 +660,18 @@ async def test_build_watchlist_hit_single_no_label(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
-    """Two offerings -> ordered by score desc."""
+@pytest.mark.parametrize(
+    ("second_pattern", "label"),
+    [
+        ("build stuff", "build stuff"),
+        # Members that hit different patterns: no one label is true for the email.
+        ("lego", None),
+    ],
+)
+async def test_build_watchlist_hit_coalesced(
+    tmp_path: Any, second_pattern: str, label: str | None
+) -> None:
+    """Two offerings -> ordered by score desc; the label shows only when shared."""
     eng = await _engine(tmp_path)
     async with session_scope(eng) as s:
         kid, off1 = await _seed_watchlist_kid_and_offering(
@@ -687,7 +704,8 @@ async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="wh-c1",
-            payload_json={"offering_id": off1.id, "watchlist_label": "build stuff"},
+            offering_id=off1.id,
+            payload_json={"reasons": {"watchlist_hit": {"pattern": "build stuff"}}},
             skipped=False,
         )
         a2 = Alert(
@@ -696,7 +714,8 @@ async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
             channels=[],
             scheduled_for=NOW,
             dedup_key="wh-c2",
-            payload_json={"offering_id": off2.id},
+            offering_id=off2.id,
+            payload_json={"reasons": {"watchlist_hit": {"pattern": second_pattern}}},
             skipped=False,
         )
         s.add(a1)
@@ -708,7 +727,7 @@ async def test_build_watchlist_hit_coalesced(tmp_path: Any) -> None:
     assert len(payload.matches) == 2
     assert payload.matches[0]["offering_name"] == "LEGO Lab"
     assert payload.matches[1]["offering_name"] == "Robotics Camp"
-    assert payload.watchlist_label == "build stuff"
+    assert payload.watchlist_label == label
 
 
 # ---------------------------------------------------------------------------
