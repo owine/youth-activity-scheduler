@@ -219,12 +219,12 @@ async def _do_crawl(
             await rematch_offering(s, oid)
 
         # --- Alert hooks ---
-        # new_match and watchlist_hit alerts are enqueued by
-        # matcher._upsert_match, and only when a match row is inserted. The
-        # pipeline used to enqueue them again for every match recomputed this
-        # tick, so an edit to an offering that had already been alerted (an
-        # update of its existing match) re-sent "New match" once the first alert
-        # was sent. Here: registration countdowns, which an edit may move.
+        # new_match and watchlist_hit alerts are enqueued by the rematch above
+        # (matcher._alert_match_once: once per kid and offering). The pipeline
+        # used to enqueue them again for every match recomputed this tick, so an
+        # edit to an already-alerted offering re-sent "New match" once the first
+        # alert had been sent. Here: registration countdowns, which an edit may
+        # move.
         for oid in reconcile_result.new + reconcile_result.updated:
             offering_row = (
                 await s.execute(select(Offering).where(Offering.id == oid))

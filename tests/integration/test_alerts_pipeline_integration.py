@@ -527,3 +527,50 @@ async def test_updated_offering_does_not_realert_an_existing_match(tmp_path: Any
             .all()
         )
     assert [a.id for a in alerts] == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_match_that_becomes_alert_worthy_on_update_alerts_once(tmp_path: Any) -> None:
+    """Alerting only on insert would miss a match that becomes alert-worthy later:
+    here the kid's threshold is above the score at first, then lowered, and the
+    next rematch updates the existing match. It alerts then, and not again."""
+    from yas.matching.matcher import rematch_kid
+
+    engine = await _make_engine(tmp_path, "becomes.db")
+    await _seed_household(engine)
+    kid_id = await _seed_kid(engine, alert_score_threshold=1.01)
+    _site_id, _page_id, site, page = await _seed_site_and_page(engine)
+    llm = FakeLLMClient(
+        default=[
+            ExtractedOffering(
+                name="Soccer Camp", program_type=ProgramType.soccer, age_min=5, age_max=12
+            )
+        ]
+    )
+    await crawl_page(engine=engine, fetcher=FakeFetcher(), llm=llm, page=page, site=site)
+
+    async def _new_match_alerts() -> list[Alert]:
+        async with session_scope(engine) as s:
+            return list(
+                (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+                .scalars()
+                .all()
+            )
+
+    assert await _new_match_alerts() == []
+
+    async with session_scope(engine) as s:
+        (
+            await s.execute(select(Kid).where(Kid.id == kid_id))
+        ).scalar_one().alert_score_threshold = 0.0
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    (alert,) = await _new_match_alerts()
+
+    async with session_scope(engine) as s:
+        (
+            await s.execute(select(Alert).where(Alert.id == alert.id))
+        ).scalar_one().sent_at = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        await rematch_kid(s, kid_id)
+    assert [a.id for a in await _new_match_alerts()] == [alert.id]

@@ -6,12 +6,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from yas.alerts.enqueuer import enqueue_new_match, enqueue_watchlist_hit
+from yas.alerts.enqueuer import dedup_key_for, enqueue_new_match, enqueue_watchlist_hit
 from yas.config import get_settings
 from yas.db.models import (
+    Alert,
     Enrollment,
     HouseholdSettings,
     Kid,
@@ -21,7 +22,7 @@ from yas.db.models import (
     UnavailabilityBlock,
     WatchlistEntry,
 )
-from yas.db.models._types import OfferingStatus
+from yas.db.models._types import AlertType, OfferingStatus
 from yas.geo.distance import great_circle_miles
 from yas.geo.drive_time import DriveTimeProvider, OsrmClient, compute_drive_time
 from yas.logging import get_logger
@@ -304,10 +305,10 @@ async def _upsert_match(
 ) -> bool:
     """Returns True if new (insert), False if existing row updated.
 
-    On fresh inserts fires the new_match / watchlist_hit enqueue. This is the
-    only place those alerts are created, for both the crawl pipeline's rematch
-    and the sweep (rematch_kid / rematch_all_active_kids). An update of an
-    existing match enqueues nothing, so editing an offering doesn't re-alert."""
+    Either way, alerts the match the first time it is alert-worthy; see
+    `_alert_match_once`. This is the only place new_match / watchlist_hit alerts
+    are created, for both the crawl pipeline's rematch and the sweep
+    (rematch_kid / rematch_all_active_kids)."""
     existing = (
         await session.execute(
             select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
@@ -324,29 +325,61 @@ async def _upsert_match(
                 computed_at=now,
             )
         )
-        # Enqueue alerts for fresh inserts (sweep path).
-        watchlist_hit = (reasons or {}).get("watchlist_hit")
-        if watchlist_hit:
-            await enqueue_watchlist_hit(
-                session,
-                kid_id=kid_id,
-                offering_id=offering_id,
-                watchlist_entry_id=watchlist_hit["entry_id"],
-                reasons=reasons,
-            )
-        elif score >= kid.alert_score_threshold:
-            await enqueue_new_match(
-                session,
-                kid_id=kid_id,
-                offering_id=offering_id,
-                score=score,
-                reasons=reasons,
-            )
-        return True
-    existing.score = score
-    existing.reasons = reasons
-    existing.computed_at = now
-    return False
+    else:
+        existing.score = score
+        existing.reasons = reasons
+        existing.computed_at = now
+    await _alert_match_once(session, kid, offering_id, score, reasons)
+    return existing is None
+
+
+async def _alert_match_once(
+    session: AsyncSession,
+    kid: Kid,
+    offering_id: int,
+    score: float,
+    reasons: dict[str, Any],
+) -> None:
+    """Enqueue the match's alert unless one was already sent or skipped.
+
+    A match becomes alert-worthy when it hits a watchlist pattern, or else when
+    its score reaches the kid's threshold. That can happen on insert or on a
+    later update (an edit raises the score, or a new watchlist entry matches).
+    Recomputing an already-alerted match must not alert again: the crawl
+    pipeline used to enqueue for every recomputed match, so each edit to an
+    alerted offering re-sent "New match". An unsent row is still updated in
+    place by `_upsert_alert`.
+    """
+    watchlist_hit = (reasons or {}).get("watchlist_hit")
+    if watchlist_hit:
+        alert_type = AlertType.watchlist_hit
+    elif score >= kid.alert_score_threshold:
+        alert_type = AlertType.new_match
+    else:
+        return
+    dk = dedup_key_for(alert_type, kid_id=kid.id, offering_id=offering_id)
+    already = (
+        await session.execute(
+            select(Alert.id)
+            .where(Alert.dedup_key == dk)
+            .where(or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)))
+            .limit(1)
+        )
+    ).first()
+    if already is not None:
+        return
+    if watchlist_hit:
+        await enqueue_watchlist_hit(
+            session,
+            kid_id=kid.id,
+            offering_id=offering_id,
+            watchlist_entry_id=watchlist_hit["entry_id"],
+            reasons=reasons,
+        )
+    else:
+        await enqueue_new_match(
+            session, kid_id=kid.id, offering_id=offering_id, score=score, reasons=reasons
+        )
 
 
 async def _delete_match_if_exists(session: AsyncSession, kid_id: int, offering_id: int) -> bool:

@@ -184,10 +184,11 @@ that enrollment points at, so an enrolled kid keeps matching their own program.
 
 ### Alerts
 
-`new_match` and `watchlist_hit` alerts come from one place, `matching/matcher.py::_upsert_match`,
-and only when it *inserts* a match row, whether from a crawl tick's rematch or the daily sweep.
-An updated match is not a new one: re-enqueuing on every recompute re-sent "New match" each time
-an already-alerted offering was edited. `crawl/pipeline.py` enqueues `crawl_failed` and the
+`new_match` and `watchlist_hit` alerts come from one place, `matching/matcher.py::_upsert_match`
+(via `_alert_match_once`), whether from a crawl tick's rematch or the daily sweep. A match is
+alerted the first time it is alert-worthy, on insert or on a later update, and never again once an
+alert for that kid and offering was sent or skipped: re-enqueuing on every recompute re-sent "New
+match" each time an already-alerted offering was edited. `crawl/pipeline.py` enqueues `crawl_failed` and the
 registration countdowns. Everything converges through `alerts/enqueuer.py::dedup_key_for()`,
 which derives a deterministic key per alert type, and `_upsert_alert`, which updates an existing
 *unsent* row rather than inserting a duplicate. When adding an alert type, add its dedup rule
