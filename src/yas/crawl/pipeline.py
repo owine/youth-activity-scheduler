@@ -21,7 +21,7 @@ from yas.crawl.reconciler import reconcile
 from yas.db.models import CrawlRun, Kid, Match, Offering, Page, Site
 from yas.db.models._types import CrawlStatus
 from yas.db.session import session_scope
-from yas.llm.client import ExtractionError, LLMClient
+from yas.llm.client import ExtractionError, ExtractionRefused, LLMClient
 from yas.logging import get_logger, traceback_tail
 from yas.observability import crawl_scope
 
@@ -145,6 +145,35 @@ async def _do_crawl(
     try:
         ex = await extract(
             engine=engine, llm=llm, html=fetched.html, url=fetched.url, site_name=site.name
+        )
+    except ExtractionRefused as exc:
+        # The model's safety classifiers declined the page. On youth-activity
+        # content that is a false positive, and nothing about the site is broken,
+        # so it is handled like ExtractionError: no failure count, no backoff, no
+        # crawl_failed alert, normal cadence. It gets its own issue per site so a
+        # refusal can't hide inside a "markup changed" issue, since the fix differs.
+        log.warning(
+            "pipeline.extraction_refused",
+            site_id=site.id,
+            page_id=page.id,
+            category=exc.category,
+        )
+        scope = crawl_scope(site, page)
+        scope["tags"]["refusal_category"] = exc.category or "none"
+        sentry_sdk.capture_exception(
+            exc,
+            level="warning",
+            fingerprint=["crawl.extraction_refused", str(site.id)],
+            **scope,
+        )
+        await _apply_next_check(engine, page, site)
+        return CrawlResult(
+            status=CrawlStatus.failed,
+            pages_fetched=1,
+            changes_detected=0,
+            llm_calls=1,
+            llm_cost_usd=0.0,
+            error_text=f"extraction_refused: category={exc.category}",
         )
     except ExtractionError as exc:
         # The page fetched fine but can't be read into offerings — most often

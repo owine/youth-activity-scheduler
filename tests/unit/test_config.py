@@ -43,7 +43,7 @@ def test_crawl_scheduler_defaults(monkeypatch):
     assert s.crawl_scheduler_enabled is True
     assert s.crawl_scheduler_tick_s == 30
     assert s.crawl_scheduler_batch_size == 10
-    assert s.llm_extraction_model == "claude-haiku-4-5-20251001"
+    assert s.llm_extraction_model == "claude-haiku-5-5"
 
 
 def test_crawl_scheduler_overrides(monkeypatch):

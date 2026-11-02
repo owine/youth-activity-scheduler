@@ -49,8 +49,23 @@ _LONG_PROMPT_PRICING_PER_MTOK: dict[str, tuple[int, float, float]] = {
 
 # Enough headroom for a listing page of many sessions. Truncation is now a hard
 # error (see _call_messages), and unused output tokens are never billed, so the
-# only cost of a generous cap is the ceiling we never hit.
-DEFAULT_MAX_TOKENS = 16000
+# only cost of a generous cap is the ceiling we never hit. 20000 is the old 16000
+# scaled by Haiku 5.5's tokenizer, which counts the same text as ~25-30% more
+# tokens, and thinking now spends from the same budget. It stays under the
+# 21,333 the SDK allows without streaming.
+DEFAULT_MAX_TOKENS = 20000
+
+# Extraction lets the model think before it calls report_offerings: tool_choice
+# "auto" plus this effort, instead of a forced call, which skips thinking. On real
+# registered pages that cut omitted offerings and invented years for about
+# +$0.0002 a page. "medium" is Haiku 5.5's default; it is sent explicitly so an
+# upstream default change can't move it.
+EXTRACTION_EFFORT = "medium"
+
+# Models that reject `output_config.effort` with a 400. They get the forced tool
+# call this client always sent, so setting YAS_LLM_EXTRACTION_MODEL back to
+# claude-haiku-4-5-20251001 reproduces the old request exactly.
+_NO_EFFORT_PREFIXES = ("claude-haiku-4-5", "claude-sonnet-4-5", "claude-3")
 
 
 @dataclass(frozen=True)
@@ -69,6 +84,19 @@ class ExtractionError(Exception):
         self.detail = detail
 
 
+class ExtractionRefused(ExtractionError):
+    """The model's safety classifiers declined the page (`stop_reason: "refusal"`).
+
+    A subclass so every `except ExtractionError` still catches it, while callers that
+    care can tell a classifier decision from a parse failure. `category` is the API's
+    `stop_details.category` (e.g. "general_harms"), or None when it sends none.
+    """
+
+    def __init__(self, raw: str, detail: str, category: str | None):
+        super().__init__(raw=raw, detail=detail)
+        self.category = category
+
+
 class ToolCallError(Exception):
     """Generic tool-use call failed — model did not invoke the requested tool."""
 
@@ -82,13 +110,18 @@ class _ToolUseFailure(Exception):
     """Internal: the call returned, but not a usable tool input.
 
     Carries a ready-made `detail` so the public wrappers only have to pick which
-    exception type to re-raise as.
+    exception type to re-raise as. `refused` marks a `stop_reason: "refusal"`, with
+    the API's category when it sends one.
     """
 
-    def __init__(self, raw: str, detail: str):
+    def __init__(
+        self, raw: str, detail: str, *, refused: bool = False, category: str | None = None
+    ):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.refused = refused
+        self.category = category
 
 
 class LLMClient(Protocol):
@@ -119,7 +152,7 @@ class AnthropicClient:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-haiku-4-5-20251001",
+        model: str = "claude-haiku-5-5",
         *,
         sdk_client: Any | None = None,
     ) -> None:
@@ -141,21 +174,42 @@ class AnthropicClient:
         tool_description: str,
         input_schema: dict[str, Any],
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        effort: str | None = None,
     ) -> tuple[dict[str, Any], str, float]:
+        """`effort=None` forces the tool call, so the model doesn't think first.
+        With an effort level the call is `tool_choice: auto` and the model may
+        think; the system prompt must then tell it to call the tool, and a reply
+        without the call fails below like any other missing call."""
         tool = {
             "name": tool_name,
             "description": tool_description,
             "input_schema": input_schema,
         }
+        mode: dict[str, Any] = (
+            {"tool_choice": {"type": "tool", "name": tool_name}}
+            if effort is None
+            else {"tool_choice": {"type": "auto"}, "output_config": {"effort": effort}}
+        )
         msg = await self._client.messages.create(
             model=self._model,
             max_tokens=max_tokens,
             system=system,
             tools=[tool],
-            tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": user}],
+            **mode,
         )
         stop_reason = str(getattr(msg, "stop_reason", "?"))
+        # A refusal is an HTTP 200, so no SDK exception fires. It can also land
+        # mid-generation, leaving a partial tool input that parses as a short list,
+        # the same hazard as max_tokens below. Check it before reading content.
+        if stop_reason == "refusal":
+            category = getattr(getattr(msg, "stop_details", None), "category", None)
+            raise _ToolUseFailure(
+                raw=_dump_msg(msg),
+                detail=f"model declined the request (stop_reason=refusal, category={category})",
+                refused=True,
+                category=category,
+            )
         # A max_tokens cutoff truncates the tool input mid-JSON. It may still parse
         # into a well-formed-but-short result, which the reconciler would read as
         # "these offerings are gone" and withdraw. Never let it through.
@@ -187,6 +241,8 @@ class AnthropicClient:
         input_schema: dict[str, Any],
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> tuple[dict[str, Any], str, float]:
+        # Stays forced (no thinking). The digest top-line runs at max_tokens=256,
+        # which thinking could use up, and neither caller was in the Haiku 5.5 eval.
         try:
             return await self._call_messages(
                 system=system,
@@ -208,8 +264,13 @@ class AnthropicClient:
                 tool_name="report_offerings",
                 tool_description="Report the list of offerings extracted from the page.",
                 input_schema=_tool_schema(),
+                effort=None if self._model.startswith(_NO_EFFORT_PREFIXES) else EXTRACTION_EFFORT,
             )
         except _ToolUseFailure as exc:
+            if exc.refused:
+                raise ExtractionRefused(
+                    raw=exc.raw, detail=exc.detail, category=exc.category
+                ) from exc
             raise ExtractionError(raw=exc.raw, detail=exc.detail) from exc
         try:
             parsed = ExtractionResponse.model_validate(tool_input)

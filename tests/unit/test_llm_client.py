@@ -20,8 +20,11 @@ class _FakeAnthropicMessages:
         self._model = model
         self._usage_in = usage_in
         self._usage_out = usage_out
+        self.calls: list[dict[str, Any]] = []
 
-    async def create(self, **_kwargs):
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+
         class _Block:
             type = "tool_use"
             name = "report_offerings"
@@ -137,6 +140,160 @@ async def test_anthropic_client_raises_when_response_truncated_by_max_tokens():
 
     with pytest.raises(ExtractionError, match="max_tokens"):
         await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+
+class _RefusedMessages(_FakeAnthropicMessages):
+    """A refusal can land mid-generation, so give it a partial, schema-valid tool input."""
+
+    def __init__(self, tool_input, category: str | None):
+        super().__init__(tool_input)
+        self._category = category
+
+    async def create(self, **kwargs):
+        msg = await super().create(**kwargs)
+        msg.stop_reason = "refusal"
+        category = self._category
+
+        class _StopDetails:
+            type = "refusal"
+            explanation = None
+
+        _StopDetails.category = category  # type: ignore[attr-defined]
+        msg.stop_details = _StopDetails() if category is not None else None
+        return msg
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("category", ["general_harms", None])
+async def test_extract_offerings_raises_refused_with_category(category):
+    """HTTP 200 + stop_reason=refusal must never be read as an (empty or partial) result."""
+    from yas.llm.client import ExtractionError, ExtractionRefused
+
+    tool_input = {"offerings": [{"name": "Session 1", "program_type": "soccer"}]}
+    fake = _FakeAnthropicClient(messages=_RefusedMessages(tool_input, category))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+
+    with pytest.raises(ExtractionRefused, match="refusal") as info:
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert info.value.category == category
+    # Existing `except ExtractionError` handlers keep catching it.
+    assert isinstance(info.value, ExtractionError)
+
+
+@pytest.mark.asyncio
+async def test_call_tool_raises_on_refusal():
+    from yas.llm.client import ToolCallError
+
+    fake = _FakeAnthropicClient(messages=_RefusedMessages({"candidates": []}, "cyber"))
+    client = AnthropicClient(api_key="sk-test", sdk_client=fake)
+
+    with pytest.raises(ToolCallError, match="category=cyber"):
+        await client.call_tool(
+            system="s",
+            user="u",
+            tool_name="report_offerings",
+            tool_description="d",
+            input_schema={"type": "object"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_extraction_lets_haiku_5_5_think_before_calling_the_tool():
+    """A forced tool call skips thinking; extraction uses auto + an explicit effort."""
+    messages = _FakeAnthropicMessages({"offerings": []}, model="claude-haiku-5-5")
+    client = AnthropicClient(
+        api_key="sk-test", model="claude-haiku-5-5", sdk_client=_FakeAnthropicClient(messages)
+    )
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+    [call] = messages.calls
+    assert call["tool_choice"] == {"type": "auto"}
+    assert call["output_config"] == {"effort": "medium"}
+    assert call["max_tokens"] == 20000
+    # Nothing Haiku 5.5 rejects with a 400.
+    for rejected in ("temperature", "top_p", "top_k", "thinking", "fallbacks"):
+        assert rejected not in call
+    assert call["messages"][-1]["role"] == "user"  # no prefill
+
+
+@pytest.mark.asyncio
+async def test_extraction_on_haiku_4_5_sends_the_old_forced_request():
+    """Haiku 4.5 400s on `effort`, and setting YAS_LLM_EXTRACTION_MODEL back to it
+    is the rollback, so it must get exactly the pre-5.5 request."""
+    messages = _FakeAnthropicMessages({"offerings": []})
+    client = AnthropicClient(
+        api_key="sk-test",
+        model="claude-haiku-4-5-20251001",
+        sdk_client=_FakeAnthropicClient(messages),
+    )
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+    [call] = messages.calls
+    assert call["tool_choice"] == {"type": "tool", "name": "report_offerings"}
+    assert "output_config" not in call
+
+
+@pytest.mark.asyncio
+async def test_call_tool_stays_forced_on_haiku_5_5():
+    """The 256-token digest top-line can't afford thinking."""
+    messages = _FakeAnthropicMessages({"top_line": "x"}, model="claude-haiku-5-5")
+    client = AnthropicClient(
+        api_key="sk-test", model="claude-haiku-5-5", sdk_client=_FakeAnthropicClient(messages)
+    )
+    await client.call_tool(
+        system="s",
+        user="u",
+        tool_name="report_offerings",
+        tool_description="d",
+        input_schema={"type": "object"},
+        max_tokens=256,
+    )
+
+    [call] = messages.calls
+    assert call["tool_choice"] == {"type": "tool", "name": "report_offerings"}
+    assert "output_config" not in call
+
+
+@pytest.mark.asyncio
+async def test_tool_input_is_found_after_thinking_blocks():
+    """With thinking on, content starts with thinking blocks, so read by type, not index."""
+
+    class _ThinkingFirst(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+
+            class _Thinking:
+                type = "thinking"
+                thinking = ""  # omitted by default on Haiku 5.5
+                signature = "sig"
+
+            msg.content = [_Thinking(), *msg.content]
+            return msg
+
+    tool_input = {"offerings": [{"name": "Tots", "program_type": "baseball"}]}
+    fake = _FakeAnthropicClient(_ThinkingFirst(tool_input, model="claude-haiku-5-5"))
+    client = AnthropicClient(api_key="sk-test", model="claude-haiku-5-5", sdk_client=fake)
+    result = await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert [o.name for o in result.offerings] == ["Tots"]
+
+
+def test_prompt_offers_every_program_type():
+    """A hand-copied list once fell 30+ values behind the enum (no "tennis")."""
+    from yas.db.models._types import ProgramType
+    from yas.llm.prompt import build_extraction_prompt
+
+    system, _ = build_extraction_prompt(html="", url="u", site_name="s")
+    for t in ProgramType:
+        assert t.value in system
+
+
+def test_default_model_is_haiku_5_5():
+    """The constructor default and the Settings default must not drift apart."""
+    from yas.config import Settings
+
+    client = AnthropicClient(api_key="sk-test", sdk_client=object())
+    assert client._model == "claude-haiku-5-5"
+    assert Settings.model_fields["llm_extraction_model"].default == "claude-haiku-5-5"
 
 
 @pytest.mark.asyncio
