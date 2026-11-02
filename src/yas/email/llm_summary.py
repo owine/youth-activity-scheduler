@@ -25,7 +25,8 @@ _INPUT_SCHEMA: dict[str, Any] = {
 }
 _SYSTEM_PROMPT = (
     "You are writing a friendly one-line summary of today's activity digest for a parent. "
-    "Keep it under 200 characters. Focus on the most interesting items. Do not use emojis."
+    "Keep it under 200 characters. Focus on the most interesting items. Do not use emojis. "
+    "Respond by calling the report_top_line tool."
 )
 _MAX_TOKENS = 256
 
