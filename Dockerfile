@@ -44,7 +44,7 @@ RUN --mount=type=secret,id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
 FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 # --- Stage 3: Python backend ---
-FROM python:3.15.2-slim@sha256:96c27ba7394e245a1dd0830089037a57dffbe25b51d2bfdd2feef89194ee934f AS base
+FROM python:3.15.2-slim@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0 AS base
 
 # UV_PYTHON_DOWNLOADS / UV_PYTHON_PREFERENCE: the venv must be built on this
 # image's interpreter. Without them, a Python request the image can't satisfy
