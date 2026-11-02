@@ -3,9 +3,13 @@
 # --- Stage 1: build the React SPA ---
 FROM node:24.22.2-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS frontend-build
 WORKDIR /build
-# Corepack ships with Node and pins pnpm to the version recorded in
-# package.json's `packageManager` field. No network install of pnpm needed.
-RUN corepack enable
+# Corepack pins pnpm to the version recorded in package.json's `packageManager`
+# field, so that field stays the single pnpm pin. Node 25+ no longer bundles
+# Corepack, so install it from npm rather than relying on the base image;
+# on Node 24 this replaces the bundled copy. `enable pnpm` adds only the pnpm
+# shim, leaving any yarn the image ships alone.
+# renovate: datasource=npm depName=corepack
+RUN npm install -g corepack@0.36.0 && corepack enable pnpm
 # Cache deps separately. --frozen-lockfile means the image can only ever install
 # the exact, already-reviewed versions in pnpm-lock.yaml; nothing is resolved
 # fresh at build time, so a compromised release can't slip into the image.
