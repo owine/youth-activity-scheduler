@@ -35,8 +35,13 @@ For each offering, fill these fields where the page makes them clear:
 Strict rules:
 1. If a field is not clearly stated on the page, return null rather than guessing.
    Plausible inference from context is fine; fabrication is not.
-2. One entry per distinct offering. If the page lists multiple sessions of the
-   same program (e.g. "Session 1", "Session 2"), emit them as separate items.
+2. One entry per distinct offering. Separate sessions of a program ("Session 1",
+   "Session 2") are separate items. When a session is offered at several times,
+   emit one item per time slot as the page groups them: days the page lists
+   together under one time share an item, and days the page lists separately get
+   their own. "Mon-Fri 10:30 am & 4:00 pm, Sat 9:00 am" is three items (mon-fri
+   10:30, mon-fri 16:00, sat 09:00); "Saturday 9:00 am, Sunday 9:00 am" is two.
+   If the page states how long a class lasts, derive time_end from it.
 3. If the page lists no offerings, return an empty list."""
 
 
