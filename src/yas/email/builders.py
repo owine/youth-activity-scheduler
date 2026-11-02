@@ -16,6 +16,7 @@ from yas.db.models.kid import Kid
 from yas.db.models.match import Match
 from yas.db.models.offering import Offering
 from yas.db.models.site import Site
+from yas.db.models.watchlist import WatchlistEntry
 from yas.email._errors import EmailRenderError
 from yas.email.payloads import (
     CrawlFailedPayload,
@@ -323,6 +324,22 @@ async def gather_digest_payload(
     )
 
 
+def _alert_offering_id(alert: Alert) -> int | None:
+    """The offering an alert is about.
+
+    The enqueuers store it in the ``offering_id`` column, not in ``payload_json``.
+    Reading only the payload made every enqueued new_match, watchlist_hit and
+    reg_opens_now alert fail to render. Hand-built alerts (test fixtures, mostly)
+    may carry it in the payload instead, so that is the fallback. The column goes
+    NULL when the offering is deleted, which correctly leaves the alert
+    unrenderable.
+    """
+    if alert.offering_id is not None:
+        return alert.offering_id
+    raw = alert.payload_json.get("offering_id")
+    return int(raw) if raw is not None else None
+
+
 async def _resolve_kid_matches(
     session: AsyncSession,
     lead: Alert,
@@ -339,9 +356,7 @@ async def _resolve_kid_matches(
     if kid is None:
         raise EmailRenderError(f"kid {lead.kid_id} not found", alert_id=lead.id)
 
-    offering_ids = [
-        int(a.payload_json["offering_id"]) for a in members if "offering_id" in a.payload_json
-    ]
+    offering_ids = [oid for a in members if (oid := _alert_offering_id(a)) is not None]
     if not offering_ids:
         raise EmailRenderError(f"{lead.type} alert missing offering_id", alert_id=lead.id)
 
@@ -396,11 +411,19 @@ async def build_watchlist_hit(
 ) -> WatchlistHitPayload:
     """Build a WatchlistHitPayload from a coalesced group of watchlist_hit alerts.
 
-    Same shape as :func:`build_new_match`; additionally reads
-    ``watchlist_label`` from ``lead.payload_json`` (None if absent).
+    Same shape as :func:`build_new_match`, plus the label of the watchlist entry
+    that hit: the enqueuer stores ``watchlist_entry_id``, and the label is that
+    entry's pattern. A ``watchlist_label`` already in the payload wins.
     """
     kid, matches = await _resolve_kid_matches(session, lead, members)
     label = lead.payload_json.get("watchlist_label")
+    entry_id = lead.payload_json.get("watchlist_entry_id")
+    if not isinstance(label, str) and isinstance(entry_id, int):
+        label = (
+            await session.execute(
+                select(WatchlistEntry.pattern).where(WatchlistEntry.id == entry_id)
+            )
+        ).scalar_one_or_none()
     return WatchlistHitPayload(
         kid_id=kid.id,
         kid_name=kid.name,
@@ -424,10 +447,9 @@ async def build_reg_opens_now(
     if lead.kid_id is None:
         raise EmailRenderError("reg_opens_now alert has no kid_id", alert_id=lead.id)
 
-    offering_id_raw = lead.payload_json.get("offering_id")
-    if offering_id_raw is None:
+    offering_id = _alert_offering_id(lead)
+    if offering_id is None:
         raise EmailRenderError("reg_opens_now alert missing offering_id", alert_id=lead.id)
-    offering_id = int(offering_id_raw)
 
     kid = (await session.execute(select(Kid).where(Kid.id == lead.kid_id))).scalar_one_or_none()
     if kid is None:

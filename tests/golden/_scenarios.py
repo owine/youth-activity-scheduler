@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, CrawlStatus, PageKind
 from yas.db.models.crawl_run import CrawlRun
+from yas.db.models.watchlist import WatchlistEntry
 
 # Fixed timestamp -- goldens must be deterministic.
 GOLDEN_NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
@@ -47,10 +48,12 @@ async def seed_new_match(session: AsyncSession) -> tuple[Alert, list[Alert]]:
     a = Alert(
         type=AlertType.new_match.value,
         kid_id=kid.id,
+        offering_id=off.id,
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="new_match-golden",
-        payload_json={"offering_id": off.id},
+        # The shape enqueue_new_match writes: the offering is in the column only.
+        payload_json={"score": 0.91, "reasons": {}},
         skipped=False,
     )
     session.add(a)
@@ -91,7 +94,7 @@ async def seed_reg_opens_now(session: AsyncSession) -> tuple[Alert, list[Alert]]
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="reg_opens_now-golden",
-        payload_json={"offering_id": off.id},
+        payload_json={},  # enqueue_registration_countdowns: offering in the column only
         skipped=False,
     )
     session.add(a)
@@ -171,14 +174,18 @@ async def seed_watchlist_hit(session: AsyncSession) -> tuple[Alert, list[Alert]]
     await session.flush()
     m = Match(kid_id=kid.id, offering_id=off.id, score=0.88, computed_at=GOLDEN_NOW)
     session.add(m)
+    entry = WatchlistEntry(kid_id=kid.id, pattern="robotics", created_at=GOLDEN_NOW)
+    session.add(entry)
     await session.flush()
     a = Alert(
         type=AlertType.watchlist_hit.value,
         kid_id=kid.id,
+        offering_id=off.id,
         channels=[],
         scheduled_for=GOLDEN_NOW,
         dedup_key="watchlist_hit-golden",
-        payload_json={"offering_id": off.id, "watchlist_label": "robotics"},
+        # The shape enqueue_watchlist_hit writes; the label comes from the entry.
+        payload_json={"watchlist_entry_id": entry.id, "reasons": {}},
         skipped=False,
     )
     session.add(a)
