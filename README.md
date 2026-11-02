@@ -319,9 +319,10 @@ docker compose up -d  # or: python -m yas api
 
 # Terminal 2: frontend with hot reload
 cd frontend
-# Corepack ships with Node and pins pnpm to the version in package.json's
-# packageManager field. .nvmrc pins Node 24.15.0 — fnm auto-switches on cd.
-corepack enable
+# Corepack pins pnpm to the version in package.json's packageManager field.
+# Node 25+ no longer bundles it, so install it once from npm.
+# .nvmrc pins Node — fnm auto-switches on cd.
+npm install -g corepack && corepack enable pnpm
 pnpm install
 pnpm run dev
 # Open http://localhost:5173 — Vite proxies /api to :8080

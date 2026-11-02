@@ -38,7 +38,8 @@ must be set (CI uses `sk-test-nonop` — no real key is needed; LLM calls are fa
 ### Frontend (`frontend/`, `pnpm`)
 
 ```bash
-corepack enable && pnpm install   # Node pinned by .nvmrc (24.18.0), pnpm by packageManager
+npm install -g corepack && corepack enable pnpm   # Node 25+ no longer bundles Corepack
+pnpm install                      # Node pinned by .nvmrc, pnpm by packageManager
 pnpm run dev                      # Vite on :5173, proxies /api /healthz /readyz to :8080
 pnpm run typecheck                # tsc --noEmit
 pnpm run lint                     # eslint, --max-warnings 0
