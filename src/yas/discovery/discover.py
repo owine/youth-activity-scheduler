@@ -14,6 +14,7 @@ from yas.discovery.filters import is_junk
 from yas.discovery.heads import HeadInfo, scrape_heads_concurrently
 from yas.discovery.links import extract_internal_links
 from yas.discovery.sitemap import fetch_sitemap_urls
+from yas.llm.client import ToolCallError
 from yas.logging import get_logger
 
 log = get_logger("yas.discovery")
@@ -118,7 +119,10 @@ async def discover_site(
     # 7. Classify.
     try:
         scored = await classify_candidates(heads, llm_client=llm_client, site_name=site.name)
-    except ClassificationError as exc:
+    except (ClassificationError, ToolCallError) as exc:
+        # ToolCallError is the call itself failing (no tool call, truncation,
+        # refusal); ClassificationError is a call whose output didn't validate.
+        # Either way the classifier produced nothing usable.
         raise DiscoveryError("classification_failed", exc.detail) from exc
 
     # 8. Filter by min_score and cap.
