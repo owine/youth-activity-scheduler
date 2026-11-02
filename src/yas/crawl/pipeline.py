@@ -11,14 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.alerts.enqueuer import (
     enqueue_crawl_failed,
-    enqueue_new_match,
     enqueue_registration_countdowns,
-    enqueue_watchlist_hit,
 )
 from yas.crawl.extractor import extract
 from yas.crawl.fetcher import Fetcher, FetchError
 from yas.crawl.reconciler import reconcile
-from yas.db.models import CrawlRun, Kid, Match, Offering, Page, Site
+from yas.db.models import CrawlRun, Match, Offering, Page, Site
 from yas.db.models._types import CrawlStatus
 from yas.db.session import session_scope
 from yas.llm.client import ExtractionError, ExtractionRefused, LLMClient
@@ -221,7 +219,12 @@ async def _do_crawl(
             await rematch_offering(s, oid)
 
         # --- Alert hooks ---
-        # After all rematches, fire alerts for fresh matches from this tick.
+        # new_match and watchlist_hit alerts are enqueued by
+        # matcher._upsert_match, and only when a match row is inserted. The
+        # pipeline used to enqueue them again for every match recomputed this
+        # tick, so an edit to an offering that had already been alerted (an
+        # update of its existing match) re-sent "New match" once the first alert
+        # was sent. Here: registration countdowns, which an edit may move.
         for oid in reconcile_result.new + reconcile_result.updated:
             offering_row = (
                 await s.execute(select(Offering).where(Offering.id == oid))
@@ -238,25 +241,6 @@ async def _do_crawl(
                 .scalars()
                 .all()
             )
-            for match in fresh_matches:
-                kid_row = (await s.execute(select(Kid).where(Kid.id == match.kid_id))).scalar_one()
-                watchlist_hit = (match.reasons or {}).get("watchlist_hit")
-                if watchlist_hit:
-                    await enqueue_watchlist_hit(
-                        s,
-                        kid_id=match.kid_id,
-                        offering_id=oid,
-                        watchlist_entry_id=watchlist_hit["entry_id"],
-                        reasons=match.reasons,
-                    )
-                elif match.score >= kid_row.alert_score_threshold:
-                    await enqueue_new_match(
-                        s,
-                        kid_id=match.kid_id,
-                        offering_id=oid,
-                        score=match.score,
-                        reasons=match.reasons,
-                    )
             # Registration countdown alerts for matched kids.
             # Normalise to UTC-aware for comparison (SQLite may return naive datetimes).
             reg_opens = offering_row.registration_opens_at

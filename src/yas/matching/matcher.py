@@ -304,10 +304,10 @@ async def _upsert_match(
 ) -> bool:
     """Returns True if new (insert), False if existing row updated.
 
-    On fresh inserts fires alert enqueue calls so the sweep path (rematch_kid /
-    rematch_all_active_kids) also produces alerts. The pipeline path fires its
-    own enqueue AFTER the session commits; the shared dedup_key ensures both
-    paths converge to a single alerts row."""
+    On fresh inserts fires the new_match / watchlist_hit enqueue. This is the
+    only place those alerts are created, for both the crawl pipeline's rematch
+    and the sweep (rematch_kid / rematch_all_active_kids). An update of an
+    existing match enqueues nothing, so editing an offering doesn't re-alert."""
     existing = (
         await session.execute(
             select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)

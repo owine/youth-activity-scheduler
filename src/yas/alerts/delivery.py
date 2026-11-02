@@ -106,6 +106,7 @@ async def send_alert_group(
     - All transient failures   → retry scheduled via back-off table.
     - All permanent failures   → members marked skipped.
     - Routing disabled         → members marked skipped with "routing disabled".
+    - No routed channel has a notifier → members marked skipped.
     - Rate-capped              → members marked skipped with "rate capped",
                                   enqueue_push_cap called.
     - Quiet hours (push only)  → channel silently skipped (not retried).
@@ -130,6 +131,17 @@ async def send_alert_group(
         # from live state rather than reading these rows.
         _mark_all_skipped(members, "digest only")
         log.debug("delivery.no_channels", alert_type=group.alert_type)
+        return
+
+    if not any(name in notifiers for name in channels):
+        # Every routed channel lacks a notifier (DEFAULT_ROUTING's "push" names
+        # no notifier, and an unconfigured ntfy or Pushover is missing too). The
+        # send loop would skip each channel and leave the rows unsent and
+        # unskipped, so the due query re-selected and re-rendered them every
+        # tick until the grace window, or forever for types without one. A
+        # routing setup, not a failure, so no GlitchTip event.
+        _mark_all_skipped(members, f"no notifier for {', '.join(channels)}")
+        log.warning("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
         return
 
     # 2. Build message --------------------------------------------------------

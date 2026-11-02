@@ -905,3 +905,28 @@ async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentr
         await send_alert_group(s, groups[0], {"email": email_notifier}, _settings(), None)
 
     assert sentry_events == []
+
+
+@pytest.mark.asyncio
+async def test_group_with_no_notifier_for_any_channel_is_skipped(tmp_path):  # type: ignore[no-untyped-def]
+    """reg_opens_1h routes only to "push" by default, which names no notifier.
+    Every channel was skipped as missing and the rows were left untouched, so the
+    loop re-selected them every tick. Now the group is retired once."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+    async with session_scope(engine) as s:
+        await seed_default_routing(s)
+        a = _alert(alert_type=AlertType.reg_opens_1h.value, scheduled_for=now)
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+        email_notifier = _email_notifier("email")
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, {"email": email_notifier}, _settings(), None)
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is True
+        assert updated.sent_at is None
+        assert updated.payload_json.get("_skipped_reason") == "no notifier for push"
+    assert email_notifier.call_count == 0
