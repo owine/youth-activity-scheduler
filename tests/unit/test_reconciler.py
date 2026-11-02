@@ -362,3 +362,28 @@ async def test_slots_that_shift_together_keep_their_rows(tmp_path):
         starts = {r.id: r.time_start for r in (await s.execute(select(Offering))).scalars()}
     assert starts == {nine_id: time(9, 30), ten_id: time(10, 30)}
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_slot_among_shifting_slots_withdraws_its_own_row(tmp_path):
+    """9:00, 10:00, 11:00 become 10:15 and 11:15: 9:00 was dropped and the rest moved.
+    The 9:00 row is the one withdrawn; the others keep their own rows."""
+    engine, _, page_id = await _setup(tmp_path)
+    nine, ten, eleven = (
+        await _run(
+            engine,
+            page_id,
+            _slots((["mon"], time(9, 0)), (["mon"], time(10, 0)), (["mon"], time(11, 0))),
+        )
+    ).new
+
+    result = await _run(engine, page_id, _slots((["mon"], time(11, 15)), (["mon"], time(10, 15))))
+    assert result.withdrawn == [nine]
+    async with session_scope(engine) as s:
+        starts = {
+            r.id: r.time_start
+            for r in (await s.execute(select(Offering))).scalars()
+            if r.status == OfferingStatus.active
+        }
+    assert starts == {ten: time(10, 15), eleven: time(11, 15)}
+    await engine.dispose()

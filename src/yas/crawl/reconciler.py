@@ -174,6 +174,51 @@ def _schedule_order(o: Any) -> tuple[Any, ...]:
     return (_days(o.days_of_week), t is None, t or time.min)
 
 
+def _distance(a: Any, b: Any) -> float:
+    """How far apart two slots are: start-time minutes plus a day per mismatch."""
+    ta, tb = a.time_start, b.time_start
+    if ta == tb:
+        minutes = 0.0
+    elif ta is None or tb is None:
+        minutes = 12 * 60.0
+    else:
+        minutes = float(abs((ta.hour * 60 + ta.minute) - (tb.hour * 60 + tb.minute)))
+    days = len(set(_days(a.days_of_week)) ^ set(_days(b.days_of_week)))
+    return minutes + 24 * 60.0 * days
+
+
+def _assign(items: list[Any], rows: list[Offering]) -> list[tuple[int, int]]:
+    """Pair two schedule-sorted lists, returning (item position, row position).
+
+    An order-preserving assignment with the least total `_distance`, where the
+    shorter side is paired in full and the longer side may skip entries. So when
+    slots shift together and one is dropped in the same crawl (9:00, 10:00, 11:00
+    becoming 10:15, 11:15), the dropped slot's own row is the one left unpaired,
+    rather than every row sliding onto its neighbour. Ties skip later entries, so
+    identical rows pair lowest-id first.
+    """
+    swap = len(items) > len(rows)
+    short: list[Any] = list(rows) if swap else items
+    long: list[Any] = items if swap else list(rows)
+    n, m = len(short), len(long)
+    inf = float("inf")
+    cost = [[inf] * (m + 1) for _ in range(n + 1)]
+    cost[0] = [0.0] * (m + 1)
+    for i in range(1, n + 1):
+        for j in range(i, m + 1):
+            take = cost[i - 1][j - 1] + _distance(short[i - 1], long[j - 1])
+            cost[i][j] = min(cost[i][j - 1], take)
+    pairs: list[tuple[int, int]] = []
+    i, j = n, m
+    while i > 0:
+        if j > i and cost[i][j] == cost[i][j - 1]:
+            j -= 1
+        else:
+            pairs.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+    return [(b, a) for a, b in pairs] if swap else pairs
+
+
 def _pair(
     existing_rows: Sequence[Offering], extracted: list[ExtractedOffering]
 ) -> list[tuple[ExtractedOffering, Offering | None]]:
@@ -203,14 +248,11 @@ def _pair(
             candidates = pool.get(key)
             if not candidates:
                 continue
-            # Pair in schedule order on both sides, so slots that shift together
-            # (9:00 -> 9:30 and 10:00 -> 10:30) keep their rows whatever order the
-            # page lists them in. sorted() is stable, so ties keep page order
-            # against row-id order.
             items = sorted(indices, key=lambda i: _schedule_order(extracted[i]))
-            for i, row in zip(items, sorted(candidates, key=_schedule_order), strict=False):
-                paired[i] = row
-                taken.add(row.id)
+            rows_here = sorted(candidates, key=_schedule_order)
+            for item_pos, row_pos in _assign([extracted[i] for i in items], rows_here):
+                paired[items[item_pos]] = rows_here[row_pos]
+                taken.add(rows_here[row_pos].id)
 
     return list(zip(extracted, paired, strict=True))
 

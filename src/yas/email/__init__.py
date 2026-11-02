@@ -87,9 +87,10 @@ async def render_email(
     )
     # A coalesced match email can leave out the lead alert's offering (withdrawn
     # since it was queued), so link to what the email actually shows first.
-    matches = getattr(payload, "matches", None)
-    if matches:
-        rendered = replace(rendered, url=matches[0].get("registration_url"))
+    matches = getattr(payload, "matches", None) or []
+    url = next((m["registration_url"] for m in matches if m.get("registration_url")), None)
+    if url:
+        rendered = replace(rendered, url=url)
     return rendered
 
 
