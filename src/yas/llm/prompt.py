@@ -45,10 +45,18 @@ Strict rules:
    10:30, mon-fri 16:00, sat 09:00); "Saturday 9:00 am, Sunday 9:00 am" is two.
    If the page states how long a class lasts, derive time_end from it.
 3. If the page lists no offerings, return an empty list.
-4. When a date omits the year ("October 26th - December 19th"), use the year that
-   puts it nearest the crawl date given with the page. If that would put an end
-   date before its start date, the session crosses New Year: give the end date the
-   following year."""
+4. When a date omits the year ("October 26th - December 19th"), infer the year
+   from the crawl date given with the page. This is inference from context under
+   rule 1, not guessing. Pages list current and upcoming sessions, and sometimes
+   ones that just finished, so:
+   - give end_date (start_date, if there is no end) the earliest year that puts it
+     no more than two months before the crawl date;
+   - give start_date the latest year that keeps it on or before end_date, so a
+     session crossing New Year starts in the earlier year;
+   - give registration_opens_at the latest year that keeps it on or before
+     start_date.
+   If the page pairs a date with a weekday ("Sat, Oct 24"), use the year in which
+   they match instead."""
 
 
 def build_extraction_prompt(
@@ -57,8 +65,10 @@ def build_extraction_prompt(
     """Return (system_prompt, user_prompt) for the extraction call.
 
     `today` is the crawl date, defaulting to today in UTC. Some pages give dates
-    without a year, and rule 4 resolves them against it. Without it Haiku 4.5
-    guessed (2024 and 2025 for pages crawled in 2026) and Haiku 5.5 returns null.
+    without a year, and rule 4 resolves them against it, looking forward: a summer
+    camp advertised in November is next summer's, not the one just gone. Without
+    the date, Haiku 4.5 guessed (2024 and 2025 for pages crawled in 2026) and
+    Haiku 5.5 returns null.
     The date goes in the user message, which already varies per page.
     """
     crawled = (today or datetime.now(UTC).date()).isoformat()

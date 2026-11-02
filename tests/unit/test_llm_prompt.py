@@ -52,11 +52,13 @@ def test_prompt_gives_crawl_date_so_a_yearless_date_can_be_resolved():
     )
     assert "Crawled on: 2026-11-02" in user
     assert "omits the year" in system
-    assert "nearest the crawl date" in system
+    assert "no more than two months before the crawl date" in system
 
 
 def test_prompt_defaults_crawl_date_to_today_utc():
     from datetime import UTC, datetime
 
+    before = datetime.now(UTC).date()
     _, user = build_extraction_prompt(html="", url="u", site_name="s")
-    assert f"Crawled on: {datetime.now(UTC).date().isoformat()}" in user
+    after = datetime.now(UTC).date()  # the call can straddle UTC midnight
+    assert any(f"Crawled on: {d.isoformat()}" in user for d in (before, after))

@@ -557,6 +557,8 @@ async def test_extract_offerings_sends_crawl_date():
     client = AnthropicClient(
         api_key="sk-test", model="claude-haiku-5-5", sdk_client=_FakeAnthropicClient(fake_messages)
     )
+    before = datetime.now(UTC).date()
     await client.extract_offerings(html="<p/>", url="u", site_name="s")
-    user = fake_messages.calls[0]["messages"][0]["content"]
-    assert f"Crawled on: {datetime.now(UTC).date().isoformat()}" in str(user)
+    after = datetime.now(UTC).date()  # the call can straddle UTC midnight
+    user = str(fake_messages.calls[0]["messages"][0]["content"])
+    assert any(f"Crawled on: {d.isoformat()}" in user for d in (before, after))
