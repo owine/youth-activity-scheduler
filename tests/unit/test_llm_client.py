@@ -178,6 +178,8 @@ async def test_extract_offerings_raises_refused_with_category(category):
     assert info.value.category == category
     # Existing `except ExtractionError` handlers keep catching it.
     assert isinstance(info.value, ExtractionError)
+    # Priced from usage (1000 in / 200 out on the 4.5 card), not dropped as 0.0.
+    assert info.value.cost_usd == pytest.approx(0.002)
 
 
 @pytest.mark.asyncio
@@ -424,3 +426,75 @@ async def test_error_raw_identifies_the_call_without_echoing_page_content():
     assert "msg_01abc" in ei.value.raw
     assert "end_turn" in ei.value.raw
     assert "SECRET_PAGE_BODY" not in ei.value.raw
+
+
+@pytest.mark.asyncio
+async def test_failed_calls_carry_their_cost():
+    """Truncation, a missing tool call and a schema violation were all billed."""
+    from yas.llm.client import ExtractionError, ToolCallError
+
+    class _Truncated(_FakeAnthropicMessages):
+        async def create(self, **kwargs):
+            msg = await super().create(**kwargs)
+            msg.stop_reason = "max_tokens"
+            return msg
+
+    client = AnthropicClient(
+        api_key="sk-test", sdk_client=_FakeAnthropicClient(_Truncated({"offerings": []}))
+    )
+    with pytest.raises(ExtractionError) as info:
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert info.value.cost_usd == pytest.approx(0.002)
+
+    bad = {"offerings": [{"name": "x", "program_type": "soccer", "unknown_field": 1}]}
+    client = AnthropicClient(
+        api_key="sk-test", sdk_client=_FakeAnthropicClient(_FakeAnthropicMessages(bad))
+    )
+    with pytest.raises(ExtractionError) as info:
+        await client.extract_offerings(html="<p/>", url="u", site_name="s")
+    assert info.value.cost_usd == pytest.approx(0.002)
+
+    client = AnthropicClient(
+        api_key="sk-test", sdk_client=_FakeAnthropicClient(_Truncated({"candidates": []}))
+    )
+    with pytest.raises(ToolCallError) as tool_info:
+        await client.call_tool(
+            system="s",
+            user="u",
+            tool_name="report_offerings",
+            tool_description="d",
+            input_schema={"type": "object"},
+        )
+    assert tool_info.value.cost_usd == pytest.approx(0.002)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "forced"),
+    [
+        ("claude-haiku-4-5-20251001", True),
+        ("claude-sonnet-4-5", True),
+        ("claude-sonnet-4-20250514", True),
+        ("claude-sonnet-4-0", True),
+        ("claude-opus-4-20250514", True),
+        ("claude-opus-4-1-20250805", True),
+        ("claude-4-sonnet-20250514", True),
+        ("claude-3-7-sonnet-latest", True),
+        # Effort-capable: Opus 4.5 and later, Sonnet 4.6 and later.
+        ("claude-opus-4-5", False),
+        ("claude-sonnet-4-6", False),
+        ("claude-opus-4-8", False),
+        ("claude-haiku-5-5", False),
+    ],
+)
+async def test_effort_is_sent_only_to_models_that_accept_it(model, forced):
+    messages = _FakeAnthropicMessages({"offerings": []}, model=model)
+    client = AnthropicClient(
+        api_key="sk-test", model=model, sdk_client=_FakeAnthropicClient(messages)
+    )
+    await client.extract_offerings(html="<p/>", url="u", site_name="s")
+
+    [call] = messages.calls
+    assert ("output_config" not in call) is forced
+    expected = {"type": "tool", "name": "report_offerings"} if forced else {"type": "auto"}
+    assert call["tool_choice"] == expected

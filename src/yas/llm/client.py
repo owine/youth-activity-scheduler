@@ -62,10 +62,23 @@ DEFAULT_MAX_TOKENS = 20000
 # upstream default change can't move it.
 EXTRACTION_EFFORT = "medium"
 
-# Models that reject `output_config.effort` with a 400. They get the forced tool
-# call this client always sent, so setting YAS_LLM_EXTRACTION_MODEL back to
-# claude-haiku-4-5-20251001 reproduces the old request exactly.
-_NO_EFFORT_PREFIXES = ("claude-haiku-4-5", "claude-sonnet-4-5", "claude-3")
+# Models that reject `output_config.effort` with a 400: everything before Opus 4.5
+# and Sonnet 4.6, in both alias and dated forms (claude-sonnet-4-0,
+# claude-sonnet-4-20250514, claude-4-sonnet-20250514). They get the forced tool call
+# this client always sent, so setting YAS_LLM_EXTRACTION_MODEL back to
+# claude-haiku-4-5-20251001 restores the old request shape. Only the higher
+# DEFAULT_MAX_TOKENS differs, which only gives more room before truncation.
+_NO_EFFORT_PREFIXES = (
+    "claude-haiku-4-5",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-0",
+    "claude-sonnet-4-2",  # dated claude-sonnet-4-2025MMDD
+    "claude-opus-4-0",
+    "claude-opus-4-1",
+    "claude-opus-4-2",  # dated claude-opus-4-2025MMDD
+    "claude-4-",  # claude-4-sonnet-*, claude-4-opus-*
+    "claude-3",
+)
 
 
 @dataclass(frozen=True)
@@ -76,12 +89,16 @@ class ExtractionResult:
 
 
 class ExtractionError(Exception):
-    """LLM call succeeded but output didn't conform to our schema."""
+    """LLM call succeeded but output didn't conform to our schema.
 
-    def __init__(self, raw: str, detail: str):
+    `cost_usd` is what the failed call is estimated to have cost, from its usage,
+    so crawl-run totals include calls that produced nothing usable."""
+
+    def __init__(self, raw: str, detail: str, *, cost_usd: float = 0.0):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
 
 
 class ExtractionRefused(ExtractionError):
@@ -92,18 +109,19 @@ class ExtractionRefused(ExtractionError):
     `stop_details.category` (e.g. "general_harms"), or None when it sends none.
     """
 
-    def __init__(self, raw: str, detail: str, category: str | None):
-        super().__init__(raw=raw, detail=detail)
+    def __init__(self, raw: str, detail: str, category: str | None, *, cost_usd: float = 0.0):
+        super().__init__(raw=raw, detail=detail, cost_usd=cost_usd)
         self.category = category
 
 
 class ToolCallError(Exception):
     """Generic tool-use call failed — model did not invoke the requested tool."""
 
-    def __init__(self, raw: str, detail: str):
+    def __init__(self, raw: str, detail: str, *, cost_usd: float = 0.0):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
 
 
 class _ToolUseFailure(Exception):
@@ -115,11 +133,18 @@ class _ToolUseFailure(Exception):
     """
 
     def __init__(
-        self, raw: str, detail: str, *, refused: bool = False, category: str | None = None
+        self,
+        raw: str,
+        detail: str,
+        *,
+        cost_usd: float,
+        refused: bool = False,
+        category: str | None = None,
     ):
         super().__init__(detail)
         self.raw = raw
         self.detail = detail
+        self.cost_usd = cost_usd
         self.refused = refused
         self.category = category
 
@@ -199,6 +224,8 @@ class AnthropicClient:
             **mode,
         )
         stop_reason = str(getattr(msg, "stop_reason", "?"))
+        # Priced up front so every failure below can report what the call cost.
+        cost = _estimate_cost_usd(msg)
         # A refusal is an HTTP 200, so no SDK exception fires. It can also land
         # mid-generation, leaving a partial tool input that parses as a short list,
         # the same hazard as max_tokens below. Check it before reading content.
@@ -207,6 +234,7 @@ class AnthropicClient:
             raise _ToolUseFailure(
                 raw=_dump_msg(msg),
                 detail=f"model declined the request (stop_reason=refusal, category={category})",
+                cost_usd=cost,
                 refused=True,
                 category=category,
             )
@@ -220,14 +248,15 @@ class AnthropicClient:
                     f"response truncated at max_tokens={max_tokens} "
                     f"(stop_reason=max_tokens); result is incomplete"
                 ),
+                cost_usd=cost,
             )
         tool_input = _find_tool_input(msg, tool_name)
         if tool_input is None:
             raise _ToolUseFailure(
                 raw=_dump_msg(msg),
                 detail=f"model stopped without calling {tool_name} (stop_reason={stop_reason})",
+                cost_usd=cost,
             )
-        cost = _estimate_cost_usd(msg)
         model = str(getattr(msg, "model", self._model))
         return tool_input, model, cost
 
@@ -253,7 +282,7 @@ class AnthropicClient:
                 max_tokens=max_tokens,
             )
         except _ToolUseFailure as exc:
-            raise ToolCallError(raw=exc.raw, detail=exc.detail) from exc
+            raise ToolCallError(raw=exc.raw, detail=exc.detail, cost_usd=exc.cost_usd) from exc
 
     async def extract_offerings(self, *, html: str, url: str, site_name: str) -> ExtractionResult:
         system, user = build_extraction_prompt(html=html, url=url, site_name=site_name)
@@ -269,13 +298,13 @@ class AnthropicClient:
         except _ToolUseFailure as exc:
             if exc.refused:
                 raise ExtractionRefused(
-                    raw=exc.raw, detail=exc.detail, category=exc.category
+                    raw=exc.raw, detail=exc.detail, category=exc.category, cost_usd=exc.cost_usd
                 ) from exc
-            raise ExtractionError(raw=exc.raw, detail=exc.detail) from exc
+            raise ExtractionError(raw=exc.raw, detail=exc.detail, cost_usd=exc.cost_usd) from exc
         try:
             parsed = ExtractionResponse.model_validate(tool_input)
         except ValidationError as exc:
-            raise ExtractionError(raw=str(tool_input), detail=str(exc)) from exc
+            raise ExtractionError(raw=str(tool_input), detail=str(exc), cost_usd=cost) from exc
         return ExtractionResult(
             offerings=list(parsed.offerings),
             model=model,

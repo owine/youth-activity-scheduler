@@ -172,7 +172,7 @@ async def _do_crawl(
             pages_fetched=1,
             changes_detected=0,
             llm_calls=1,
-            llm_cost_usd=0.0,
+            llm_cost_usd=exc.cost_usd,
             error_text=f"extraction_refused: category={exc.category}",
         )
     except ExtractionError as exc:
@@ -196,7 +196,7 @@ async def _do_crawl(
             pages_fetched=1,
             changes_detected=0,
             llm_calls=1,
-            llm_cost_usd=0.0,
+            llm_cost_usd=exc.cost_usd,
             error_text=f"extraction_failed: {exc.detail[:500]}",
         )
 

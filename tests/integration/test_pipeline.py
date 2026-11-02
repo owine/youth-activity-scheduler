@@ -367,7 +367,9 @@ async def test_refusal_reports_its_own_warning_and_does_not_back_off(tmp_path, s
     engine = await _init_db(tmp_path)
 
     def _refuse(_html, _url, _site):
-        raise ExtractionRefused(raw="id=msg_1", detail="declined", category="general_harms")
+        raise ExtractionRefused(
+            raw="id=msg_1", detail="declined", category="general_harms", cost_usd=0.0012
+        )
 
     async with fixture_site(pages={"/p": PAGE}) as fx:
         fetcher = DefaultFetcher()
@@ -380,6 +382,11 @@ async def test_refusal_reports_its_own_warning_and_does_not_back_off(tmp_path, s
 
     assert result.status == CrawlStatus.failed
     assert result.error_text == "extraction_refused: category=general_harms"
+    # The refused call was billed, so the crawl run records it.
+    assert result.llm_cost_usd == pytest.approx(0.0012)
+    async with session_scope(engine) as s:
+        run = (await s.execute(select(CrawlRun).where(CrawlRun.site_id == site_id))).scalar_one()
+        assert run.llm_cost_usd == pytest.approx(0.0012)
     [event] = sentry_events
     assert _exception_type(event) == "ExtractionRefused"
     assert event["level"] == "warning"
