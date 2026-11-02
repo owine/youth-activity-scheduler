@@ -345,3 +345,20 @@ async def test_a_dropped_cohort_withdraws_its_own_row_not_its_neighbours(tmp_pat
     assert result.updated == [older_id]
     assert result.withdrawn == [young_id]
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_slots_that_shift_together_keep_their_rows(tmp_path):
+    """Mon 9:00 and Mon 10:00 both move half an hour, and the page lists the later
+    one first. Ages can't tell them apart, so pairing goes by schedule order."""
+    engine, _, page_id = await _setup(tmp_path)
+    nine_id, ten_id = (
+        await _run(engine, page_id, _slots((["mon"], time(9, 0)), (["mon"], time(10, 0))))
+    ).new
+
+    result = await _run(engine, page_id, _slots((["mon"], time(10, 30)), (["mon"], time(9, 30))))
+    assert sorted(result.updated) == sorted([nine_id, ten_id])
+    async with session_scope(engine) as s:
+        starts = {r.id: r.time_start for r in (await s.execute(select(Offering))).scalars()}
+    assert starts == {nine_id: time(9, 30), ten_id: time(10, 30)}
+    await engine.dispose()

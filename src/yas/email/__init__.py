@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date
 from typing import Any
 
@@ -27,6 +27,9 @@ class RenderedEmail:
     subject: str
     body_plain: str
     body_html: str
+    # Tap-through link for push channels, when the email itself decides it: the top
+    # offering a coalesced match email lists. None leaves it to the caller.
+    url: str | None = None
 
 
 def _render_pair(
@@ -79,7 +82,15 @@ async def render_email(
         ) from exc
     payload = await renderer.build(session, lead, members)
     today = lead.scheduled_for.astimezone(UTC).date()
-    return _render_pair(renderer.html_template, renderer.txt_template, payload=payload, today=today)
+    rendered = _render_pair(
+        renderer.html_template, renderer.txt_template, payload=payload, today=today
+    )
+    # A coalesced match email can leave out the lead alert's offering (withdrawn
+    # since it was queued), so link to what the email actually shows first.
+    matches = getattr(payload, "matches", None)
+    if matches:
+        rendered = replace(rendered, url=matches[0].get("registration_url"))
+    return rendered
 
 
 def render_digest_payload(payload: DigestPayload, top_line: str) -> RenderedEmail:

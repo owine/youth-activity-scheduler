@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -169,6 +169,11 @@ _TIERS: tuple[Callable[[Any], tuple[Any, ...]], ...] = (
 )
 
 
+def _schedule_order(o: Any) -> tuple[Any, ...]:
+    t = o.time_start
+    return (_days(o.days_of_week), t is None, t or time.min)
+
+
 def _pair(
     existing_rows: Sequence[Offering], extracted: list[ExtractedOffering]
 ) -> list[tuple[ExtractedOffering, Offering | None]]:
@@ -190,12 +195,20 @@ def _pair(
         for r in rows:
             if r.id not in taken:
                 pool[(r.normalized_name, r.start_date, *tier(r))].append(r)
+        waiting: dict[tuple[Any, ...], list[int]] = defaultdict(list)
         for i, e in enumerate(extracted):
-            if paired[i] is not None:
+            if paired[i] is None:
+                waiting[(names[i], e.start_date, *tier(e))].append(i)
+        for key, indices in waiting.items():
+            candidates = pool.get(key)
+            if not candidates:
                 continue
-            candidates = pool.get((names[i], e.start_date, *tier(e)))
-            if candidates:
-                row = candidates.pop(0)
+            # Pair in schedule order on both sides, so slots that shift together
+            # (9:00 -> 9:30 and 10:00 -> 10:30) keep their rows whatever order the
+            # page lists them in. sorted() is stable, so ties keep page order
+            # against row-id order.
+            items = sorted(indices, key=lambda i: _schedule_order(extracted[i]))
+            for i, row in zip(items, sorted(candidates, key=_schedule_order), strict=False):
                 paired[i] = row
                 taken.add(row.id)
 
