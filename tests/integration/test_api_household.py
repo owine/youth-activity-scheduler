@@ -268,6 +268,32 @@ async def test_resaving_ungeocoded_address_tries_again(client):
     assert (await _home(engine)).lat == 41.88
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["quiet_hours_start", "quiet_hours_end", "digest_time"])
+@pytest.mark.parametrize("value", ["24:00", "25:99", "12:60", "7:00", "07:00:00", "noon", ""])
+async def test_patch_rejects_invalid_hhmm(client, field, value):
+    """Stored quiet hours are parsed by the delivery loop on every tick; '24:00'
+    used to be accepted here and then crash it."""
+    c, _, _ = client
+    r = await c.patch("/api/household", json={field: value})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_accepts_valid_quiet_hours_and_clearing(client):
+    c, _, _ = client
+    r = await c.patch(
+        "/api/household", json={"quiet_hours_start": "00:00", "quiet_hours_end": "23:59"}
+    )
+    assert r.status_code == 200
+    assert r.json()["quiet_hours_start"] == "00:00"
+    assert r.json()["quiet_hours_end"] == "23:59"
+    r = await c.patch("/api/household", json={"quiet_hours_start": None, "quiet_hours_end": None})
+    assert r.status_code == 200
+    assert r.json()["quiet_hours_start"] is None
+    assert r.json()["quiet_hours_end"] is None
+
+
 # --- Channel secrets survive a re-save (the form omits a blank secret) ---
 
 
@@ -365,6 +391,20 @@ async def test_switching_email_transport_drops_the_other_transports_secret(clien
     await c.patch("/api/household", json={"smtp_config_json": fe})
 
     assert (await _hh(engine)).smtp_config_json == fe
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "valid"), [("digest_time", "06:30"), ("daily_llm_cost_cap_usd", 2.5)]
+)
+async def test_patch_rejects_null_for_not_null_fields(client, field, valid):
+    """These columns are NOT NULL; an explicit null used to reach them and 500."""
+    c, _, _ = client
+    r = await c.patch("/api/household", json={field: None})
+    assert r.status_code == 422
+    r = await c.patch("/api/household", json={field: valid})
+    assert r.status_code == 200
+    assert r.json()[field] == valid
 
 
 @pytest.mark.asyncio

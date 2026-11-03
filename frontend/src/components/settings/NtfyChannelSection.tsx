@@ -9,7 +9,7 @@ import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
 import { useHousehold } from '@/lib/queries';
-import { ApiError } from '@/lib/api';
+import { apiErrorDetail } from '@/lib/api';
 import type { NtfyConfig } from '@/lib/types';
 
 const ntfySchema = z.object({
@@ -47,7 +47,7 @@ export function NtfyChannelSection() {
         await update.mutateAsync({ ntfy_config_json: config });
         form.setFieldValue('auth_token_value', '');
       } catch (err) {
-        const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+        const detail = apiErrorDetail(err);
         setErrorMsg(detail ?? (err as Error).message);
       }
     },
@@ -170,8 +170,7 @@ export function NtfyChannelSection() {
             setErrorMsg(null);
             await update.mutateAsync({ ntfy_config_json: null });
           } catch (err) {
-            const detail =
-              err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+            const detail = apiErrorDetail(err);
             setErrorMsg(detail ?? (err as Error).message);
           }
         }}
