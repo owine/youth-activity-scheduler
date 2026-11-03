@@ -33,6 +33,7 @@ from yas.db.base import Base
 from yas.db.models import (
     Alert,
     AlertRouting,
+    GeocodeAttempt,
     HouseholdSettings,
     Kid,
     Location,
@@ -48,6 +49,7 @@ from yas.matching.matcher import rematch_kid, rematch_offering
 from yas.worker.delivery_loop import alert_delivery_loop
 from yas.worker.detector_loop import daily_detector_loop
 from yas.worker.digest_loop import daily_digest_loop
+from yas.worker.loop_guard import MAX_CONSECUTIVE_FAILURES
 from yas.worker.runner import _heartbeat_loop
 from yas.worker.sweep import daily_sweep_loop
 
@@ -166,15 +168,42 @@ async def _seed_offerings(
 # ---------------------------------------------------------------------------
 
 
-async def test_heartbeat_survives_failed_beat(tmp_path, monkeypatch, ticks):  # type: ignore[no-untyped-def]
+async def test_heartbeat_failure_propagates(tmp_path, monkeypatch, ticks):  # type: ignore[no-untyped-def]
+    """The heartbeat is deliberately unguarded: a failed beat must exit the
+    process so the container restarts, since /healthz doesn't check the worker."""
     engine, _ = await _make_engine(tmp_path)
     import yas.worker.runner as runner_mod
 
     stub = _fail_first_call(runner_mod.beat_once)
     monkeypatch.setattr(runner_mod, "beat_once", stub)
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(RuntimeError, match="iteration exploded"):
         await _heartbeat_loop(engine, _settings())
-    assert len(stub.calls) == 3
+    assert len(stub.calls) == 1
+    await engine.dispose()
+
+
+async def test_persistently_failing_loop_exits(tmp_path, monkeypatch, ticks):  # type: ignore[no-untyped-def]
+    """A fault that doesn't clear re-raises after MAX_CONSECUTIVE_FAILURES ticks,
+    so the TaskGroup exits the process instead of failing every tick forever."""
+    engine, _ = await _make_engine(tmp_path)
+    import yas.crawl.scheduler as sched_mod
+
+    calls: list[int] = []
+
+    async def always_fails(**_: Any) -> None:
+        calls.append(1)
+        raise RuntimeError("database disk image is malformed")
+
+    monkeypatch.setattr(sched_mod, "_tick", always_fails)
+    ticks(100)
+    with pytest.raises(RuntimeError, match="malformed"):
+        await crawl_scheduler_loop(
+            engine=engine,
+            settings=_settings(),
+            fetcher=None,  # type: ignore[arg-type]
+            llm=None,  # type: ignore[arg-type]
+        )
+    assert len(calls) == MAX_CONSECUTIVE_FAILURES
     await engine.dispose()
 
 
@@ -252,6 +281,59 @@ async def test_digest_survives_failed_run(tmp_path, monkeypatch, ticks):  # type
     with pytest.raises(asyncio.CancelledError):
         await daily_digest_loop(engine, _settings(), None)
     assert len(stub.calls) == 1
+    await engine.dispose()
+
+
+async def test_sweep_failed_kid_does_not_skip_the_rest(tmp_path, monkeypatch, ticks):  # type: ignore[no-untyped-def]
+    """One kid's failure (a lock timeout, a kid deleted mid-sweep) used to end the
+    whole sweep, so every kid after it waited until tomorrow."""
+    engine, _ = await _make_engine(tmp_path)
+    await _seed_offerings(engine, kids=3, offerings=2)
+    import yas.worker.sweep as sweep_mod
+
+    async def flaky(session: Any, kid_id: int) -> Any:
+        if kid_id == 2:
+            raise RuntimeError("database is locked")
+        return await rematch_kid(session, kid_id)
+
+    monkeypatch.setattr(sweep_mod, "rematch_kid", flaky)
+    ticks(1)
+    with pytest.raises(asyncio.CancelledError):
+        await daily_sweep_loop(engine, _settings())
+    async with session_scope(engine) as s:
+        kid_ids = (await s.execute(select(Match.kid_id))).scalars().all()
+    assert sorted(set(kid_ids)) == [1, 3]
+    await engine.dispose()
+
+
+async def test_digest_failed_kid_does_not_skip_the_rest(
+    tmp_path, monkeypatch, ticks, sentry_events
+):  # type: ignore[no-untyped-def]
+    engine, _ = await _make_engine(tmp_path)
+    async with session_scope(engine) as s:
+        for i in (1, 2, 3):
+            s.add(Kid(id=i, name=f"K{i}", dob=date(2018, 1, 1), created_at=datetime.now(UTC)))
+    import yas.worker.digest_loop as digest_mod
+
+    real_gather = digest_mod.gather_digest_payload
+
+    async def flaky(session: Any, kid: Kid, **kwargs: Any) -> Any:
+        if kid.id == 2:
+            raise RuntimeError("database is locked")
+        return await real_gather(session, kid, **kwargs)
+
+    monkeypatch.setattr(digest_mod, "gather_digest_payload", flaky)
+    ticks(3)
+    with pytest.raises(asyncio.CancelledError):
+        await daily_digest_loop(engine, _settings(), None)
+    async with session_scope(engine) as s:
+        kid_ids = (
+            (await s.execute(select(Alert.kid_id).where(Alert.type == "digest"))).scalars().all()
+        )
+    assert sorted(kid_ids) == [1, 3]
+    [event] = sentry_events
+    assert event["tags"]["loop"] == "digest"
+    assert event["tags"]["kid_id"] == "2"
     await engine.dispose()
 
 
@@ -372,6 +454,63 @@ async def test_enricher_commits_each_geocode_before_the_next(tmp_path):  # type:
     await engine.dispose()
 
 
+async def test_enricher_failed_rematch_does_not_block_later_locations(  # type: ignore[no-untyped-def]
+    tmp_path, monkeypatch, ticks, sentry_events
+):
+    """A rematch that raised after a successful geocode rolled back the location's
+    coordinates and attempt row, so every tick re-geocoded the same first
+    location, failed again, and never reached the ones behind it."""
+    engine, _ = await _make_engine(tmp_path)
+    async with session_scope(engine) as s:
+        site = Site(name="S", base_url="https://s")
+        s.add(site)
+        await s.flush()
+        page = Page(site_id=site.id, url="https://s/p")
+        s.add(page)
+        for i in range(2):
+            s.add(Location(id=i + 1, name=f"L{i}", address=f"{i} main st"))
+        await s.flush()
+        for i in range(2):
+            s.add(
+                Offering(
+                    id=i + 1,
+                    site_id=site.id,
+                    page_id=page.id,
+                    name=f"O{i}",
+                    normalized_name=f"o{i}",
+                    location_id=i + 1,
+                )
+            )
+
+    rematched: list[int] = []
+
+    async def flaky_rematch(session: Any, offering_id: int) -> None:
+        if offering_id == 1:
+            raise RuntimeError("rematch exploded")
+        rematched.append(offering_id)
+
+    monkeypatch.setattr(matcher_mod, "rematch_offering", flaky_rematch)
+    geocoder = FakeGeocoder(
+        fixtures={
+            f"{i} main st": GeocodeResult(lat=40.0, lon=-75.0, display_name="x", provider="fake")
+            for i in range(2)
+        }
+    )
+    ticks(3)
+    with pytest.raises(asyncio.CancelledError):
+        await geocode_enricher_loop(engine, _settings(geocode_batch_size=1), geocoder)
+    async with session_scope(engine) as s:
+        locs = (await s.execute(select(Location).order_by(Location.id))).scalars().all()
+        attempts = (await s.execute(select(GeocodeAttempt))).scalars().all()
+    assert [loc.lat for loc in locs] == [40.0, 40.0]
+    assert sorted(a.result for a in attempts) == ["ok", "ok"]
+    assert geocoder.call_count == 2
+    assert rematched == [2]
+    [event] = sentry_events
+    assert event["tags"]["location_id"] == "1"
+    await engine.dispose()
+
+
 async def test_sweep_commits_each_kid_before_the_next(tmp_path, monkeypatch, ticks):  # type: ignore[no-untyped-def]
     engine, db_path = await _make_engine(tmp_path)
     await _seed_offerings(engine, kids=3, offerings=4)
@@ -429,13 +568,13 @@ async def test_rematch_kid_query_count_does_not_grow_per_offering(tmp_path):  # 
 
 
 async def test_delivery_survives_invalid_quiet_hours(tmp_path, ticks):  # type: ignore[no-untyped-def]
-    """Quiet hours were only ever validated as \\d\\d:\\d\\d, so '24:00' could be
+    """Quiet hours were only ever validated as \\d\\d:\\d\\d, so '25:99' could be
     stored; parsing it raised inside the delivery loop and exited the process.
     An unparseable window is treated as no quiet hours."""
     engine, _ = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         await seed_default_routing(s)
-        s.add(HouseholdSettings(id=1, quiet_hours_start="22:00", quiet_hours_end="24:00"))
+        s.add(HouseholdSettings(id=1, quiet_hours_start="00:00", quiet_hours_end="25:99"))
         s.add(Site(id=1, name="S", base_url="https://s"))
         await s.flush()
         row = (

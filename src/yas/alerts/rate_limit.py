@@ -120,10 +120,17 @@ async def count_pushes_sent_in_last_hour(
 
 
 def _parse_hhmm(s: str) -> time | None:
-    """Parse "HH:MM"; None for anything `time()` rejects ("24:00", "12:60", "7am")."""
+    """Parse "HH:MM"; None for anything `time()` rejects ("12:60", "7am").
+
+    "24:00" is midnight, read as 00:00, so a stored 22:00-24:00 window means
+    "until midnight" through the wrap-around below rather than switching quiet
+    hours off."""
     try:
         hh, mm = s.split(":")
-        return time(int(hh), int(mm))
+        h, m = int(hh), int(mm)
+        if (h, m) == (24, 0):
+            return time(0, 0)
+        return time(h, m)
     except ValueError:
         return None
 
@@ -143,8 +150,8 @@ def is_in_quiet_hours(
 
     An unparseable bound also returns False, with a warning. The API stored
     these unvalidated (the UI only checks for two digits either side of the
-    colon), so "24:00" can be in the database, and raising here killed the
-    delivery loop on every tick."""
+    colon), so "25:99" can be in the database, and raising here killed the
+    delivery loop on every tick. A stored "24:00" is read as midnight."""
     if quiet_start is None or quiet_end is None:
         return False
     start = _parse_hhmm(quiet_start)

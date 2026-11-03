@@ -279,3 +279,17 @@ async def test_patch_accepts_valid_quiet_hours_and_clearing(client):
     assert r.status_code == 200
     assert r.json()["quiet_hours_start"] is None
     assert r.json()["quiet_hours_end"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "valid"), [("digest_time", "06:30"), ("daily_llm_cost_cap_usd", 2.5)]
+)
+async def test_patch_rejects_null_for_not_null_fields(client, field, valid):
+    """These columns are NOT NULL; an explicit null used to reach them and 500."""
+    c, _, _ = client
+    r = await c.patch("/api/household", json={field: None})
+    assert r.status_code == 422
+    r = await c.patch("/api/household", json={field: valid})
+    assert r.status_code == 200
+    assert r.json()[field] == valid

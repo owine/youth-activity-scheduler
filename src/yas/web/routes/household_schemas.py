@@ -76,3 +76,13 @@ class HouseholdPatch(BaseModel):
         if v is not None and not _HHMM.fullmatch(v):
             raise ValueError("must be HH:MM, 00:00-23:59")
         return v
+
+    @field_validator("digest_time", "daily_llm_cost_cap_usd")
+    @classmethod
+    def _not_null(cls, v: object) -> object:
+        # Omitting a field leaves it alone (the default isn't validated), but an
+        # explicit null would write None into a NOT NULL column and 500. Quiet
+        # hours stay nullable: null there clears them.
+        if v is None:
+            raise ValueError("cannot be null")
+        return v

@@ -23,7 +23,6 @@ from yas.worker.delivery_loop import alert_delivery_loop
 from yas.worker.detector_loop import daily_detector_loop
 from yas.worker.digest_loop import daily_digest_loop
 from yas.worker.heartbeat import beat_once
-from yas.worker.loop_guard import loop_iteration
 from yas.worker.sweep import daily_sweep_loop
 
 log = get_logger("yas.worker")
@@ -49,12 +48,14 @@ def _build_notifiers(
 
 
 async def _heartbeat_loop(engine: AsyncEngine, settings: Settings) -> None:
+    """Deliberately not wrapped in a LoopGuard: a failed beat means the database
+    can't take even a one-row write, so it propagates, the process exits, and
+    the container restarts. /healthz doesn't check the worker; this does."""
     log.info("heartbeat.start", interval_s=settings.worker_heartbeat_interval_s)
     try:
         while True:
-            with loop_iteration("heartbeat"):
-                ts = await beat_once(engine)
-                log.debug("worker.heartbeat", ts=ts.isoformat())
+            ts = await beat_once(engine)
+            log.debug("worker.heartbeat", ts=ts.isoformat())
             await asyncio.sleep(settings.worker_heartbeat_interval_s)
     except asyncio.CancelledError:
         log.info("heartbeat.stop")

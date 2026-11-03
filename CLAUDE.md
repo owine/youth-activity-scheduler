@@ -135,11 +135,15 @@ API, detectable only as `/readyz` reporting `heartbeat_fresh: false`.
 
 `worker/runner.py` runs every background loop as a task in one `asyncio.TaskGroup`: heartbeat,
 crawl scheduler, daily sweep, geocode enricher, alert delivery, digest, detector. Each is
-individually gated by a `Settings` flag. Each wraps one iteration in
-`worker/loop_guard.py::loop_iteration`, which logs `worker.loop_iteration_failed` and reports to
-GlitchTip, so one bad tick doesn't take the process down; a new loop must do the same. The daily
-loops (sweep, digest, detector) mark the day attempted before running, so a failure retries
-tomorrow (or on restart), not every 60s.
+individually gated by a `Settings` flag. Each wraps a unit of work in a per-loop
+`worker/loop_guard.py::LoopGuard`, so one bad tick doesn't take the process down; a new loop must
+do the same. After `MAX_CONSECUTIVE_FAILURES` (5) failures in a row the guard re-raises and the
+process exits, so a persistent fault (wedged pool, full disk) still gets the container restarted.
+GlitchTip hears only a streak's first failure, then the exit via the uncaught-exception hook.
+**The heartbeat is deliberately unguarded**: a failed beat exits at once, since `/healthz`
+doesn't check the worker. The daily loops (sweep, digest, detector) mark the day attempted before
+running, so a failure retries tomorrow (or on restart), not every 60s; sweep and digest guard each
+kid separately, so one kid's failure doesn't skip the rest.
 
 Loops commit per unit of work (alert group, kid, geocode) and never make a network call while
 their session holds flushed writes: SQLite has one write lock, and holding it across a slow send

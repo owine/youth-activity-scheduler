@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { ApiError, apiErrorDetail } from './api';
+import { http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
+import { ApiError, api, apiErrorDetail } from './api';
 
 describe('apiErrorDetail', () => {
   it('returns a string detail as-is', () => {
@@ -29,5 +31,33 @@ describe('apiErrorDetail', () => {
     expect(apiErrorDetail(new Error('network'))).toBeNull();
     expect(apiErrorDetail(new ApiError(500, 'Internal Server Error'))).toBeNull();
     expect(apiErrorDetail(new ApiError(500, null))).toBeNull();
+  });
+});
+
+describe('api error bodies', () => {
+  it('turns a plain-text 500 into an ApiError carrying the text', async () => {
+    server.use(
+      http.get('/api/boom', () =>
+        HttpResponse.text('Internal Server Error', {
+          status: 500,
+          headers: { 'content-type': 'text/plain' },
+        }),
+      ),
+    );
+    const err: unknown = await api.get('/api/boom').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
+    expect((err as ApiError).body).toBe('Internal Server Error');
+  });
+
+  it('parses a JSON error body', async () => {
+    server.use(
+      http.get('/api/missing', () =>
+        HttpResponse.json({ detail: 'kid 9 not found' }, { status: 404 }),
+      ),
+    );
+    const err: unknown = await api.get('/api/missing').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(apiErrorDetail(err)).toBe('kid 9 not found');
   });
 });

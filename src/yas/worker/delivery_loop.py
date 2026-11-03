@@ -16,7 +16,7 @@ from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings
 from yas.db.session import session_scope
 from yas.logging import get_logger
-from yas.worker.loop_guard import loop_iteration
+from yas.worker.loop_guard import LoopGuard
 
 
 async def alert_delivery_loop(
@@ -37,9 +37,10 @@ async def alert_delivery_loop(
     """
     log = get_logger("yas.alerts.delivery")
     log.info("delivery.start", tick_s=settings.alert_delivery_tick_s)
+    guard = LoopGuard("alert_delivery")
     try:
         while True:
-            with loop_iteration("alert_delivery"):
+            with guard.iteration():
                 await _deliver_due(engine, settings, notifiers_override)
             await asyncio.sleep(settings.alert_delivery_tick_s)
     except asyncio.CancelledError:

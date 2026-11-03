@@ -145,7 +145,7 @@ def _fresh_quiet_hours_warnings(monkeypatch):
 @pytest.mark.usefixtures("_fresh_quiet_hours_warnings")
 @pytest.mark.parametrize(
     ("start", "end"),
-    [("22:00", "24:00"), ("25:99", "07:00"), ("22:00", "7am"), ("", "07:00"), ("22:60", "07:00")],
+    [("22:00", "24:30"), ("25:99", "07:00"), ("22:00", "7am"), ("", "07:00"), ("22:60", "07:00")],
 )
 def test_quiet_hours_invalid_value_is_not_quiet(start, end):
     """A bad stored value used to raise ValueError inside the delivery loop,
@@ -164,3 +164,19 @@ def test_quiet_hours_invalid_value_warns_once():
         for _ in range(3):
             assert is_in_quiet_hours(now, "21:00", "24:30") is False
     assert len([e for e in logs if e["event"] == "delivery.quiet_hours.invalid"]) == 1
+
+
+def test_quiet_hours_end_of_24_00_means_until_midnight():
+    """The API never validated quiet hours, so "24:00" can be stored. It used to
+    parse as invalid and silently switch quiet hours off; it means midnight."""
+
+    def at(h: int, m: int) -> datetime:
+        return datetime(2026, 5, 5, h, m, tzinfo=UTC)
+
+    assert is_in_quiet_hours(at(22, 0), "22:00", "24:00") is True
+    assert is_in_quiet_hours(at(23, 59), "22:00", "24:00") is True
+    assert is_in_quiet_hours(at(0, 0), "22:00", "24:00") is False
+    assert is_in_quiet_hours(at(21, 59), "22:00", "24:00") is False
+    # As a start bound it is midnight too.
+    assert is_in_quiet_hours(at(3, 0), "24:00", "07:00") is True
+    assert is_in_quiet_hours(at(7, 0), "24:00", "07:00") is False

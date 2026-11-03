@@ -17,7 +17,7 @@ from yas.alerts.enqueuer import enqueue_no_matches_for_kid, enqueue_site_stagnan
 from yas.config import Settings
 from yas.db.session import session_scope
 from yas.logging import get_logger
-from yas.worker.loop_guard import loop_iteration
+from yas.worker.loop_guard import LoopGuard
 from yas.worker.sweep import _parse_hhmm
 
 log = get_logger("yas.worker.detector")
@@ -33,6 +33,7 @@ async def daily_detector_loop(
     """
     target = _parse_hhmm(settings.alert_detector_time_utc)
     last_run: date | None = None
+    guard = LoopGuard("detector")
     log.info("detector.start", time_utc=settings.alert_detector_time_utc)
     try:
         while True:
@@ -42,7 +43,7 @@ async def daily_detector_loop(
                 # Marked before the run, so a failure is reported once and retried
                 # tomorrow (or on restart) rather than every 60s; see daily_sweep_loop.
                 last_run = today
-                with loop_iteration("detector"):
+                with guard.iteration():
                     async with session_scope(engine) as session:
                         stagnant_ids = await detect_stagnant_sites(
                             session,

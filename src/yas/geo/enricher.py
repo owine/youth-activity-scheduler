@@ -18,7 +18,7 @@ from typing import Any
 
 import sentry_sdk
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from yas.config import Settings
 from yas.crawl.normalize import normalize_name
@@ -26,7 +26,7 @@ from yas.db.models import GeocodeAttempt, Location, Offering
 from yas.db.session import session_scope
 from yas.geo.client import Geocoder, GeocoderUnavailable
 from yas.logging import get_logger
-from yas.worker.loop_guard import loop_iteration
+from yas.worker.loop_guard import LoopGuard
 
 log = get_logger("yas.geo.enricher")
 
@@ -87,6 +87,37 @@ def record_geocode_attempt(
     return prior
 
 
+async def _rematch_location(session: AsyncSession, location_id: int, on_rematch: RematchFn) -> None:
+    """Rematch the offerings at a just-geocoded location, absorbing a failure.
+
+    Runs in a transaction of its own, so a failure rolls back only the rematch;
+    `session` keeps its loaded rows unexpired for the rest of the batch. The
+    location keeps its coordinates and isn't revisited, so a failed rematch is
+    reported once and the daily sweep rematches its offerings."""
+    maker = async_sessionmaker(session.bind, expire_on_commit=False)
+    try:
+        async with maker.begin() as rematch_session:
+            offering_ids = (
+                (
+                    await rematch_session.execute(
+                        select(Offering.id).where(Offering.location_id == location_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for oid in offering_ids:
+                await on_rematch(rematch_session, oid)
+    except Exception as exc:
+        log.error(
+            "geocode.rematch_failed",
+            location_id=location_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        sentry_sdk.capture_exception(exc, tags={"location_id": str(location_id)})
+
+
 async def enrich_ungeocoded_locations(
     session: AsyncSession,
     geocoder: Geocoder,
@@ -101,7 +132,9 @@ async def enrich_ungeocoded_locations(
     behind them.
 
     Commits `session` before each geocoder call, so each address's outcome is
-    its own transaction; the caller's scope commits the last one.
+    its own transaction; the caller's scope commits the last one. A location
+    that gains coordinates is committed before its offerings are rematched, and
+    the rematch runs in its own transaction (see `_rematch_location`).
     """
     updated = 0
     not_found = 0
@@ -145,10 +178,10 @@ async def enrich_ungeocoded_locations(
         if calls >= batch_size:
             break
         calls += 1
-        # Commit the previous address's outcome (and its rematch) before the next
-        # network call. Flushed writes hold SQLite's only write lock until the
-        # commit, and a geocode takes at least a second, so a batch held in one
-        # transaction starves the heartbeat and API writes past the busy timeout.
+        # Commit the previous address's outcome before the next network call.
+        # Flushed writes hold SQLite's only write lock until the commit, and a
+        # geocode takes at least a second, so a batch held in one transaction
+        # starves the heartbeat and API writes past the busy timeout.
         await session.commit()
         try:
             result = await geocoder.geocode(loc.address or "")
@@ -183,13 +216,12 @@ async def enrich_ungeocoded_locations(
         updated += 1
         attempts[addr_norm] = record_geocode_attempt(session, prior, addr_norm, "ok", now=now)
         if on_rematch is not None:
-            offering_ids = (
-                (await session.execute(select(Offering.id).where(Offering.location_id == loc.id)))
-                .scalars()
-                .all()
-            )
-            for oid in offering_ids:
-                await on_rematch(session, oid)
+            # Commit the coordinates and the attempt row before rematching, so a
+            # failed rematch can't roll them back. It did, and each tick then
+            # re-geocoded the same first location and failed again, so nothing
+            # behind it was ever geocoded.
+            await session.commit()
+            await _rematch_location(session, loc.id, on_rematch)
 
     return EnrichResult(
         updated=updated,
@@ -210,9 +242,10 @@ async def geocode_enricher_loop(
     log.info(
         "geocode.start", tick_s=settings.geocode_tick_s, batch_size=settings.geocode_batch_size
     )
+    guard = LoopGuard("geocode_enricher")
     try:
         while True:
-            with loop_iteration("geocode_enricher"):
+            with guard.iteration():
                 async with session_scope(engine) as s:
                     result = await enrich_ungeocoded_locations(
                         s,

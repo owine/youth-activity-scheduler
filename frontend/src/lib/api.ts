@@ -36,11 +36,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!r.ok) {
-    let body: unknown;
+    // Read the body once: after a failed r.json() it is already consumed, and a
+    // fallback r.text() throws "Body is unusable" instead of an ApiError.
+    const text = await r.text();
+    let body: unknown = text;
     try {
-      body = await r.json();
+      body = JSON.parse(text);
     } catch {
-      body = await r.text();
+      // Not JSON (a proxy's plain-text 502, an unhandled 500): keep the text.
     }
     throw new ApiError(r.status, body);
   }

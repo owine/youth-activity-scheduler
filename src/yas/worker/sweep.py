@@ -17,7 +17,7 @@ from yas.db.models import Kid
 from yas.db.session import session_scope
 from yas.logging import get_logger
 from yas.matching.matcher import rematch_kid
-from yas.worker.loop_guard import loop_iteration
+from yas.worker.loop_guard import LoopGuard
 
 log = get_logger("yas.worker.sweep")
 
@@ -33,6 +33,7 @@ async def daily_sweep_loop(engine: AsyncEngine, settings: Settings) -> None:
     at most one double-run (harmless) or one skip (next day covers)."""
     target = _parse_hhmm(settings.sweep_time_utc)
     last_run: date | None = None
+    guard = LoopGuard("sweep")
     log.info("sweep.start", time_utc=settings.sweep_time_utc)
     try:
         while True:
@@ -45,23 +46,28 @@ async def daily_sweep_loop(engine: AsyncEngine, settings: Settings) -> None:
                 # little, while a deterministic failure re-run every minute would
                 # flood GlitchTip. A restart still re-runs it (last_run is in memory).
                 last_run = today
-                with loop_iteration("sweep"):
-                    kids = await _sweep(engine)
-                    log.info("sweep.ran", kids=kids)
+                kids = await _sweep(engine, guard)
+                log.info("sweep.ran", kids=kids)
             await asyncio.sleep(60)
     except asyncio.CancelledError:
         log.info("sweep.stop")
         raise
 
 
-async def _sweep(engine: AsyncEngine) -> int:
-    """Re-match every active kid, one transaction per kid; returns the kid count."""
-    async with session_scope(engine) as s:
-        kid_ids = list((await s.execute(select(Kid.id).where(Kid.active.is_(True)))).scalars())
+async def _sweep(engine: AsyncEngine, guard: LoopGuard) -> int:
+    """Re-match every active kid, one transaction per kid; returns the kid count.
+
+    Each kid is its own guarded iteration, so one kid's failure (a lock timeout,
+    a kid deleted mid-sweep) is reported and the kids after it still run."""
+    kid_ids: list[int] = []
+    with guard.iteration():
+        async with session_scope(engine) as s:
+            kid_ids = list((await s.execute(select(Kid.id).where(Kid.active.is_(True)))).scalars())
     for kid_id in kid_ids:
         # A kid's pass writes a match row per offering, and flushed writes hold
         # SQLite's only write lock until commit. One transaction for every kid
         # held it for the whole sweep, so the heartbeat and API writes timed out.
-        async with session_scope(engine) as s:
-            await rematch_kid(s, kid_id)
+        with guard.iteration(kid_id=kid_id):
+            async with session_scope(engine) as s:
+                await rematch_kid(s, kid_id)
     return len(kid_ids)
