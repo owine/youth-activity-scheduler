@@ -24,15 +24,23 @@ describe('MuteButton', () => {
     expect(screen.getByRole('button', { name: /muted until/i })).toBeInTheDocument();
   });
 
-  it('clicking a duration option calls onChange with a future ISO timestamp', async () => {
+  it('clicking a duration option calls onChange with that far-off ISO timestamp', async () => {
     const onChange = vi.fn();
     render(<MuteButton mutedUntil={null} onChange={onChange} />);
     await userEvent.click(screen.getByRole('button', { name: /^mute$/i }));
+    const before = Date.now();
     await userEvent.click(screen.getByRole('menuitem', { name: /7 days/i }));
+    const after = Date.now();
     expect(onChange).toHaveBeenCalledTimes(1);
     const arg = onChange.mock.calls[0]![0];
     expect(typeof arg).toBe('string');
-    expect(new Date(arg).getTime()).toBeGreaterThan(Date.now());
+    // 7 calendar days from the click. Days are added in local time, so a DST
+    // change in the window can move the instant by an hour either way.
+    const week = 7 * 86_400_000;
+    const hour = 3_600_000;
+    const until = new Date(arg).getTime();
+    expect(until).toBeGreaterThanOrEqual(before + week - hour);
+    expect(until).toBeLessThanOrEqual(after + week + hour);
   });
 
   it('clicking "Forever" calls onChange with the sentinel', async () => {

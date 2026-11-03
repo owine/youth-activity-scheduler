@@ -8,18 +8,9 @@ import pytest
 
 from yas.alerts.detectors.no_matches_for_kid import detect_kids_without_matches
 from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
-from yas.db.base import Base
 from yas.db.models import Kid, Match, Offering, Page, Site
 from yas.db.models._types import PageKind
-from yas.db.session import create_engine_for, session_scope
-
-
-async def _make_engine(tmp_path):
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/d.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
-
+from yas.db.session import session_scope
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,9 +64,8 @@ def _match(kid_id: int, offering_id: int) -> Match:
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_includes_stagnant_site(tmp_path):
+async def test_site_stagnant_includes_stagnant_site(engine):
     """Active site with an offering older than threshold → included."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("stale")
         s.add(site)
@@ -92,9 +82,8 @@ async def test_site_stagnant_includes_stagnant_site(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_excludes_recent_offering(tmp_path):
+async def test_site_stagnant_excludes_recent_offering(engine):
     """Site with a recent offering → not stagnant."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("fresh")
         s.add(site)
@@ -111,10 +100,9 @@ async def test_site_stagnant_excludes_recent_offering(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_excludes_muted_site(tmp_path):
+async def test_site_stagnant_excludes_muted_site(engine):
     """Site muted until a future time → excluded even if stale."""
     future_mute = NOW + timedelta(days=10)
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("muted", muted_until=future_mute)
         s.add(site)
@@ -131,9 +119,8 @@ async def test_site_stagnant_excludes_muted_site(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_excludes_inactive_site(tmp_path):
+async def test_site_stagnant_excludes_inactive_site(engine):
     """Site with active=False → excluded."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("inactive", active=False)
         s.add(site)
@@ -150,9 +137,8 @@ async def test_site_stagnant_excludes_inactive_site(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_detector_ignores_fresh_sites(tmp_path):
+async def test_site_stagnant_detector_ignores_fresh_sites(engine):
     """Spec §6.5: site created recently with zero offerings → excluded."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         # site with no offerings at all (just added)
         site = _site("brand_new")
@@ -165,10 +151,9 @@ async def test_site_stagnant_detector_ignores_fresh_sites(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_expired_mute_does_not_exclude(tmp_path):
+async def test_site_stagnant_expired_mute_does_not_exclude(engine):
     """Expired mute (muted_until < now) should NOT protect the site."""
     past_mute = NOW - timedelta(days=1)
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("expired_mute", muted_until=past_mute)
         s.add(site)
@@ -193,9 +178,8 @@ TOO_RECENT = NOW - timedelta(days=3)  # < 7-day threshold
 
 
 @pytest.mark.asyncio
-async def test_no_matches_for_kid_includes_kid_with_zero_matches(tmp_path):
+async def test_no_matches_for_kid_includes_kid_with_zero_matches(engine):
     """Active kid created 10+ days ago with no matches → included."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid("alice", created_at=OLD_ENOUGH)
         s.add(kid)
@@ -207,9 +191,8 @@ async def test_no_matches_for_kid_includes_kid_with_zero_matches(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_no_matches_for_kid_excludes_kid_with_a_match(tmp_path):
+async def test_no_matches_for_kid_excludes_kid_with_a_match(engine):
     """Active kid with at least one match row → excluded."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid("bob", created_at=OLD_ENOUGH)
         s.add(kid)
@@ -233,9 +216,8 @@ async def test_no_matches_for_kid_excludes_kid_with_a_match(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_no_matches_for_kid_excludes_inactive_kid(tmp_path):
+async def test_no_matches_for_kid_excludes_inactive_kid(engine):
     """Inactive kid (active=False) → excluded."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid("carol", active=False, created_at=OLD_ENOUGH)
         s.add(kid)
@@ -247,9 +229,8 @@ async def test_no_matches_for_kid_excludes_inactive_kid(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_no_matches_for_kid_detector_requires_N_days_active(tmp_path):
+async def test_no_matches_for_kid_detector_requires_N_days_active(engine):
     """Spec §6.5: kid created 3 days ago (< threshold 7) → excluded even with zero matches."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid("dave", created_at=TOO_RECENT)
         s.add(kid)
@@ -261,9 +242,8 @@ async def test_no_matches_for_kid_detector_requires_N_days_active(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_no_matches_for_kid_multiple_kids_ordering(tmp_path):
+async def test_no_matches_for_kid_multiple_kids_ordering(engine):
     """Result is sorted by id ascending."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         k1 = _kid("eve", created_at=OLD_ENOUGH)
         k2 = _kid("frank", created_at=OLD_ENOUGH)

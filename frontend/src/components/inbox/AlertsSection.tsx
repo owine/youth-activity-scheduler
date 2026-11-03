@@ -3,16 +3,21 @@ import type { InboxAlert } from '@/lib/types';
 import { AlertTypeBadge } from '@/components/alerts/AlertTypeBadge';
 import { AlertDetailDrawer } from './AlertDetailDrawer';
 import { EmptyState } from '@/components/common/EmptyState';
+import { RowTitleButton } from '@/components/common/RowTitleButton';
 
 export function AlertsSection({
   alerts,
+  includeClosed: includeClosedProp,
   onIncludeClosedChange,
 }: {
   alerts: InboxAlert[];
+  /** Controlled value. The inbox owns it, since toggling refetches the summary. */
+  includeClosed?: boolean;
   onIncludeClosedChange?: (b: boolean) => void;
 }) {
   const [selected, setSelected] = useState<InboxAlert | null>(null);
-  const [includeClosed, setIncludeClosed] = useState(false);
+  const [includeClosedState, setIncludeClosed] = useState(false);
+  const includeClosed = includeClosedProp ?? includeClosedState;
 
   return (
     <section aria-labelledby="alerts-heading" className="space-y-2">
@@ -48,7 +53,9 @@ export function AlertsSection({
               >
                 <div className="flex items-start gap-3">
                   <AlertTypeBadge type={a.type} />
-                  <span className="flex-1 text-sm">{a.summary_text}</span>
+                  <RowTitleButton onClick={() => setSelected(a)} className="flex-1 text-sm">
+                    {a.summary_text}
+                  </RowTitleButton>
                   {isClosed && (
                     <span className="text-[10px] uppercase tracking-wide text-muted-foreground border border-border rounded px-1.5 py-0.5">
                       Closed

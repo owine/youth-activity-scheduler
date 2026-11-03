@@ -10,11 +10,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.db.base import Base
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.email import render_digest_payload
 from yas.email.builders import _group_matches_by_site, gather_digest_payload
 from yas.email.payloads import DigestPayload
@@ -29,13 +29,6 @@ def render_digest(payload: DigestPayload, top_line: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 # Engine / schema helper
 # ---------------------------------------------------------------------------
-
-
-async def _make_engine(tmp_path: Any) -> Any:
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/d.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +133,8 @@ def _alert(
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_new_matches_only_within_window(tmp_path: Any) -> None:
+async def test_gather_payload_new_matches_only_within_window(engine: AsyncEngine) -> None:
     """Matches computed within the window are included; older matches are not."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site("ms")
         s.add(site)
@@ -183,9 +175,8 @@ async def test_gather_payload_new_matches_only_within_window(tmp_path: Any) -> N
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_starting_soon_14_day_window(tmp_path: Any) -> None:
+async def test_gather_payload_starting_soon_14_day_window(engine: AsyncEngine) -> None:
     """Matched offerings starting within 14 days appear in starting_soon."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site()
         s.add(site)
@@ -226,9 +217,8 @@ async def test_gather_payload_starting_soon_14_day_window(tmp_path: Any) -> None
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_registration_calendar_14_day_window(tmp_path: Any) -> None:
+async def test_gather_payload_registration_calendar_14_day_window(engine: AsyncEngine) -> None:
     """Matched offerings with registration opening in 14 days appear in registration_calendar."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         site = _site()
         s.add(site)
@@ -269,9 +259,8 @@ async def test_gather_payload_registration_calendar_14_day_window(tmp_path: Any)
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_delivery_failures_since_last_digest(tmp_path: Any) -> None:
+async def test_gather_payload_delivery_failures_since_last_digest(engine: AsyncEngine) -> None:
     """Skipped alerts after the last digest are included in delivery_failures."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid()
         s.add(kid)
@@ -327,9 +316,8 @@ async def test_gather_payload_delivery_failures_since_last_digest(tmp_path: Any)
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_site_stagnant_includes_detector_output(tmp_path: Any) -> None:
+async def test_gather_payload_site_stagnant_includes_detector_output(engine: AsyncEngine) -> None:
     """site_stagnant_ids reflects detect_stagnant_sites output."""
-    engine = await _make_engine(tmp_path)
     stale_first_seen = NOW - timedelta(days=35)
 
     async with session_scope(engine) as s:
@@ -359,9 +347,8 @@ async def test_gather_payload_site_stagnant_includes_detector_output(tmp_path: A
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_under_no_matches_threshold_flag(tmp_path: Any) -> None:
+async def test_gather_payload_under_no_matches_threshold_flag(engine: AsyncEngine) -> None:
     """Kid created recently with no matches → under_no_matches_threshold=True."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         # Created only 2 days ago — well within the 7-day threshold
         kid = _kid(created_at=NOW - timedelta(days=2))
@@ -383,9 +370,8 @@ async def test_gather_payload_under_no_matches_threshold_flag(tmp_path: Any) -> 
 
 
 @pytest.mark.asyncio
-async def test_gather_payload_not_under_threshold_when_matches_exist(tmp_path: Any) -> None:
+async def test_gather_payload_not_under_threshold_when_matches_exist(engine: AsyncEngine) -> None:
     """Kid created recently but WITH a match → under_no_matches_threshold=False."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         kid = _kid(created_at=NOW - timedelta(days=2))
         s.add(kid)

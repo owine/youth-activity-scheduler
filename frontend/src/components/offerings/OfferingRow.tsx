@@ -1,6 +1,7 @@
 import type { KidBrief, Match, OfferingRow as OfferingRowType } from '@/lib/types';
 import { Card } from '@/components/ui/card';
 import { MuteButton } from '@/components/common/MuteButton';
+import { RowTitleButton } from '@/components/common/RowTitleButton';
 import { OfferingScheduleLine } from '@/components/common/OfferingScheduleLine';
 import { useUpdateOfferingMute } from '@/lib/mutations';
 import { MatchReasonChips } from './MatchReasonChips';
@@ -24,7 +25,9 @@ export function OfferingRow({ row, kidsById, now, onSelect }: Props) {
     >
       {/* Top line: name, chips, score, mute button */}
       <div className="flex items-center gap-3 mb-2">
-        <div className="font-semibold flex-1">{o.name}</div>
+        <RowTitleButton onClick={() => onSelect(bestMatch)} className="font-semibold flex-1">
+          {o.name}
+        </RowTitleButton>
         <MatchReasonChips row={row} kidsById={kidsById} now={now} />
         <span className="text-sm font-semibold">{bestMatch.score.toFixed(2)}</span>
         <div onClick={(e) => e.stopPropagation()}>

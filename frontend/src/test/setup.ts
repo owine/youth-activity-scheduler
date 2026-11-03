@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest';
-import { afterAll, afterEach, beforeAll } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect } from 'vitest';
 import { notifyManager } from '@tanstack/query-core';
+import { isCommonAssetRequest } from 'msw';
+import { HttpNetworkFrame } from 'msw/experimental';
 import { server } from './server';
 
 // React Query uses setTimeout(fn, 0) by default, which `act()` may not fully
@@ -34,6 +36,31 @@ if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'func
   Object.defineProperty(globalThis, 'localStorage', { value: mockStorage, writable: true });
 }
 
-beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
-afterEach(() => server.resetHandlers());
+// Fail any test that makes a request no handler covers. The built-in 'error'
+// strategy only console.errors and rejects that one fetch, which a component's
+// error state can swallow, so the test still passes. Record each one instead
+// and fail the test in afterEach. Throwing makes MSW answer the fetch with a
+// 500 rather than pass it through, so nothing reaches the real network.
+const unhandled: string[] = [];
+
+beforeAll(() =>
+  server.listen({
+    onUnhandledFrame({ frame }) {
+      if (frame instanceof HttpNetworkFrame) {
+        const { request } = frame.data;
+        // Mirrors the predefined strategies, which ignore common static assets.
+        if (isCommonAssetRequest(request)) return;
+        unhandled.push(`${request.method} ${request.url}`);
+      } else {
+        unhandled.push(`${frame.protocol} frame`);
+      }
+      throw new Error(`[MSW] No handler for ${unhandled.at(-1)}`);
+    },
+  }),
+);
+afterEach(() => {
+  server.resetHandlers();
+  const leaked = unhandled.splice(0);
+  expect(leaked, `requests with no MSW handler:\n  ${leaked.join('\n  ')}`).toEqual([]);
+});
 afterAll(() => server.close());

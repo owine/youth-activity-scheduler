@@ -67,6 +67,16 @@ export function WatchlistEntrySheet({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
+  // The route keeps the create sheet mounted and only toggles `open`, so
+  // closing it must clear the form, or the next "Add" opens on the last entry.
+  const close = () => {
+    if (mode === 'create') {
+      form.reset();
+      setErrorMsg(null);
+    }
+    onClose();
+  };
+
   const form = useForm({
     defaultValues: mode === 'edit' && entry ? entryToFormValues(entry) : DEFAULT_CREATE_VALUES,
     validators: {
@@ -80,14 +90,14 @@ export function WatchlistEntrySheet({
             kidId,
             ...value,
           });
-          onClose();
+          close();
         } else if (entry) {
           await update.mutateAsync({
             kidId,
             entryId: entry.id,
             patch: value,
           });
-          onClose();
+          close();
         }
       } catch (err) {
         if (err instanceof ApiError && typeof err.body === 'object' && err.body !== null) {
@@ -104,7 +114,7 @@ export function WatchlistEntrySheet({
     if (form.state.isDirty) {
       setShowCancelConfirm(true);
     } else {
-      onClose();
+      close();
     }
   };
 
@@ -286,7 +296,7 @@ export function WatchlistEntrySheet({
         destructive
         onConfirm={() => {
           setShowCancelConfirm(false);
-          onClose();
+          close();
         }}
       />
     </>

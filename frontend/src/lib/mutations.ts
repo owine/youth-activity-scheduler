@@ -61,7 +61,11 @@ export function useCloseAlert() {
     },
 
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+      // ['alerts'] is the Outbox list, which shows closed state too.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['inbox', 'summary'] }),
+        qc.invalidateQueries({ queryKey: ['alerts'] }),
+      ]);
     },
   });
 }
@@ -90,7 +94,11 @@ export function useReopenAlert() {
     },
 
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: ['inbox', 'summary'] });
+      // ['alerts'] is the Outbox list, which shows closed state too.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['inbox', 'summary'] }),
+        qc.invalidateQueries({ queryKey: ['alerts'] }),
+      ]);
     },
   });
 }
@@ -130,7 +138,12 @@ export function useCancelEnrollment() {
     },
 
     onSettled: async (_data, _err, { kidId }) => {
-      await qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] });
+      // The backend rematches the kid on enrollment changes, so matches move too.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'enrollments'] }),
+        qc.invalidateQueries({ queryKey: ['matches'] }),
+      ]);
     },
   });
 }
@@ -174,7 +187,12 @@ export function useEnrollOffering() {
     },
 
     onSettled: async (_data, _err, { kidId }) => {
-      await qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] });
+      // The backend rematches the kid on enrollment changes, so matches move too.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'calendar'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId, 'enrollments'] }),
+        qc.invalidateQueries({ queryKey: ['matches'] }),
+      ]);
     },
   });
 }
@@ -265,7 +283,7 @@ export function useDeleteUnavailability() {
     snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
   };
   return useMutation<unknown, Error, DeleteUnavailabilityInput, Ctx>({
-    mutationFn: ({ blockId }) => api.delete(`/api/unavailability/${blockId}`),
+    mutationFn: ({ kidId, blockId }) => api.delete(`/api/kids/${kidId}/unavailability/${blockId}`),
 
     onMutate: async ({ kidId, blockId }) => {
       await qc.cancelQueries({ queryKey: ['kids', kidId, 'calendar'] });
@@ -367,7 +385,7 @@ export function useCreateWatchlistEntry() {
       api.post<WatchlistEntry>(`/api/kids/${kidId}/watchlist`, body),
     onSettled: async (_d, _e, { kidId }) => {
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['kids', kidId, 'watchlist'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId] }),
         qc.invalidateQueries({ queryKey: ['matches'] }),
       ]);
     },
@@ -380,30 +398,43 @@ interface UpdateWatchlistEntryInput {
   patch: Partial<Omit<WatchlistEntry, 'id' | 'kid_id' | 'created_at'>>;
 }
 
+/**
+ * The watchlist has no list endpoint of its own: the page renders
+ * useKid(kidId).data.watchlist, so optimistic edits patch the kid detail
+ * cache ['kids', kidId] and roll it back from a snapshot on error.
+ */
+async function patchKidWatchlist(
+  qc: ReturnType<typeof useQueryClient>,
+  kidId: number,
+  fn: (watchlist: WatchlistEntry[]) => WatchlistEntry[],
+): Promise<KidDetail | undefined> {
+  const key = ['kids', kidId];
+  await qc.cancelQueries({ queryKey: key, exact: true });
+  const snapshot = qc.getQueryData<KidDetail>(key);
+  if (snapshot) {
+    qc.setQueryData<KidDetail>(key, { ...snapshot, watchlist: fn(snapshot.watchlist) });
+  }
+  return snapshot;
+}
+
 export function useUpdateWatchlistEntry() {
   const qc = useQueryClient();
-  type Ctx = { snapshot: WatchlistEntry[] | undefined };
+  type Ctx = { snapshot: KidDetail | undefined };
   return useMutation<WatchlistEntry, Error, UpdateWatchlistEntryInput, Ctx>({
     mutationFn: ({ entryId, patch }) =>
       api.patch<WatchlistEntry>(`/api/watchlist/${entryId}`, patch),
     onMutate: async ({ kidId, entryId, patch }) => {
-      const key = ['kids', kidId, 'watchlist'];
-      await qc.cancelQueries({ queryKey: key });
-      const snapshot = qc.getQueryData<WatchlistEntry[]>(key);
-      if (snapshot) {
-        qc.setQueryData<WatchlistEntry[]>(
-          key,
-          snapshot.map((e) => (e.id === entryId ? { ...e, ...patch } : e)),
-        );
-      }
+      const snapshot = await patchKidWatchlist(qc, kidId, (list) =>
+        list.map((e) => (e.id === entryId ? { ...e, ...patch } : e)),
+      );
       return { snapshot };
     },
     onError: (_err, { kidId }, ctx) => {
-      if (ctx?.snapshot) qc.setQueryData(['kids', kidId, 'watchlist'], ctx.snapshot);
+      if (ctx?.snapshot) qc.setQueryData(['kids', kidId], ctx.snapshot);
     },
     onSettled: async (_d, _e, { kidId }) => {
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['kids', kidId, 'watchlist'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId] }),
         qc.invalidateQueries({ queryKey: ['matches'] }),
       ]);
     },
@@ -417,27 +448,21 @@ interface DeleteWatchlistEntryInput {
 
 export function useDeleteWatchlistEntry() {
   const qc = useQueryClient();
-  type Ctx = { snapshot: WatchlistEntry[] | undefined };
+  type Ctx = { snapshot: KidDetail | undefined };
   return useMutation<unknown, Error, DeleteWatchlistEntryInput, Ctx>({
     mutationFn: ({ entryId }) => api.delete(`/api/watchlist/${entryId}`),
     onMutate: async ({ kidId, entryId }) => {
-      const key = ['kids', kidId, 'watchlist'];
-      await qc.cancelQueries({ queryKey: key });
-      const snapshot = qc.getQueryData<WatchlistEntry[]>(key);
-      if (snapshot) {
-        qc.setQueryData<WatchlistEntry[]>(
-          key,
-          snapshot.filter((e) => e.id !== entryId),
-        );
-      }
+      const snapshot = await patchKidWatchlist(qc, kidId, (list) =>
+        list.filter((e) => e.id !== entryId),
+      );
       return { snapshot };
     },
     onError: (_err, { kidId }, ctx) => {
-      if (ctx?.snapshot) qc.setQueryData(['kids', kidId, 'watchlist'], ctx.snapshot);
+      if (ctx?.snapshot) qc.setQueryData(['kids', kidId], ctx.snapshot);
     },
     onSettled: async (_d, _e, { kidId }) => {
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['kids', kidId, 'watchlist'] }),
+        qc.invalidateQueries({ queryKey: ['kids', kidId] }),
         qc.invalidateQueries({ queryKey: ['matches'] }),
       ]);
     },

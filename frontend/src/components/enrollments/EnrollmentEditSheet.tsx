@@ -51,6 +51,8 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
     defaultValues: {
       notes: enrollment?.notes ?? null,
       // Slice ISO datetime to YYYY-MM-DD for <input type="date">.
+      // The date part, not the local date of the instant: the sheet saves the
+      // day as UTC midnight, which is the day before in US time zones.
       enrolled_at: enrollment?.enrolled_at ? enrollment.enrolled_at.slice(0, 10) : null,
       // Only days the offering still lists: a stale chosen day would have no
       // checkbox to untick, and every save would be rejected with a 422. An

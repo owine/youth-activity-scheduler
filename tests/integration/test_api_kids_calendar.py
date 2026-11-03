@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -73,6 +74,25 @@ async def _seed_kid_with_enrollment(engine, *, kid_id=1, offering_id=1):
                 enrolled_at=datetime.now(UTC),
             )
         )
+
+
+# Kid 1's T-Ball enrollment, as it appears in the 2026-04-27..05-04 window.
+T_BALL_EVENTS = [("enrollment", "2026-04-28"), ("enrollment", "2026-04-30")]
+
+
+def _events(r: Any) -> list[dict[str, Any]]:
+    """The response's events, after asserting the request succeeded.
+
+    An exclusion test that only checks ``all(... != x)`` passes vacuously on an
+    error or an empty list, so callers also assert what *is* returned.
+    """
+    assert r.status_code == 200, r.text
+    events: list[dict[str, Any]] = r.json()["events"]
+    return events
+
+
+def _kinds_and_dates(events: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    return sorted((e["kind"], e["date"]) for e in events)
 
 
 @pytest.mark.asyncio
@@ -198,9 +218,24 @@ async def test_excludes_inactive_blocks(client):
                 active=False,
             )
         )
+        # Positive control: the same block, active, does show up.
+        s.add(
+            UnavailabilityBlock(
+                id=23,
+                kid_id=1,
+                source=UnavailabilitySource.manual.value,
+                days_of_week=["wed"],
+                time_start=time(13, 0),
+                time_end=time(14, 0),
+                date_start=date(2026, 4, 1),
+                date_end=date(2026, 6, 30),
+                active=True,
+            )
+        )
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
-    body = r.json()
-    assert all(e.get("block_id") != 22 for e in body["events"])
+    events = _events(r)
+    blocks = [e for e in events if e["kind"] == "unavailability"]
+    assert [(e["block_id"], e["date"]) for e in blocks] == [(23, "2026-04-29")]
 
 
 @pytest.mark.asyncio
@@ -219,8 +254,10 @@ async def test_excludes_other_kids_events(client):
             )
         )
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
-    body = r.json()
-    assert all(e.get("enrollment_id") != 11 for e in body["events"])
+    events = _events(r)
+    # Only kid 1's own enrollment (10); kid 2's (11) on the same offering is absent.
+    assert _kinds_and_dates(events) == T_BALL_EVENTS
+    assert {e["enrollment_id"] for e in events} == {10}
 
 
 @pytest.mark.asyncio
@@ -296,9 +333,7 @@ async def test_match_overlay_flag_off_returns_no_match_events(client):
     await _seed_match(engine, kid_id=1, offering_id=2, score=0.85)
 
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04")
-    assert r.status_code == 200
-    body = r.json()
-    assert all(e["kind"] != "match" for e in body["events"])
+    assert _kinds_and_dates(_events(r)) == T_BALL_EVENTS
 
 
 @pytest.mark.asyncio
@@ -376,8 +411,7 @@ async def test_match_overlay_excludes_already_enrolled(client):
     await _seed_match(engine, kid_id=1, offering_id=1, score=0.95)
 
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
-    body = r.json()
-    assert all(e["kind"] != "match" for e in body["events"])
+    assert _kinds_and_dates(_events(r)) == T_BALL_EVENTS
 
 
 @pytest.mark.asyncio
@@ -422,8 +456,7 @@ async def test_match_overlay_excludes_interested_and_waitlisted(client):
     await _seed_match(engine, kid_id=1, offering_id=3, score=0.9)
 
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
-    body = r.json()
-    assert all(e["kind"] != "match" for e in body["events"])
+    assert _kinds_and_dates(_events(r)) == T_BALL_EVENTS
 
 
 @pytest.mark.asyncio
@@ -489,8 +522,7 @@ async def test_match_overlay_excludes_muted_offerings(client):
     await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
 
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
-    body = r.json()
-    assert all(e["kind"] != "match" for e in body["events"])
+    assert _kinds_and_dates(_events(r)) == T_BALL_EVENTS
 
 
 @pytest.mark.asyncio
@@ -519,8 +551,7 @@ async def test_match_overlay_excludes_offering_whose_site_is_muted(client):
     await _seed_match(engine, kid_id=1, offering_id=2, score=0.9)
 
     r = await c.get("/api/kids/1/calendar?from=2026-04-27&to=2026-05-04&include_matches=true")
-    body = r.json()
-    assert all(e["kind"] != "match" for e in body["events"])
+    assert _kinds_and_dates(_events(r)) == T_BALL_EVENTS
 
 
 @pytest.mark.asyncio
@@ -833,3 +864,29 @@ async def test_ics_export_400_day_cap_enforced(client):
     r = await c.get("/api/kids/1/calendar.ics?from=2024-01-01&to=2026-01-01")
     assert r.status_code == 422
     assert "400-day" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "fallback", "encoded"),
+    [
+        ("Sam", "Sam-yas.ics", "Sam-yas.ics"),
+        ("Zoë", "Zoe-yas.ics", "Zo%C3%AB-yas.ics"),
+        ("Łukasz", "_ukasz-yas.ics", "%C5%81ukasz-yas.ics"),
+        ("Mei 李", "Mei _-yas.ics", "Mei%20%E6%9D%8E-yas.ics"),
+        ('Al "Bo"', "Al _Bo_-yas.ics", "Al%20%22Bo%22-yas.ics"),
+    ],
+)
+async def test_ics_export_filename_survives_non_latin1_names(client, name, fallback, encoded):
+    """Header values must be Latin-1; a non-Latin-1 kid name used to 500. RFC 6266:
+    an ASCII filename= fallback plus a UTF-8 filename*= for clients that read it."""
+    c, engine = client
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name=name, dob=date(2019, 5, 1)))
+
+    r = await c.get("/api/kids/1/calendar.ics")
+
+    assert r.status_code == 200
+    assert r.headers["content-disposition"] == (
+        f"inline; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+    )

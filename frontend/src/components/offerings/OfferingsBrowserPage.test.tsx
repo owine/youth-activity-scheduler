@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { delay, http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
 import { OfferingsBrowserPage } from './OfferingsBrowserPage';
 import type { OfferingSummary, Match, KidBrief, Household } from '@/lib/types';
 
@@ -249,5 +251,58 @@ describe('OfferingsBrowserPage', () => {
     const storedAfter = localStorage.getItem('yas:offerings-filter-v1');
     expect(storedAfter).not.toBeNull();
     expect(JSON.parse(storedAfter!).selectedKidIds).toEqual([1]);
+  });
+
+  it('keeps the filter controls mounted while a new min score loads', async () => {
+    const offering = baseOffering({ id: 10, name: 'Soccer' });
+    const qc = setupQueryClient([baseKid()], baseHousehold(), [
+      baseMatch({ offering_id: 10, offering }),
+    ]);
+    server.use(
+      http.get('/api/kids', () => HttpResponse.json([baseKid()])),
+      http.get('/api/household', () => HttpResponse.json(baseHousehold())),
+      http.get('/api/matches', async () => {
+        await delay(50);
+        return HttpResponse.json([baseMatch({ offering_id: 10, offering, score: 0.9 })]);
+      }),
+    );
+    render(
+      <TestWrapper qc={qc}>
+        <OfferingsBrowserPage />
+      </TestWrapper>,
+    );
+
+    const slider = screen.getByLabelText(/min score/i);
+    fireEvent.change(slider, { target: { value: '0.8' } });
+
+    // Same element, still in the document: no skeleton swap mid-drag.
+    expect(screen.getByLabelText(/min score/i)).toBe(slider);
+    expect(screen.getByText('Soccer')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(qc.getQueryData(['matches', 'all', { minScore: 0.8, limit: 500 }])).toBeDefined(),
+    );
+    expect(screen.getByLabelText(/min score/i)).toBe(slider);
+  });
+
+  it('keeps the filter controls when a high min score leaves no matches', async () => {
+    const offering = baseOffering({ id: 10, name: 'Soccer' });
+    const qc = setupQueryClient([baseKid()], baseHousehold(), [
+      baseMatch({ offering_id: 10, offering }),
+    ]);
+    server.use(
+      http.get('/api/kids', () => HttpResponse.json([baseKid()])),
+      http.get('/api/household', () => HttpResponse.json(baseHousehold())),
+      http.get('/api/matches', () => HttpResponse.json([])),
+    );
+    render(
+      <TestWrapper qc={qc}>
+        <OfferingsBrowserPage />
+      </TestWrapper>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/min score/i), { target: { value: '0.95' } });
+    await waitFor(() => expect(screen.queryByText('Soccer')).not.toBeInTheDocument());
+    // The slider must survive, or there is no way to lower the score again.
+    expect(screen.getByLabelText(/min score/i)).toBeInTheDocument();
   });
 });

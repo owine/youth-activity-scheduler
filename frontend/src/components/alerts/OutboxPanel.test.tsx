@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { delay, http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { OutboxPanel } from './OutboxPanel';
 import type { Alert, KidBrief } from '@/lib/types';
@@ -232,5 +234,48 @@ describe('OutboxPanel', () => {
     // FilterBar should have status set to 'sent'
     const sentRadio = screen.getByRole('radio', { name: /sent/i });
     expect(sentRadio).toBeChecked();
+  });
+
+  it('keeps the filter bar and current rows while the next page loads', async () => {
+    const qc = new QueryClient();
+    const page0 = { kidId: null, type: null, status: null, since: null, until: null, page: 0 };
+    qc.setQueryData(['kids'], [makeKid()]);
+    qc.setQueryData(['alerts', 'list', page0, 25], {
+      items: [makeAlert({ id: 1, summary_text: 'Page one alert' })],
+      total: 30,
+      limit: 25,
+      offset: 0,
+    });
+    server.use(
+      http.get('/api/alerts', async () => {
+        await delay(50);
+        return HttpResponse.json({
+          items: [makeAlert({ id: 2, summary_text: 'Page two alert' })],
+          total: 30,
+          limit: 25,
+          offset: 25,
+        });
+      }),
+    );
+    const { rerender } = renderWithQueryClient(
+      <OutboxPanel searchParams={{}} onFiltersChange={vi.fn()} onClearFilters={vi.fn()} />,
+      qc,
+    );
+    const kidSelect = screen.getByLabelText(/kid/i);
+
+    rerender(
+      <QueryClientProvider client={qc}>
+        <OutboxPanel
+          searchParams={{ page: '1' }}
+          onFiltersChange={vi.fn()}
+          onClearFilters={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByLabelText(/kid/i)).toBe(kidSelect);
+    expect(screen.getByText('Page one alert')).toBeInTheDocument();
+    expect(await screen.findByText('Page two alert')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Page one alert')).not.toBeInTheDocument());
   });
 });

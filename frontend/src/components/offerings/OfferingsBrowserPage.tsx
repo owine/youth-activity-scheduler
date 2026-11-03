@@ -72,7 +72,10 @@ export function OfferingsBrowserPage() {
 
   const matchesQuery = useAllMatches({ minScore: filters?.minScore ?? 0.6 });
 
-  if (kids.isLoading || household.isLoading || matchesQuery.isLoading || filters === null) {
+  // Full skeleton only until there is something to show. A new min score is a
+  // new query key, but placeholderData keeps the previous rows meanwhile, so
+  // the filter bar (and the slider being dragged) stays mounted.
+  if (kids.isLoading || household.isLoading || filters === null) {
     return <Skeleton className="h-64 w-full" />;
   }
   if (kids.isError || matchesQuery.isError) {
@@ -83,15 +86,11 @@ export function OfferingsBrowserPage() {
   if ((kids.data?.length ?? 0) === 0) {
     return <EmptyState>Add a kid first to see offerings.</EmptyState>;
   }
-  if ((matchesQuery.data?.length ?? 0) === 0) {
-    return (
-      <EmptyState>
-        No matches yet — pages need to be crawled before offerings appear here.
-      </EmptyState>
-    );
+  if (matchesQuery.data === undefined) {
+    return <Skeleton className="h-64 w-full" />;
   }
 
-  const matches = matchesQuery.data ?? [];
+  const matches = matchesQuery.data;
   const truncated = matches.length === 500;
   const kidsById = new Map(kids.data!.map((k) => [k.id, k]));
 
@@ -115,7 +114,13 @@ export function OfferingsBrowserPage() {
           Showing 500 of 500+ matches — narrow your filters to see more.
         </div>
       )}
-      {sorted.length === 0 ? (
+      {matches.length === 0 ? (
+        // Rendered under the filter bar: a high min score can empty the list
+        // too, and the slider has to stay reachable to lower it again.
+        <EmptyState>
+          No matches yet — pages need to be crawled before offerings appear here.
+        </EmptyState>
+      ) : sorted.length === 0 ? (
         <EmptyState>
           No offerings match your filters.{' '}
           <button

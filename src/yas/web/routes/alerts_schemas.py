@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from yas.db.models._types import CloseReason
+from yas.web.routes._types import UtcDatetime
 
 
 class AlertOut(BaseModel):
@@ -21,12 +21,12 @@ class AlertOut(BaseModel):
     offering_id: int | None
     site_id: int | None
     channels: list[str]
-    scheduled_for: datetime
-    sent_at: datetime | None
+    scheduled_for: UtcDatetime
+    sent_at: UtcDatetime | None
     skipped: bool
     dedup_key: str
     payload_json: dict[str, Any]
-    closed_at: datetime | None = None
+    closed_at: UtcDatetime | None = None
     close_reason: CloseReason | None = None
     summary_text: str = ""  # populated by handlers via summarize_alert
 

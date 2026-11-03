@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
+
+from yas.web.routes._types import UtcDatetime
 
 
 class WatchlistCreate(BaseModel):
@@ -42,4 +42,4 @@ class WatchlistOut(BaseModel):
     notes: str | None
     active: bool
     ignore_hard_gates: bool
-    created_at: datetime
+    created_at: UtcDatetime

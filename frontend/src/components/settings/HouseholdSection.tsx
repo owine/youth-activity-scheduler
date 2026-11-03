@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { useHousehold } from '@/lib/queries';
 import { useUpdateHousehold } from '@/lib/mutations';
-import { ApiError } from '@/lib/api';
+import { apiErrorDetail } from '@/lib/api';
 
-const TIME_RX = /^\d\d:\d\d$/;
+// 00:00–23:59, matching the API. The inputs are type="time", which can't produce
+// anything else, but the regex shouldn't claim to accept more than the server does.
+const TIME_RX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const schema = z
   .object({
@@ -74,7 +76,7 @@ export function HouseholdSection() {
       try {
         await update.mutateAsync(patch);
       } catch (err) {
-        const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+        const detail = apiErrorDetail(err);
         setErrorMsg(detail ?? (err as Error).message);
       }
     },
@@ -165,20 +167,26 @@ export function HouseholdSection() {
                 <label htmlFor="default_max_distance_mi" className="block text-sm font-medium">
                   Default Max Distance (mi)
                 </label>
-                <input
-                  id="default_max_distance_mi"
-                  type="number"
-                  value={field.state.value ?? ''}
-                  onChange={(e) =>
-                    field.handleChange(e.target.value ? Number(e.target.value) : null)
-                  }
-                  onBlur={field.handleBlur}
-                  disabled={form.getFieldValue('no_distance_limit')}
-                  aria-invalid={field.state.meta.errors.length > 0}
-                  className="mt-1 block w-full rounded border border-input px-3 py-2"
-                  min="0"
-                  step="0.1"
-                />
+                {/* Subscribe so toggling "No limit" re-renders this input;
+                    form.getFieldValue() is a one-off read that never updates. */}
+                <form.Subscribe selector={(state) => state.values.no_distance_limit}>
+                  {(noLimit) => (
+                    <input
+                      id="default_max_distance_mi"
+                      type="number"
+                      value={field.state.value ?? ''}
+                      onChange={(e) =>
+                        field.handleChange(e.target.value ? Number(e.target.value) : null)
+                      }
+                      onBlur={field.handleBlur}
+                      disabled={noLimit}
+                      aria-invalid={field.state.meta.errors.length > 0}
+                      className="mt-1 block w-full rounded border border-input px-3 py-2"
+                      min="0"
+                      step="0.1"
+                    />
+                  )}
+                </form.Subscribe>
                 {touchedFormErrors(field.state.meta).map((m, i) => (
                   <p key={i} className="mt-1 text-xs text-destructive">
                     {m}

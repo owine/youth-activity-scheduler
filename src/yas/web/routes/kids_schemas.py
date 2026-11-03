@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, time
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from yas.web.routes._types import UtcDatetime
 from yas.web.routes.watchlist_schemas import WatchlistCreate
 
 
@@ -28,11 +29,33 @@ class UnavailabilityCreate(BaseModel):
     active: bool = True
 
 
+class SchoolYearRange(BaseModel):
+    """One school-year span; stored on the kid as {"start": ISO, "end": ISO}."""
+
+    model_config = ConfigDict(extra="forbid")
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self) -> SchoolYearRange:
+        if self.end < self.start:
+            raise ValueError("end must not be before start")
+        return self
+
+
+def school_year_ranges_json(ranges: list[SchoolYearRange] | None) -> list[dict[str, Any]] | None:
+    """The stored JSON shape, which the materializer parses with date.fromisoformat."""
+    if ranges is None:
+        return None
+    return [r.model_dump(mode="json") for r in ranges]
+
+
 __all__ = [
     "KidCreate",
     "KidDetailOut",
     "KidOut",
     "KidUpdate",
+    "SchoolYearRange",
     "UnavailabilityCreate",
     "WatchlistCreate",
 ]
@@ -51,7 +74,7 @@ class KidCreate(BaseModel):
     school_weekdays: list[str] = Field(default_factory=lambda: ["mon", "tue", "wed", "thu", "fri"])
     school_time_start: time | None = None
     school_time_end: time | None = None
-    school_year_ranges: list[dict[str, Any]] = Field(default_factory=list)
+    school_year_ranges: list[SchoolYearRange] = Field(default_factory=list)
     school_holidays: list[str] = Field(default_factory=list)
     notes: str | None = None
     active: bool = True
@@ -73,10 +96,19 @@ class KidUpdate(BaseModel):
     school_weekdays: list[str] | None = None
     school_time_start: time | None = None
     school_time_end: time | None = None
-    school_year_ranges: list[dict[str, Any]] | None = None
+    school_year_ranges: list[SchoolYearRange] | None = None
     school_holidays: list[str] | None = None
     notes: str | None = None
     active: bool | None = None
+
+    # Omitted means "unchanged", so these are optional here, but their columns
+    # are NOT NULL: an explicit null would otherwise reach the DB and 500.
+    @field_validator("name", "dob", "active", "alert_score_threshold")
+    @classmethod
+    def _not_null(cls, v: object) -> object:
+        if v is None:
+            raise ValueError("may not be null")
+        return v
 
 
 class KidOut(BaseModel):
@@ -123,7 +155,7 @@ class EnrollmentOut(BaseModel):
     kid_id: int
     offering_id: int
     status: str
-    enrolled_at: datetime | None
+    enrolled_at: UtcDatetime | None
     notes: str | None
 
 
@@ -133,7 +165,7 @@ class MatchOut(BaseModel):
     offering_id: int
     score: float
     reasons: dict[str, Any]
-    computed_at: datetime
+    computed_at: UtcDatetime
 
 
 class KidDetailOut(BaseModel):

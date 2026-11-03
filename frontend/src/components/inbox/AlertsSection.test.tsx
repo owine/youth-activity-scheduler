@@ -69,6 +69,20 @@ describe('AlertsSection', () => {
     expect(handler).toHaveBeenCalledWith(true);
   });
 
+  it('opens the drawer from the keyboard', async () => {
+    const user = userEvent.setup();
+    wrap(<AlertsSection alerts={alerts as never} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Tab past "Show closed" to the row's title, then press Enter.
+    await user.tab();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Watchlist hit for Sam' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
   it('renders Closed pill for alerts with closed_at set', () => {
     wrap(<AlertsSection alerts={closedAlerts as never} />);
     expect(screen.getByText(/^closed$/i)).toBeInTheDocument();

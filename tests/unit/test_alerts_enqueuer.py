@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.alerts.enqueuer import (
     dedup_key_for,
@@ -14,16 +15,12 @@ from yas.alerts.enqueuer import (
     enqueue_site_stagnant,
     enqueue_watchlist_hit,
 )
-from yas.db.base import Base
 from yas.db.models import Alert, Kid, Offering, Page, Site
 from yas.db.models._types import AlertType, ProgramType
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 
 
-async def _setup(tmp_path):
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/a.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def _seed(engine: AsyncEngine) -> None:
     async with session_scope(engine) as s:
         s.add(
             Kid(
@@ -56,7 +53,6 @@ async def _setup(tmp_path):
                 registration_url="https://x/register",
             )
         )
-    return engine
 
 
 # --- dedup_key -----------------------------------------------------------------
@@ -91,8 +87,8 @@ def test_dedup_key_no_matches_for_kid():
 
 
 @pytest.mark.asyncio
-async def test_enqueue_new_match_inserts_first_time(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_new_match_inserts_first_time(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         aid = await enqueue_new_match(
             s,
@@ -111,8 +107,8 @@ async def test_enqueue_new_match_inserts_first_time(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_new_match_updates_on_dedup_hit(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_new_match_updates_on_dedup_hit(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.5, reasons={"v": 1})
     async with session_scope(engine) as s:
@@ -124,8 +120,8 @@ async def test_enqueue_new_match_updates_on_dedup_hit(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_new_match_respects_kid_alert_on_toggle(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_new_match_respects_kid_alert_on_toggle(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         # Kid 2 has alert_on.new_match=False
         aid = await enqueue_new_match(s, kid_id=2, offering_id=1, score=0.9, reasons={})
@@ -139,8 +135,8 @@ async def test_enqueue_new_match_respects_kid_alert_on_toggle(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_watchlist_hit_always_inserts(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_watchlist_hit_always_inserts(engine):
+    await _seed(engine)
     # Even a kid with new_match=False should still get watchlist alerts.
     async with session_scope(engine) as s:
         aid = await enqueue_watchlist_hit(
@@ -157,8 +153,8 @@ async def test_enqueue_watchlist_hit_always_inserts(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_registration_countdowns_inserts_three_rows(engine):
+    await _seed(engine)
     opens_at = datetime.now(UTC) + timedelta(days=3)
     async with session_scope(engine) as s:
         ids = await enqueue_registration_countdowns(
@@ -179,8 +175,8 @@ async def test_enqueue_registration_countdowns_inserts_three_rows(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_registration_countdowns_skips_past_due(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_registration_countdowns_skips_past_due(engine):
+    await _seed(engine)
     # opens_at is 30 minutes from now. T-24h is in the past; T-1h is in the past;
     # only T-0 (now+30min) gets scheduled.
     opens_at = datetime.now(UTC) + timedelta(minutes=30)
@@ -199,8 +195,8 @@ async def test_enqueue_registration_countdowns_skips_past_due(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_registration_countdowns_rewrites_on_date_change(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_registration_countdowns_rewrites_on_date_change(engine):
+    await _seed(engine)
     original = datetime.now(UTC) + timedelta(days=3)
     shifted = original + timedelta(days=7)
     async with session_scope(engine) as s:
@@ -221,10 +217,10 @@ async def test_enqueue_registration_countdowns_rewrites_on_date_change(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_enqueue_registration_countdowns_payload_matches_schema(tmp_path):
+async def test_enqueue_registration_countdowns_payload_matches_schema(engine):
     from yas.alerts.schemas import RegOpensPayload
 
-    engine = await _setup(tmp_path)
+    await _seed(engine)
     opens_at = datetime.now(UTC) + timedelta(days=3)
     async with session_scope(engine) as s:
         await enqueue_registration_countdowns(
@@ -244,8 +240,8 @@ async def test_enqueue_registration_countdowns_payload_matches_schema(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_crawl_failed_dedups_per_site(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_crawl_failed(s, site_id=1, consecutive_failures=3, last_error="timeout")
     async with session_scope(engine) as s:
@@ -260,8 +256,8 @@ async def test_enqueue_crawl_failed_dedups_per_site(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_site_stagnant_one_per_site(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_site_stagnant_one_per_site(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_site_stagnant(s, site_id=1, days_silent=31)
     async with session_scope(engine) as s:
@@ -273,8 +269,8 @@ async def test_enqueue_site_stagnant_one_per_site(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_no_matches_for_kid_one_per_kid(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_no_matches_for_kid_one_per_kid(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_no_matches_for_kid(s, kid_id=1, days_since_created=7)
     async with session_scope(engine) as s:
@@ -288,8 +284,8 @@ async def test_enqueue_no_matches_for_kid_one_per_kid(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_digest_dedups_per_day(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_digest_dedups_per_day(engine):
+    await _seed(engine)
     today = date(2026, 5, 5)
     payload = {"subject": "...", "body_plain": "...", "body_html": "..."}
     async with session_scope(engine) as s:
@@ -306,8 +302,8 @@ async def test_enqueue_digest_dedups_per_day(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enqueue_push_cap_dedups_per_hour_bucket(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enqueue_push_cap_dedups_per_hour_bucket(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_push_cap(s, kid_id=1, hour_bucket="2026-04-22T15", suppressed_count=3)
     async with session_scope(engine) as s:
@@ -327,10 +323,10 @@ async def test_enqueue_push_cap_dedups_per_hour_bucket(tmp_path):
         assert len(rows) == 2
 
 
-async def test_reenqueue_keeps_retry_state_of_an_unsent_alert(tmp_path):
+async def test_reenqueue_keeps_retry_state_of_an_unsent_alert(engine):
     """The matcher re-enqueues an unsent match alert on every recompute. That
     must not wipe delivery's `_attempts` or pull a retry's backoff forward."""
-    engine = await _setup(tmp_path)
+    await _seed(engine)
     async with session_scope(engine) as s:
         await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.5, reasons={})
     backoff = datetime.now(UTC) + timedelta(minutes=30)

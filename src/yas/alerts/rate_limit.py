@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
+from yas.logging import get_logger
+
+log = get_logger("yas.alerts.rate_limit")
 
 _NEVER_COALESCE = frozenset(
     {
@@ -110,9 +113,25 @@ async def count_pushes_sent_in_last_hour(
     return len({sent_at for sent_at, channels in rows if pushed.intersection(channels or [])})
 
 
-def _parse_hhmm(s: str) -> time:
-    hh, mm = s.split(":")
-    return time(int(hh), int(mm))
+def _parse_hhmm(s: str) -> time | None:
+    """Parse "HH:MM"; None for anything `time()` rejects ("12:60", "7am").
+
+    "24:00" is midnight, read as 00:00, so a stored 22:00-24:00 window means
+    "until midnight" through the wrap-around below rather than switching quiet
+    hours off."""
+    try:
+        hh, mm = s.split(":")
+        h, m = int(hh), int(mm)
+        if (h, m) == (24, 0):
+            return time(0, 0)
+        return time(h, m)
+    except ValueError:
+        return None
+
+
+# Invalid windows already warned about, so a bad stored value logs once per
+# process rather than on every delivery tick.
+_warned_invalid_quiet_hours: set[tuple[str, str]] = set()
 
 
 def is_in_quiet_hours(
@@ -121,11 +140,26 @@ def is_in_quiet_hours(
     quiet_end: str | None,
 ) -> bool:
     """Check if now falls in the household's quiet-hours window (UTC HH:MM).
-    Wrap-around (e.g. 22:00..07:00) handled. Either None -> False."""
+    Wrap-around (e.g. 22:00..07:00) handled. Either None -> False.
+
+    An unparseable bound also returns False, with a warning. The API stored
+    these unvalidated (the UI only checks for two digits either side of the
+    colon), so "25:99" can be in the database, and raising here killed the
+    delivery loop on every tick. A stored "24:00" is read as midnight."""
     if quiet_start is None or quiet_end is None:
         return False
     start = _parse_hhmm(quiet_start)
     end = _parse_hhmm(quiet_end)
+    if start is None or end is None:
+        key = (quiet_start, quiet_end)
+        if key not in _warned_invalid_quiet_hours:
+            _warned_invalid_quiet_hours.add(key)
+            log.warning(
+                "delivery.quiet_hours.invalid",
+                quiet_hours_start=quiet_start,
+                quiet_hours_end=quiet_end,
+            )
+        return False
     now_t = now.time()
     if start <= end:
         return start <= now_t < end

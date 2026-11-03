@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+
+# 00:00-23:59. The delivery loop parses quiet hours with datetime.time on every
+# tick, so a value it can't parse ("24:00") must not get stored.
+_HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 
 
 class CredentialStatus(BaseModel):
@@ -64,3 +69,29 @@ class HouseholdPatch(BaseModel):
     ha_config_json: dict[str, Any] | None = None
     ntfy_config_json: dict[str, Any] | None = None
     pushover_config_json: dict[str, Any] | None = None
+
+    @field_validator("digest_time", "quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def _valid_hhmm(cls, v: str | None) -> str | None:
+        if v is not None and not _HHMM.fullmatch(v):
+            raise ValueError("must be HH:MM, 00:00-23:59")
+        return v
+
+    @field_validator("digest_time", "daily_llm_cost_cap_usd")
+    @classmethod
+    def _not_null(cls, v: object) -> object:
+        # Omitting a field leaves it alone (the default isn't validated), but an
+        # explicit null would write None into a NOT NULL column and 500. Quiet
+        # hours stay nullable: null there clears them.
+        if v is None:
+            raise ValueError("cannot be null")
+        return v
+
+    @model_validator(mode="after")
+    def _no_home_id_while_clearing_address(self) -> Self:
+        # Clearing the address deletes the home Location, so an id in the same
+        # patch would point at a deleted row (or contradict the clear).
+        clearing = "home_address" in self.model_fields_set and not (self.home_address or "").strip()
+        if clearing and self.home_location_id is not None:
+            raise ValueError("home_location_id cannot be set while clearing home_address")
+        return self

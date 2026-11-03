@@ -38,10 +38,18 @@ const standaloneBlock: CalendarEvent = {
   time_start: '08:30:00',
   time_end: '15:00:00',
   all_day: false,
-  title: 'School',
+  title: 'Dentist',
   block_id: 20,
-  source: 'school',
+  source: 'manual',
   from_enrollment_id: null,
+};
+
+const schoolBlock: CalendarEvent = {
+  ...standaloneBlock,
+  id: 'unavailability:19:2026-04-29',
+  title: 'School',
+  block_id: 19,
+  source: 'school',
 };
 
 function renderPopover(event: CalendarEvent | null, onClose = vi.fn()) {
@@ -109,8 +117,29 @@ describe('CalendarEventPopover', () => {
 
   it('renders standalone block details + Delete block button', () => {
     renderPopover(standaloneBlock);
-    expect(screen.getByText(/School/i)).toBeInTheDocument();
+    expect(screen.getByText(/Dentist/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /delete block/i })).toBeInTheDocument();
+  });
+
+  it('offers no Delete block on a school block, which the API refuses to delete', () => {
+    renderPopover(schoolBlock);
+    expect(screen.getByText('School')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete block/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/school schedule/i)).toBeInTheDocument();
+  });
+
+  it('offers no Delete block on a holiday, which has no block behind it', () => {
+    renderPopover({
+      id: 'holiday:1:2026-11-26',
+      kind: 'holiday',
+      date: '2026-11-26',
+      time_start: null,
+      time_end: null,
+      all_day: true,
+      title: 'Holiday',
+    });
+    expect(screen.getByText('Holiday')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete block/i })).not.toBeInTheDocument();
   });
 
   it('suppresses Delete on enrollment-linked blocks and shows hint', () => {
