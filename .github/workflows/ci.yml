@@ -84,6 +84,13 @@ jobs:
         run: pnpm run format:check
       - name: Tests
         run: pnpm run test
+      # vitest defaults TZ to America/New_York, which surfaces dates read as UTC
+      # midnight landing on the day before. Bugs that push a date a day later
+      # only show east of UTC, so run the suite there too.
+      - name: Tests (TZ=Asia/Tokyo)
+        run: pnpm run test
+        env:
+          TZ: Asia/Tokyo
 
   e2e:
     runs-on: ubuntu-26.04

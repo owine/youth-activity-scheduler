@@ -9,7 +9,7 @@ import { useInboxSummary } from '@/lib/queries';
 
 export const Route = createFileRoute('/')({ component: InboxPage });
 
-function InboxPage() {
+export function InboxPage() {
   const [includeClosed, setIncludeClosed] = useState(false);
   const { data, isLoading, isError, error, refetch } = useInboxSummary({ includeClosed });
 
@@ -40,7 +40,11 @@ function InboxPage() {
           {data.new_matches_by_kid.length} kid{data.new_matches_by_kid.length === 1 ? '' : 's'}
         </p>
       </header>
-      <AlertsSection alerts={data.alerts} onIncludeClosedChange={setIncludeClosed} />
+      <AlertsSection
+        alerts={data.alerts}
+        includeClosed={includeClosed}
+        onIncludeClosedChange={setIncludeClosed}
+      />
       <NewMatchesByKidSection rows={data.new_matches_by_kid} />
       <SiteActivitySection activity={data.site_activity} />
     </div>

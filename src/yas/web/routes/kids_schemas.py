@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, time
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from yas.web.routes._types import UtcDatetime
 from yas.web.routes.watchlist_schemas import WatchlistCreate
 
 
@@ -154,7 +155,7 @@ class EnrollmentOut(BaseModel):
     kid_id: int
     offering_id: int
     status: str
-    enrolled_at: datetime | None
+    enrolled_at: UtcDatetime | None
     notes: str | None
 
 
@@ -164,7 +165,7 @@ class MatchOut(BaseModel):
     offering_id: int
     score: float
     reasons: dict[str, Any]
-    computed_at: datetime
+    computed_at: UtcDatetime
 
 
 class KidDetailOut(BaseModel):

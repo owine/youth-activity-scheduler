@@ -99,6 +99,13 @@ export function CalendarEventPopover({
   const isMatch = event?.kind === 'match';
   const isEnrollment = event?.kind === 'enrollment';
   const isLinkedBlock = event?.kind === 'unavailability' && event.from_enrollment_id != null;
+  const isSchoolBlock = event?.kind === 'unavailability' && event.source === 'school';
+  // Only a standalone manual/custom block can be deleted: the API refuses
+  // school and enrollment blocks (409), which are derived from the kid's school
+  // schedule and enrollments. Holidays come from the kid's school_holidays list
+  // and have no block_id behind them.
+  const isDeletableBlock =
+    event?.kind === 'unavailability' && event.block_id != null && !isLinkedBlock && !isSchoolBlock;
 
   return (
     <Sheet
@@ -161,7 +168,7 @@ export function CalendarEventPopover({
                   Cancel enrollment
                 </Button>
               )}
-              {!isMatch && !isEnrollment && !isLinkedBlock && (
+              {isDeletableBlock && (
                 <Button onClick={handleDelete} disabled={inFlight} variant="destructive">
                   Delete block
                 </Button>
@@ -169,6 +176,12 @@ export function CalendarEventPopover({
               {isLinkedBlock && (
                 <p className="text-xs text-muted-foreground">
                   This block was created by your enrollment. Cancel the enrollment to remove it.
+                </p>
+              )}
+              {isSchoolBlock && !isLinkedBlock && (
+                <p className="text-xs text-muted-foreground">
+                  This block comes from the school schedule. Edit the kid's school hours to change
+                  it.
                 </p>
               )}
             </div>

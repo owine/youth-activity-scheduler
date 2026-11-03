@@ -134,7 +134,10 @@ export const handlers = [
       },
     });
   }),
-  http.delete('/api/unavailability/:id', () => new HttpResponse(null, { status: 204 })),
+  http.delete(
+    '/api/kids/:kidId/unavailability/:blockId',
+    () => new HttpResponse(null, { status: 204 }),
+  ),
   http.post('/api/enrollments', async ({ request }) => {
     const body = (await request.json()) as { kid_id: number; offering_id: number; status: string };
     return HttpResponse.json(

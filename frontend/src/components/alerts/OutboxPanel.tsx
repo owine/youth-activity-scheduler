@@ -29,14 +29,16 @@ function parseSearchToFilters(s: Record<string, string | undefined>): OutboxFilt
 export function OutboxPanel({ searchParams, onFiltersChange, onClearFilters }: Props) {
   const filters = parseSearchToFilters(searchParams);
   const kids = useKids();
-  const { data, isLoading, isError, refetch } = useAlerts(filters);
+  const { data, isError, refetch } = useAlerts(filters);
   const bulkClose = useBulkCloseAlerts();
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  if (isLoading) return <Skeleton className="h-32 w-full" />;
-  if (isError || !data) {
+  // Only the very first load has nothing to show. Later filter or page changes
+  // keep the previous page (placeholderData) so the filter bar stays mounted.
+  if (isError) {
     return <ErrorBanner message="Failed to load alerts" onRetry={() => refetch()} />;
   }
+  if (!data) return <Skeleton className="h-32 w-full" />;
 
   const { items, total, offset } = data;
   const start = offset + 1;
