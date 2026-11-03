@@ -961,9 +961,15 @@ async def _send_one(
     notifiers: dict[str, FakeNotifier],
     settings: Settings | None = None,
     payload: dict[str, Any] | None = None,
+    quiet_hours: tuple[str, str] | None = None,
 ) -> Alert:
     """Route ``alert_type`` to ``routing``, send one alert for it, return the row."""
     async with session_scope(engine) as s:
+        household = None
+        if quiet_hours is not None:
+            household = await _seed_household(
+                s, quiet_start=quiet_hours[0], quiet_end=quiet_hours[1]
+            )
         s.add(AlertRouting(type=alert_type.value, channels=routing, enabled=True))
         off_id = await _seed_offering_with_match(s, registration_opens_at=datetime.now(UTC))
         a = _alert(alert_type=alert_type.value, offering_id=off_id, payload=payload)
@@ -971,7 +977,7 @@ async def _send_one(
         await s.flush()
         alert_id = a.id
         (group,) = coalesce([a], window_s=600)
-        await send_alert_group(s, group, dict(notifiers), settings or _settings(), None)
+        await send_alert_group(s, group, dict(notifiers), settings or _settings(), household)
     async with session_scope(engine) as s:
         return (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
 
@@ -1080,6 +1086,62 @@ async def test_coalesced_send_uses_one_push_of_the_budget(tmp_path):  # type: ig
         settings=_settings(alert_max_pushes_per_hour=2),
     )
     assert ntfy.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_push_only_group_in_quiet_hours_waits_for_them_to_end(tmp_path):  # type: ignore[no-untyped-def]
+    """Default reg_opens_1h / push_cap route only to "push". With the alias now
+    resolving, quiet hours suppressed every channel and left the rows untouched,
+    so they were re-selected and re-rendered every tick until quiet hours ended."""
+    engine = await _make_engine(tmp_path)
+    ntfy = _push_notifier("ntfy")
+    now = datetime.now(UTC)
+    end = (now + timedelta(hours=2)).strftime("%H:%M")
+    start = (now - timedelta(hours=1)).strftime("%H:%M")
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push"],
+        notifiers={"ntfy": ntfy},
+        quiet_hours=(start, end),
+    )
+    assert ntfy.call_count == 0
+    assert row.sent_at is None and row.skipped is False
+    held = row.scheduled_for.replace(tzinfo=UTC)
+    assert timedelta(hours=1, minutes=58) < held - now <= timedelta(hours=2)
+    assert held.strftime("%H:%M") == end
+
+
+@pytest.mark.asyncio
+async def test_capped_alert_is_counted_once_across_email_retries(tmp_path):  # type: ignore[no-untyped-def]
+    """Over the cap with email failing transiently: each retry re-checks the cap,
+    and used to add the same alert to the push_cap notice again."""
+    engine = await _make_engine(tmp_path)
+    await _seed_pushes_sent(engine, n=5)
+    email, ntfy = _email_notifier(), _push_notifier("ntfy")
+    email.queue_transient_failure()
+    email.queue_transient_failure()
+    settings = _settings(alert_max_pushes_per_hour=5)
+    async with session_scope(engine) as s:
+        s.add(
+            AlertRouting(
+                type=AlertType.watchlist_hit.value, channels=["push", "email"], enabled=True
+            )
+        )
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(alert_type=AlertType.watchlist_hit.value, offering_id=off_id)
+        s.add(a)
+        await s.flush()
+        for _ in range(3):  # two transient failures, then success
+            (group,) = coalesce([a], window_s=600)
+            await send_alert_group(s, group, {"email": email, "ntfy": ntfy}, settings, None)
+        assert a.sent_at is not None
+    async with session_scope(engine) as s:
+        cap = (
+            await s.execute(select(Alert).where(Alert.type == AlertType.push_cap.value))
+        ).scalar_one()
+        assert cap.payload_json["suppressed_count"] == 1
+    assert ntfy.call_count == 0
 
 
 @pytest.mark.asyncio

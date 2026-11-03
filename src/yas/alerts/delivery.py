@@ -15,6 +15,7 @@ from yas.alerts.rate_limit import (
     AlertGroup,
     count_pushes_sent_in_last_hour,
     is_in_quiet_hours,
+    quiet_hours_end,
     should_rate_limit_push,
 )
 from yas.alerts.routing import ROUTABLE_CHANNELS, get_routing, resolve_channels
@@ -37,6 +38,8 @@ _RETRY_DELAYS: dict[int, timedelta] = {
 _MAX_RETRIES = 3  # after attempt 3 → skipped
 # How long to hold a group whose routed channels are real but have no notifier.
 _NO_NOTIFIER_DEFER = timedelta(hours=1)
+# Set on an alert once a push-cap notice has counted it.
+_PUSH_CAP_COUNTED = "_push_cap_counted"
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +119,9 @@ async def send_alert_group(
                                   called; other channels still send. Members
                                   are marked skipped "rate capped" only when
                                   push was all they routed to.
-    - Quiet hours (push only)  → channel silently skipped (not retried).
+    - Quiet hours              → push channels skipped (not retried); a group
+                                  that routed only to push is held until
+                                  quiet hours end.
     """
     lead = group.lead
     members: list[Alert] = group.members
@@ -235,6 +240,7 @@ async def send_alert_group(
     # suppress itself on every attempt.
     push_cap_checked = group.alert_type == AlertType.push_cap.value
     push_capped = False
+    quiet_until: datetime | None = None
 
     for channel_name in channels:
         notifier = notifiers.get(channel_name)
@@ -252,12 +258,13 @@ async def send_alert_group(
         if is_push and group.alert_type != AlertType.reg_opens_now.value:
             qstart = household.quiet_hours_start if household else None
             qend = household.quiet_hours_end if household else None
-            if is_in_quiet_hours(now, qstart, qend):
+            if qend is not None and is_in_quiet_hours(now, qstart, qend):
                 log.info(
                     "delivery.quiet_hours.suppressed",
                     channel=channel_name,
                     alert_type=group.alert_type,
                 )
+                quiet_until = quiet_hours_end(now, qend)
                 continue  # hard suppression — no retry advancement
 
         # Push rate cap check (run once for the whole group) ------------------
@@ -268,12 +275,18 @@ async def send_alert_group(
             count = await count_pushes_sent_in_last_hour(session, group.kid_id, push_channels)
             if should_rate_limit_push(count, settings.alert_max_pushes_per_hour):
                 push_capped = True
-                await enqueue_push_cap(
-                    session,
-                    kid_id=group.kid_id,
-                    hour_bucket=now.strftime("%Y-%m-%dT%H"),
-                    suppressed_count=len(members),
-                )
+                # Count each alert once: a group whose email fails transiently
+                # comes back here on every retry while the kid is still capped.
+                uncounted = [a for a in members if not a.payload_json.get(_PUSH_CAP_COUNTED)]
+                if uncounted:
+                    await enqueue_push_cap(
+                        session,
+                        kid_id=group.kid_id,
+                        hour_bucket=now.strftime("%Y-%m-%dT%H"),
+                        suppressed_count=len(uncounted),
+                    )
+                    for a in uncounted:
+                        a.payload_json = {**a.payload_json, _PUSH_CAP_COUNTED: True}
                 log.info(
                     "delivery.rate_cap.triggered",
                     kid_id=group.kid_id,
@@ -405,6 +418,20 @@ async def send_alert_group(
         # Push was all this group routed to, and the cap held it back. The
         # push_cap notice enqueued above stands in for it.
         _mark_all_skipped(members, "rate capped")
+        return
+
+    if quiet_until is not None:
+        # Push was all this group routed to, and it's quiet hours. Hold the group
+        # until they end instead of re-selecting and re-rendering it every tick.
+        # A countdown that is past its grace window by then is dropped by
+        # _apply_grace_window, as before.
+        for a in members:
+            a.scheduled_for = quiet_until
+        log.info(
+            "delivery.quiet_hours.deferred",
+            alert_type=group.alert_type,
+            until=quiet_until.isoformat(),
+        )
 
 
 # ---------------------------------------------------------------------------
