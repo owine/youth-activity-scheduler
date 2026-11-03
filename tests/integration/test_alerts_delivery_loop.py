@@ -902,10 +902,10 @@ async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentr
 
 
 @pytest.mark.asyncio
-async def test_group_with_no_notifier_for_any_channel_is_skipped(tmp_path):  # type: ignore[no-untyped-def]
-    """reg_opens_1h routes only to "push" by default, which names no notifier.
-    Every channel was skipped as missing and the rows were left untouched, so the
-    loop re-selected them every tick. Now the group is retired once."""
+async def test_countdown_with_no_push_notifier_is_retired_not_deferred(tmp_path):  # type: ignore[no-untyped-def]
+    """reg_opens_1h routes only to "push". Deferred hourly for a push channel that
+    may never be configured, it outran its own grace window (which measures from
+    the scheduled_for the deferral moves) and went out days stale once one was."""
     engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
     async with session_scope(engine) as s:
@@ -922,8 +922,275 @@ async def test_group_with_no_notifier_for_any_channel_is_skipped(tmp_path):  # t
         updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
         assert updated.skipped is True
         assert updated.sent_at is None
-        assert updated.payload_json.get("_skipped_reason") == "no notifier for push"
+        assert updated.payload_json["_skipped_reason"] == "no notifier for push"
+        assert "_failed" not in updated.payload_json  # setup, not a delivery issue
     assert email_notifier.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_push_only_watchlist_hit_with_no_push_notifier_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
+    """Not time-sensitive, so it waits for a push channel; skipping would count
+    the match as alerted and lose it for good."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push"],
+        notifiers={"email": _email_notifier("email")},
+    )
+    assert row.skipped is False and row.sent_at is None
+    assert row.scheduled_for.replace(tzinfo=UTC) > now + timedelta(minutes=59)
+
+
+@pytest.mark.asyncio
+async def test_unroutable_channel_name_is_retired_as_a_failure(tmp_path):  # type: ignore[no-untyped-def]
+    """A name no notifier can ever exist under can't be waited out. The routing
+    API rejects such names; this covers a row written some other way."""
+    engine = await _make_engine(tmp_path)
+    async with session_scope(engine) as s:
+        s.add(AlertRouting(type=AlertType.new_match.value, channels=["pagerduty"], enabled=True))
+        a = _alert(alert_type=AlertType.new_match.value)
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, {"email": _email_notifier()}, _settings(), None)
+
+    async with session_scope(engine) as s:
+        updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+        assert updated.skipped is True
+        assert updated.payload_json["_skipped_reason"] == "no notifier for pagerduty"
+        assert updated.payload_json["_failed"] is True
+
+
+async def _send_one(
+    engine,  # type: ignore[no-untyped-def]
+    *,
+    alert_type: AlertType,
+    routing: list[str],
+    notifiers: dict[str, FakeNotifier],
+    settings: Settings | None = None,
+    payload: dict[str, Any] | None = None,
+    quiet_hours: tuple[str, str] | None = None,
+) -> Alert:
+    """Route ``alert_type`` to ``routing``, send one alert for it, return the row."""
+    async with session_scope(engine) as s:
+        household = None
+        if quiet_hours is not None:
+            household = await _seed_household(
+                s, quiet_start=quiet_hours[0], quiet_end=quiet_hours[1]
+            )
+        s.add(AlertRouting(type=alert_type.value, channels=routing, enabled=True))
+        off_id = await _seed_offering_with_match(s, registration_opens_at=datetime.now(UTC))
+        a = _alert(alert_type=alert_type.value, offering_id=off_id, payload=payload)
+        s.add(a)
+        await s.flush()
+        alert_id = a.id
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, dict(notifiers), settings or _settings(), household)
+    async with session_scope(engine) as s:
+        return (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_push_alias_sends_to_the_configured_push_channel(tmp_path):  # type: ignore[no-untyped-def]
+    """watchlist_hit's default ["push", "email"] reaches ntfy and email (#641)."""
+    engine = await _make_engine(tmp_path)
+    email, ntfy = _email_notifier(), _push_notifier("ntfy")
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push", "email"],
+        notifiers={"email": email, "ntfy": ntfy},
+    )
+    assert (ntfy.call_count, email.call_count) == (1, 1)
+    assert row.channels == ["ntfy", "email"]
+
+
+@pytest.mark.asyncio
+async def test_push_alias_and_its_target_named_together_send_once(tmp_path):  # type: ignore[no-untyped-def]
+    engine = await _make_engine(tmp_path)
+    ntfy = _push_notifier("ntfy")
+    await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push", "ntfy"],
+        notifiers={"ntfy": ntfy},
+    )
+    assert ntfy.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_push_alias_prefers_emergency_push_for_reg_opens_now(tmp_path):  # type: ignore[no-untyped-def]
+    """reg_opens_now goes to Pushover (priority 2) over ntfy when both exist."""
+    engine = await _make_engine(tmp_path)
+    ntfy = _push_notifier("ntfy")
+    pushover = FakeNotifier(
+        name="pushover",
+        capabilities={NotifierCapability.push, NotifierCapability.push_emergency},
+    )
+    await _send_one(
+        engine,
+        alert_type=AlertType.reg_opens_now,
+        routing=["push"],
+        notifiers={"ntfy": ntfy, "pushover": pushover},
+    )
+    assert (pushover.call_count, ntfy.call_count) == (1, 0)
+
+
+async def _seed_pushes_sent(engine, *, n: int, sent_at: list[datetime] | None = None) -> None:  # type: ignore[no-untyped-def]
+    """Seed ``n`` already-sent ntfy alerts for kid 1, by default each its own send."""
+    now = datetime.now(UTC)
+    stamps = sent_at or [now - timedelta(minutes=30 - i) for i in range(n)]
+    async with session_scope(engine) as s:
+        for i, stamp in enumerate(stamps):
+            s.add(
+                Alert(
+                    type=AlertType.new_match.value,
+                    kid_id=1,
+                    channels=["ntfy"],
+                    scheduled_for=stamp,
+                    sent_at=stamp,
+                    dedup_key=f"new_match:1:sent:{i}",
+                    payload_json={},
+                )
+            )
+
+
+@pytest.mark.asyncio
+async def test_push_cap_holds_back_push_but_still_sends_email(tmp_path):  # type: ignore[no-untyped-def]
+    """Email is uncapped (spec §3.7). A capped push used to skip the whole
+    group, email included (#641)."""
+    engine = await _make_engine(tmp_path)
+    await _seed_pushes_sent(engine, n=5)
+    email, ntfy = _email_notifier(), _push_notifier("ntfy")
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push", "email"],
+        notifiers={"email": email, "ntfy": ntfy},
+        settings=_settings(alert_max_pushes_per_hour=5),
+    )
+    assert (ntfy.call_count, email.call_count) == (0, 1)
+    assert row.sent_at is not None and row.skipped is False
+    assert row.channels == ["email"]
+    async with session_scope(engine) as s:
+        cap = (
+            await s.execute(select(Alert).where(Alert.type == AlertType.push_cap.value))
+        ).scalar_one()
+        assert cap.payload_json["suppressed_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_coalesced_send_uses_one_push_of_the_budget(tmp_path):  # type: ignore[no-untyped-def]
+    """Three alerts coalesced into one push are one send, not three (#641)."""
+    engine = await _make_engine(tmp_path)
+    one_send = datetime.now(UTC) - timedelta(minutes=10)
+    await _seed_pushes_sent(engine, n=3, sent_at=[one_send] * 3)
+    ntfy = _push_notifier("ntfy")
+    await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["ntfy"],
+        notifiers={"ntfy": ntfy},
+        settings=_settings(alert_max_pushes_per_hour=2),
+    )
+    assert ntfy.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_push_only_group_in_quiet_hours_is_skipped_not_buffered(tmp_path):  # type: ignore[no-untyped-def]
+    """Spec §3.8: push is skipped during quiet hours, not buffered. With the
+    alias now resolving, a push-only group used to be left untouched, so it was
+    re-rendered every tick and then sent, hours stale, when quiet hours ended."""
+    engine = await _make_engine(tmp_path)
+    ntfy = _push_notifier("ntfy")
+    now = datetime.now(UTC)
+    end = (now + timedelta(hours=2)).strftime("%H:%M")
+    start = (now - timedelta(hours=1)).strftime("%H:%M")
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push"],
+        notifiers={"ntfy": ntfy},
+        quiet_hours=(start, end),
+    )
+    assert ntfy.call_count == 0
+    assert row.sent_at is None
+    assert row.skipped is True
+    assert row.payload_json["_skipped_reason"] == "quiet hours"
+    assert "_failed" not in row.payload_json
+
+
+@pytest.mark.asyncio
+async def test_disabled_routing_does_not_resolve_the_push_alias(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+    """Resolving first logged an emergency downgrade for a type that sends nothing."""
+    import yas.alerts.delivery as delivery
+
+    calls: list[object] = []
+    monkeypatch.setattr(delivery, "resolve_channels", lambda *a: calls.append(a) or [])
+    engine = await _make_engine(tmp_path)
+    async with session_scope(engine) as s:
+        s.add(AlertRouting(type=AlertType.reg_opens_now.value, channels=["push"], enabled=False))
+        a = _alert(alert_type=AlertType.reg_opens_now.value)
+        s.add(a)
+        await s.flush()
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, {"ntfy": _push_notifier("ntfy")}, _settings(), None)
+        assert a.payload_json["_skipped_reason"] == "routing disabled"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_capped_alert_is_counted_once_across_email_retries(tmp_path):  # type: ignore[no-untyped-def]
+    """Over the cap with email failing transiently: each retry re-checks the cap,
+    and used to add the same alert to the push_cap notice again."""
+    engine = await _make_engine(tmp_path)
+    await _seed_pushes_sent(engine, n=5)
+    email, ntfy = _email_notifier(), _push_notifier("ntfy")
+    email.queue_transient_failure()
+    email.queue_transient_failure()
+    settings = _settings(alert_max_pushes_per_hour=5)
+    async with session_scope(engine) as s:
+        s.add(
+            AlertRouting(
+                type=AlertType.watchlist_hit.value, channels=["push", "email"], enabled=True
+            )
+        )
+        off_id = await _seed_offering_with_match(s)
+        a = _alert(alert_type=AlertType.watchlist_hit.value, offering_id=off_id)
+        s.add(a)
+        await s.flush()
+        for _ in range(3):  # two transient failures, then success
+            (group,) = coalesce([a], window_s=600)
+            await send_alert_group(s, group, {"email": email, "ntfy": ntfy}, settings, None)
+        assert a.sent_at is not None
+    async with session_scope(engine) as s:
+        cap = (
+            await s.execute(select(Alert).where(Alert.type == AlertType.push_cap.value))
+        ).scalar_one()
+        assert cap.payload_json["suppressed_count"] == 1
+    assert ntfy.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_push_cap_notice_is_not_held_back_by_the_cap(tmp_path):  # type: ignore[no-untyped-def]
+    """The notice is enqueued while the kid is over budget. Checked against the
+    cap, it suppressed itself on every attempt and never went out."""
+    engine = await _make_engine(tmp_path)
+    await _seed_pushes_sent(engine, n=5)
+    ntfy = _push_notifier("ntfy")
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.push_cap,
+        routing=["push"],
+        notifiers={"ntfy": ntfy},
+        settings=_settings(alert_max_pushes_per_hour=5),
+        payload={"suppressed_count": 4, "hour_bucket": "2026-04-22T15"},
+    )
+    assert ntfy.call_count == 1
+    assert row.sent_at is not None
 
 
 @pytest.mark.asyncio

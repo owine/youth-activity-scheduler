@@ -9,11 +9,14 @@ export function AlertRoutingSection() {
   const updateMutation = useUpdateAlertRouting();
 
   const configuredChannels = useMemo(() => {
-    if (!household.data) return { email: false, ntfy: false, pushover: false };
+    if (!household.data) return { email: false, ntfy: false, pushover: false, push: false };
     return {
       email: household.data.email_configured,
       ntfy: household.data.ntfy_configured,
       pushover: household.data.pushover_configured,
+      // "push" is a routing alias for whichever push channel is configured
+      // (ntfy, or Pushover for registration-opens-now).
+      push: household.data.ntfy_configured || household.data.pushover_configured,
     };
   }, [household.data]);
 
@@ -21,7 +24,13 @@ export function AlertRoutingSection() {
     return null;
   }
 
-  const channels = ['email', 'ntfy', 'pushover'] as const;
+  const channels = ['email', 'ntfy', 'pushover', 'push'] as const;
+  const channelLabel: Record<(typeof channels)[number], string> = {
+    email: 'email',
+    ntfy: 'ntfy',
+    pushover: 'pushover',
+    push: 'any push',
+  };
 
   const handleEnabledToggle = (type: string, enabled: boolean) => {
     updateMutation.mutate({
@@ -56,8 +65,16 @@ export function AlertRoutingSection() {
               <th className="border border-border px-4 py-2 text-left font-semibold">Alert Type</th>
               <th className="border border-border px-4 py-2 text-left font-semibold">Enabled</th>
               {channels.map((ch) => (
-                <th key={ch} className="border border-border px-4 py-2 text-left font-semibold">
-                  {ch}
+                <th
+                  key={ch}
+                  className="border border-border px-4 py-2 text-left font-semibold"
+                  title={
+                    ch === 'push'
+                      ? 'Sends to whichever push channel is configured, so the row keeps working if you switch between ntfy and Pushover'
+                      : undefined
+                  }
+                >
+                  {channelLabel[ch]}
                 </th>
               ))}
             </tr>
@@ -76,15 +93,17 @@ export function AlertRoutingSection() {
                   />
                 </td>
                 {channels.map((ch) => {
-                  const isConfigured = configuredChannels[ch as keyof typeof configuredChannels];
+                  const isConfigured = configuredChannels[ch];
                   const isChecked = row.channels.includes(ch);
                   const isLastChannel = row.enabled && row.channels.length === 1 && isChecked;
-                  // Disable when not configured OR when removing this channel
-                  // would orphan the row (enabled with no destinations). The
-                  // user disables a row entirely via the Enabled toggle.
+                  // Disable adding a channel that isn't configured, and removing
+                  // one that would orphan the row (enabled with no destinations);
+                  // the user disables a row entirely via the Enabled toggle. A
+                  // checked channel that isn't configured stays removable, or a
+                  // default like ["push", "email"] could never be edited back.
                   // (Earlier attempt with onClick.preventDefault was racey
                   // under some library timings; disabled is bulletproof.)
-                  const disabled = !isConfigured || isLastChannel;
+                  const disabled = (!isConfigured && !isChecked) || isLastChannel;
 
                   return (
                     <td key={`${row.type}-${ch}`} className="border border-border px-4 py-2">
@@ -96,7 +115,9 @@ export function AlertRoutingSection() {
                         onChange={() => handleChannelToggle(row, ch)}
                         title={
                           !isConfigured
-                            ? `Configure ${ch} first`
+                            ? ch === 'push'
+                              ? 'Configure ntfy or Pushover first'
+                              : `Configure ${ch} first`
                             : isLastChannel
                               ? 'Use Enabled toggle to disable this alert type entirely'
                               : undefined

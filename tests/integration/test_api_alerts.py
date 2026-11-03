@@ -357,7 +357,8 @@ async def test_resend_alert_clones_row(client):
     assert new_alert["type"] == "new_match"
     assert new_alert["kid_id"] == 1
     assert new_alert["site_id"] == 1
-    assert new_alert["channels"] == ["push"]
+    # A fresh send: delivery fills in the channels it reaches.
+    assert new_alert["channels"] == []
     assert new_alert["payload_json"] == {"msg": "test1"}
     assert new_alert["sent_at"] is None
     assert new_alert["skipped"] is False
@@ -366,7 +367,7 @@ async def test_resend_alert_clones_row(client):
 
 @pytest.mark.asyncio
 async def test_alerts_resend_clones_original_payload(client):
-    """Named must-have: resend clones payload, channels, distinct dedup_key, original unchanged."""
+    """Named must-have: resend clones payload, distinct dedup_key, original unchanged."""
     c, _ = client
     # Get original alert
     r_orig = await c.get("/api/alerts/1")
@@ -384,13 +385,32 @@ async def test_alerts_resend_clones_original_payload(client):
     assert original_after["payload_json"] == original["payload_json"]
     assert original_after["sent_at"] == original["sent_at"]
 
-    # Verify cloned has same payload and channels but different dedup_key
+    # Verify cloned has same payload but different dedup_key
     assert cloned["payload_json"] == original["payload_json"]
     assert cloned["payload_json"] is not None
-    assert cloned["channels"] == original["channels"]
-    assert cloned["channels"] is not original["channels"]  # Different list objects
     assert cloned["dedup_key"] != original["dedup_key"]
     assert cloned["dedup_key"].startswith(original["dedup_key"] + ":resend:")
+
+
+@pytest.mark.asyncio
+async def test_resend_drops_delivery_bookkeeping(client):
+    """Resending an alert that exhausted its retries must start a fresh retry
+    budget: copying `_attempts` made the resend give up on its first transient
+    failure (#641)."""
+    c, engine = client
+    async with session_scope(engine) as s:
+        a = await s.get(Alert, 3)
+        assert a is not None
+        a.payload_json = {
+            "msg": "test3",
+            "_attempts": 3,
+            "_skipped_reason": "transient failed after 3 retries: transient",
+            "_failed": True,
+        }
+    r = await c.post("/api/alerts/3/resend")
+    assert r.status_code == 202
+    assert r.json()["payload_json"] == {"msg": "test3"}
+    assert r.json()["channels"] == []
 
 
 @pytest.mark.asyncio
