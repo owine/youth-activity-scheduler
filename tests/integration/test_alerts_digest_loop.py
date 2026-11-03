@@ -17,10 +17,9 @@ from sqlalchemy import select
 
 from tests.fakes.llm import FakeLLMClient
 from yas.config import Settings
-from yas.db.base import Base
 from yas.db.models import Alert, HouseholdSettings, Kid
 from yas.db.models._types import AlertType
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.worker.digest_loop import daily_digest_loop
 
 # ---------------------------------------------------------------------------
@@ -38,13 +37,6 @@ def _settings(**kwargs: Any) -> Settings:
     )
     defaults.update(kwargs)
     return Settings(**defaults)
-
-
-async def _make_engine(tmp_path):  # type: ignore[no-untyped-def]
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/digest.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
 
 
 def _active_kid(
@@ -69,32 +61,10 @@ async def _run_one_tick(engine: Any, settings: Settings, llm: Any = None) -> Non
         # Immediately raise so the loop exits after exactly one tick.
         raise asyncio.CancelledError
 
-    task = asyncio.create_task(_patched_digest_loop(engine, settings, llm, _capturing_sleep))
-    try:
-        await asyncio.wait_for(task, timeout=10.0)
-    except TimeoutError, asyncio.CancelledError:
-        pass
-    finally:
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-
-async def _patched_digest_loop(engine: Any, settings: Settings, llm: Any, fake_sleep: Any) -> None:
-    """Wrap daily_digest_loop with a patched asyncio.sleep."""
-    import yas.worker.digest_loop as _mod
-
-    original = _mod.asyncio.sleep  # type: ignore[attr-defined]
-    _mod.asyncio.sleep = fake_sleep  # type: ignore[attr-defined]
-    try:
-        await daily_digest_loop(engine, settings, llm)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        _mod.asyncio.sleep = original  # type: ignore[attr-defined]
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(
+            daily_digest_loop(engine, settings, llm, sleep=_capturing_sleep), timeout=10.0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +73,7 @@ async def _patched_digest_loop(engine: Any, settings: Settings, llm: Any, fake_s
 
 
 @pytest.mark.asyncio
-async def test_digest_empty_day_skipped_but_logs_debug(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_empty_day_skipped_but_logs_debug(engine):  # type: ignore[no-untyped-def]
     """Empty-day kid: no Alert inserted and DEBUG log contains digest.skipped.empty.
 
     Uses ``structlog.testing.capture_logs`` rather than ``capsys`` so the
@@ -113,8 +83,6 @@ async def test_digest_empty_day_skipped_but_logs_debug(tmp_path):  # type: ignor
     processor for the duration of the context manager and is unaffected by
     sibling tests.
     """
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         # Kid created long ago but no matches → not under_no_matches_threshold.
         s.add(_active_kid(kid_id=1, days_old=30))
@@ -140,13 +108,11 @@ async def test_digest_empty_day_skipped_but_logs_debug(tmp_path):  # type: ignor
 
 
 @pytest.mark.asyncio
-async def test_digest_no_matches_kid_under_threshold_sends(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_no_matches_kid_under_threshold_sends(engine):  # type: ignore[no-untyped-def]
     """Kid with no matches but under the no-matches threshold always gets a digest.
 
     under_no_matches_threshold=True bypasses the empty-day skip.
     """
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         # Kid created only 1 day ago — within the 7-day threshold.
         s.add(_active_kid(kid_id=1, days_old=1))
@@ -174,9 +140,8 @@ async def test_digest_no_matches_kid_under_threshold_sends(tmp_path):  # type: i
 
 
 @pytest.mark.asyncio
-async def test_digest_loop_enqueues_for_each_active_kid(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_loop_enqueues_for_each_active_kid(engine):  # type: ignore[no-untyped-def]
     """One digest alert per active kid when at least one has content."""
-    engine = await _make_engine(tmp_path)
 
     async with session_scope(engine) as s:
         for i in (1, 2):
@@ -199,9 +164,8 @@ async def test_digest_loop_enqueues_for_each_active_kid(tmp_path):  # type: igno
 
 
 @pytest.mark.asyncio
-async def test_digest_loop_skips_inactive_kids(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_loop_skips_inactive_kids(engine):  # type: ignore[no-untyped-def]
     """Inactive kids are excluded from the digest run."""
-    engine = await _make_engine(tmp_path)
 
     async with session_scope(engine) as s:
         s.add(_active_kid(kid_id=1, active=False, days_old=1))
@@ -221,14 +185,12 @@ async def test_digest_loop_skips_inactive_kids(tmp_path):  # type: ignore[no-unt
 
 
 @pytest.mark.asyncio
-async def test_digest_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_loop_only_fires_once_per_day(engine):  # type: ignore[no-untyped-def]
     """Running the loop twice produces at most one digest alert per kid.
 
     last_run is coroutine-local state, so the second invocation re-enters the
     run block — but it finds today's row already enqueued and skips the kid.
     """
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         s.add(_active_kid(kid_id=1, days_old=1))
         s.add(HouseholdSettings(id=1))
@@ -248,9 +210,8 @@ async def test_digest_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no
 
 
 @pytest.mark.asyncio
-async def test_digest_empty_skip_false_always_enqueues(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_empty_skip_false_always_enqueues(engine):  # type: ignore[no-untyped-def]
     """When alert_digest_empty_skip=False, even empty days get a digest."""
-    engine = await _make_engine(tmp_path)
 
     async with session_scope(engine) as s:
         # Kid old enough so under_no_matches_threshold=False.
@@ -276,15 +237,13 @@ async def test_digest_empty_skip_false_always_enqueues(tmp_path):  # type: ignor
 @pytest.mark.asyncio
 @pytest.mark.parametrize("delivered", ["sent", "skipped"])
 async def test_digest_loop_restart_does_not_resend_delivered_digest(  # type: ignore[no-untyped-def]
-    tmp_path, delivered
+    engine, delivered
 ):
     """A process restart after today's digest went out must not enqueue another.
 
     ``last_run`` resets on restart, and the enqueuer's upsert only merges into
     *unsent* rows — so the loop itself has to notice the delivered row.
     """
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         s.add(_active_kid(kid_id=1, days_old=1))
         s.add(HouseholdSettings(id=1))
@@ -316,7 +275,7 @@ async def test_digest_loop_restart_does_not_resend_delivered_digest(  # type: ig
 
 @pytest.mark.asyncio
 async def test_digest_loop_restart_with_pending_digest_does_not_duplicate(  # type: ignore[no-untyped-def]
-    tmp_path,
+    engine,
 ):
     """A pending digest delivered mid-run must not be followed by a fresh insert.
 
@@ -325,8 +284,6 @@ async def test_digest_loop_restart_with_pending_digest_does_not_duplicate(  # ty
     call, leaving the enqueuer no unsent row to merge into — so it would insert
     a duplicate. The fake LLM below performs that delivery mid-call.
     """
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         s.add(_active_kid(kid_id=1, days_old=1))
         s.add(HouseholdSettings(id=1))

@@ -337,6 +337,20 @@ async def test_startup_grace_window_fires_recent_past_due_countdown_once(tmp_pat
 # ---------------------------------------------------------------------------
 
 
+async def _run_one_delivery_tick(
+    engine: Any, settings: Settings, notifiers: dict[str, FakeNotifier]
+) -> None:
+    """Run exactly one delivery tick: the loop's first sleep stops it."""
+
+    async def _stop(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(
+            alert_delivery_loop(engine, settings, notifiers, sleep=_stop), timeout=10.0
+        )
+
+
 @pytest.mark.asyncio
 async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ignore[no-untyped-def]
     """Happy path: one alert, routed to email channel → sent."""
@@ -363,17 +377,7 @@ async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ig
         alert_coalesce_normal_s=600,
     )
 
-    task = asyncio.create_task(alert_delivery_loop(engine, settings, notifiers))
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=2.5)
-    except TimeoutError, asyncio.CancelledError:
-        pass
-    finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    await _run_one_delivery_tick(engine, settings, notifiers)
 
     async with session_scope(engine) as s:
         alerts = (await s.execute(select(Alert))).scalars().all()
@@ -715,17 +719,7 @@ async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[
     notifiers: dict[str, FakeNotifier] = {"email": email_notifier}
     settings = _settings(alert_delivery_tick_s=1, alert_coalesce_normal_s=600)
 
-    task = asyncio.create_task(alert_delivery_loop(engine, settings, notifiers))
-    try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=2.5)
-    except TimeoutError, asyncio.CancelledError:
-        pass
-    finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    await _run_one_delivery_tick(engine, settings, notifiers)
 
     async with session_scope(engine) as s:
         alerts = (await s.execute(select(Alert))).scalars().all()

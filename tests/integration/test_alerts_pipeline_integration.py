@@ -13,14 +13,14 @@ from typing import Any
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.fakes.llm import FakeLLMClient
 from yas.crawl.fetcher import FetchError, FetchResult
 from yas.crawl.pipeline import crawl_page
-from yas.db.base import Base
 from yas.db.models import Alert, HouseholdSettings, Kid, Match, Page, Site, WatchlistEntry
 from yas.db.models._types import AlertType, ProgramType, WatchlistPriority
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.llm.schemas import ExtractedOffering
 
 # ---------------------------------------------------------------------------
@@ -57,13 +57,6 @@ class FakeFetcher:
 # ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
-
-
-async def _make_engine(tmp_path: Any, name: str = "alerts.db") -> Any:
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/{name}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
 
 
 async def _seed_site_and_page(engine: Any) -> tuple[int, int, Any, Any]:
@@ -115,9 +108,8 @@ async def _seed_household(engine: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_enqueues_new_match_alert_on_fresh_match(tmp_path: Any) -> None:
+async def test_pipeline_enqueues_new_match_alert_on_fresh_match(engine: AsyncEngine) -> None:
     """New offering + one kid scoring above threshold → one new_match alerts row."""
-    engine = await _make_engine(tmp_path, "t1.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
@@ -147,11 +139,10 @@ async def test_pipeline_enqueues_new_match_alert_on_fresh_match(tmp_path: Any) -
 
 @pytest.mark.asyncio
 async def test_pipeline_enqueues_watchlist_hit_even_when_new_match_disabled(
-    tmp_path: Any,
+    engine: AsyncEngine,
 ) -> None:
     """Kid with alert_on.new_match=False + watchlist entry matching offering → watchlist_hit
     alert present; no new_match alert."""
-    engine = await _make_engine(tmp_path, "t2.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(
         engine,
@@ -202,11 +193,10 @@ async def test_pipeline_enqueues_watchlist_hit_even_when_new_match_disabled(
 
 @pytest.mark.asyncio
 async def test_pipeline_enqueues_countdowns_when_offering_has_registration_opens_at(
-    tmp_path: Any,
+    engine: AsyncEngine,
 ) -> None:
     """Offering with registration_opens_at in future → three countdown alerts (24h, 1h, now)
     for the matched kid."""
-    engine = await _make_engine(tmp_path, "t3.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
@@ -258,11 +248,10 @@ async def test_pipeline_enqueues_countdowns_when_offering_has_registration_opens
 
 @pytest.mark.asyncio
 async def test_pipeline_enqueues_crawl_failed_on_third_consecutive_failure(
-    tmp_path: Any,
+    engine: AsyncEngine,
 ) -> None:
     """Three fetch failures → exactly one crawl_failed alert on the third;
     fourth failure keeps it at one row (dedup)."""
-    engine = await _make_engine(tmp_path, "t4.db")
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
 
     llm = FakeLLMClient()
@@ -317,13 +306,12 @@ async def test_pipeline_enqueues_crawl_failed_on_third_consecutive_failure(
 
 
 @pytest.mark.asyncio
-async def test_countdown_rewrite_on_registration_date_change(tmp_path: Any) -> None:
+async def test_countdown_rewrite_on_registration_date_change(engine: AsyncEngine) -> None:
     """When offering's registration_opens_at changes, old unsent countdown rows are
     deleted and new ones inserted at updated scheduled_for times.
 
     This verifies the delete-old-insert-new logic inside
     enqueue_registration_countdowns (Task 2 implementation)."""
-    engine = await _make_engine(tmp_path, "t5.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
@@ -432,13 +420,12 @@ async def test_countdown_rewrite_on_registration_date_change(tmp_path: Any) -> N
 
 @pytest.mark.asyncio
 async def test_enqueue_new_match_dedups_across_pipeline_and_matcher_paths(
-    tmp_path: Any,
+    engine: AsyncEngine,
 ) -> None:
     """Calling both the pipeline-path hook and the matcher-path _upsert_match for the
     same (kid, offering) pair must produce exactly one alerts row with type=new_match.
 
     This pins the dedup_key collision behaviour between the two call sites."""
-    engine = await _make_engine(tmp_path, "t6.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
@@ -478,12 +465,11 @@ async def test_enqueue_new_match_dedups_across_pipeline_and_matcher_paths(
 
 
 @pytest.mark.asyncio
-async def test_updated_offering_does_not_realert_an_existing_match(tmp_path: Any) -> None:
+async def test_updated_offering_does_not_realert_an_existing_match(engine: AsyncEngine) -> None:
     """An offering already matched and alerted, then edited on its page, is an
     update of the same match, not a new one. The pipeline used to treat every
     match it recomputed this tick as fresh, so once the first alert had been
     sent, the edit inserted a second "New match" alert for the same program."""
-    engine = await _make_engine(tmp_path, "realert.db")
     await _seed_household(engine)
     await _seed_kid(engine, alert_score_threshold=0.0)
     site_id, page_id, site, page = await _seed_site_and_page(engine)
@@ -530,13 +516,12 @@ async def test_updated_offering_does_not_realert_an_existing_match(tmp_path: Any
 
 
 @pytest.mark.asyncio
-async def test_match_that_becomes_alert_worthy_on_update_alerts_once(tmp_path: Any) -> None:
+async def test_match_that_becomes_alert_worthy_on_update_alerts_once(engine: AsyncEngine) -> None:
     """Alerting only on insert would miss a match that becomes alert-worthy later:
     here the kid's threshold is above the score at first, then lowered, and the
     next rematch updates the existing match. It alerts then, and not again."""
     from yas.matching.matcher import rematch_kid
 
-    engine = await _make_engine(tmp_path, "becomes.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=1.01)
     _site_id, _page_id, site, page = await _seed_site_and_page(engine)
@@ -577,14 +562,15 @@ async def test_match_that_becomes_alert_worthy_on_update_alerts_once(tmp_path: A
 
 
 @pytest.mark.asyncio
-async def test_removing_a_watchlist_entry_does_not_realert_as_new_match(tmp_path: Any) -> None:
+async def test_removing_a_watchlist_entry_does_not_realert_as_new_match(
+    engine: AsyncEngine,
+) -> None:
     """A match alerted as a watchlist hit becomes a plain match once its entry is
     deleted. Checking only the current type's key found no new_match row, so the
     next rematch sent "New match" for a program the user had already been told
     about."""
     from yas.matching.matcher import rematch_kid
 
-    engine = await _make_engine(tmp_path, "wl-removed.db")
     await _seed_household(engine)
     kid_id = await _seed_kid(engine, alert_score_threshold=0.0)
     async with session_scope(engine) as s:

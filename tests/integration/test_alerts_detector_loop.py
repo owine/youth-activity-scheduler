@@ -15,11 +15,10 @@ import pytest
 from sqlalchemy import select
 
 from yas.config import Settings
-from yas.db.base import Base
 from yas.db.models import Alert, Kid, Offering, Site
 from yas.db.models._types import AlertType
 from yas.db.models.page import Page
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.worker.detector_loop import daily_detector_loop
 
 # ---------------------------------------------------------------------------
@@ -38,45 +37,16 @@ def _settings(**kwargs: Any) -> Settings:
     return Settings(**defaults)
 
 
-async def _make_engine(tmp_path):  # type: ignore[no-untyped-def]
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/detector.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
-
-
 async def _run_one_tick(engine: Any, settings: Settings) -> None:
     """Run the detector loop until it finishes its first sleep (then cancel)."""
 
     async def _capturing_sleep(seconds: float) -> None:
         raise asyncio.CancelledError
 
-    task = asyncio.create_task(_patched_detector_loop(engine, settings, _capturing_sleep))
-    try:
-        await asyncio.wait_for(task, timeout=10.0)
-    except TimeoutError, asyncio.CancelledError:
-        pass
-    finally:
-        if not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
-
-async def _patched_detector_loop(engine: Any, settings: Settings, fake_sleep: Any) -> None:
-    """Wrap daily_detector_loop with a patched asyncio.sleep."""
-    import yas.worker.detector_loop as _mod
-
-    original = _mod.asyncio.sleep  # type: ignore[attr-defined]
-    _mod.asyncio.sleep = fake_sleep  # type: ignore[attr-defined]
-    try:
-        await daily_detector_loop(engine, settings)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        _mod.asyncio.sleep = original  # type: ignore[attr-defined]
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(
+            daily_detector_loop(engine, settings, sleep=_capturing_sleep), timeout=10.0
+        )
 
 
 def _stagnant_site(
@@ -107,10 +77,8 @@ def _stagnant_site(
 
 
 @pytest.mark.asyncio
-async def test_detector_loop_enqueues_site_stagnant_alerts(tmp_path):  # type: ignore[no-untyped-def]
+async def test_detector_loop_enqueues_site_stagnant_alerts(engine):  # type: ignore[no-untyped-def]
     """Stagnant site → site_stagnant Alert row inserted."""
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         site, page, offering = _stagnant_site(site_id=1, days_stale=60)
         s.add(site)
@@ -133,10 +101,8 @@ async def test_detector_loop_enqueues_site_stagnant_alerts(tmp_path):  # type: i
 
 
 @pytest.mark.asyncio
-async def test_detector_loop_enqueues_no_matches_kid_alerts(tmp_path):  # type: ignore[no-untyped-def]
+async def test_detector_loop_enqueues_no_matches_kid_alerts(engine):  # type: ignore[no-untyped-def]
     """Kid beyond threshold with no matches → no_matches_for_kid Alert row inserted."""
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         kid = Kid(
             id=1,
@@ -162,10 +128,8 @@ async def test_detector_loop_enqueues_no_matches_kid_alerts(tmp_path):  # type: 
 
 
 @pytest.mark.asyncio
-async def test_detector_loop_only_fires_once_per_day(tmp_path):  # type: ignore[no-untyped-def]
+async def test_detector_loop_only_fires_once_per_day(engine):  # type: ignore[no-untyped-def]
     """Running the loop twice results in exactly one Alert row per hit (dedup)."""
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         site, page, offering = _stagnant_site(site_id=1, days_stale=60)
         s.add(site)
@@ -195,10 +159,8 @@ async def test_detector_loop_only_fires_once_per_day(tmp_path):  # type: ignore[
 
 
 @pytest.mark.asyncio
-async def test_detector_loop_no_alerts_when_no_anomalies(tmp_path):  # type: ignore[no-untyped-def]
+async def test_detector_loop_no_alerts_when_no_anomalies(engine):  # type: ignore[no-untyped-def]
     """Fresh site and no kid anomalies → no alerts inserted."""
-    engine = await _make_engine(tmp_path)
-
     async with session_scope(engine) as s:
         site, page, offering = _stagnant_site(site_id=1, days_stale=5)
         s.add(site)

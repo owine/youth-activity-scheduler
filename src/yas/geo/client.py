@@ -52,6 +52,7 @@ class NominatimClient:
         self,
         http_client: httpx.AsyncClient | None = None,
         min_interval_s: float = 1.0,
+        retry_delay_s: float = 2.0,
     ) -> None:
         self._owns_client = http_client is None
         self._http = http_client or httpx.AsyncClient(
@@ -59,6 +60,7 @@ class NominatimClient:
             timeout=httpx.Timeout(15.0),
         )
         self._min_interval_s = min_interval_s
+        self._retry_delay_s = retry_delay_s
         self._lock = asyncio.Lock()
         self._last_request_at = 0.0
 
@@ -79,7 +81,7 @@ class NominatimClient:
             r = await self._http.get(self.BASE_URL, params=params)
         except httpx.TransportError as exc:
             if attempt == 0:
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(self._retry_delay_s)
                 return await self._do_geocode(address, attempt=1)
             raise GeocoderUnavailable(f"transport error: {type(exc).__name__}") from exc
         except httpx.RequestError as exc:  # e.g. DecodingError: not transport, not retried

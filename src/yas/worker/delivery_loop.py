@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,6 +23,8 @@ async def alert_delivery_loop(
     engine: AsyncEngine,
     settings: Settings,
     notifiers_override: dict[str, Any] | None = None,
+    *,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Polling delivery loop. Runs until cancelled.
 
@@ -32,7 +35,8 @@ async def alert_delivery_loop(
 
     `notifiers_override` is a test affordance: when provided, the loop
     skips the per-tick build/aclose dance and uses the injected dict.
-    Production code should never pass this.
+    Production code should never pass this. ``sleep`` is likewise injectable
+    so a test can run exactly one tick.
     """
     log = get_logger("yas.alerts.delivery")
     log.info("delivery.start", tick_s=settings.alert_delivery_tick_s)
@@ -85,7 +89,7 @@ async def alert_delivery_loop(
                         for n in notifiers.values():
                             await n.aclose()
 
-            await asyncio.sleep(settings.alert_delivery_tick_s)
+            await sleep(settings.alert_delivery_tick_s)
     except asyncio.CancelledError:
         log.info("delivery.stop")
         raise

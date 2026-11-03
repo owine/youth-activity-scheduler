@@ -138,10 +138,11 @@ async def test_scheduler_logs_exceptions_escaping_crawl_page(tmp_path, monkeypat
 @pytest.mark.asyncio
 async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
     monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
-    settings = Settings(_env_file=None, crawl_scheduler_tick_s=1)  # type: ignore[call-arg]
+    settings = Settings(_env_file=None, crawl_scheduler_batch_size=5)  # type: ignore[call-arg]
     engine = await _init(tmp_path)
 
     async with fixture_site(pages={"/p": PAGE}) as fx:
+        due = datetime.now(UTC) - timedelta(seconds=1)
         async with session_scope(engine) as s:
             inactive = Site(
                 name="Inactive", base_url=fx.base_url, active=False, default_cadence_s=3600
@@ -152,42 +153,26 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
                 muted_until=datetime.now(UTC) + timedelta(hours=1),
                 default_cadence_s=3600,
             )
-            s.add_all([inactive, muted])
+            # Positive control: without it, a tick that crawls nothing at all
+            # would pass this test just as well as one that filters correctly.
+            active = Site(name="Active", base_url=fx.base_url, default_cadence_s=3600)
+            s.add_all([inactive, muted, active])
             await s.flush()
-            s.add(
-                Page(
-                    site_id=inactive.id,
-                    url=fx.url("/p"),
-                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
-                )
-            )
-            s.add(
-                Page(
-                    site_id=muted.id,
-                    url=fx.url("/p"),
-                    next_check_at=datetime.now(UTC) - timedelta(seconds=1),
-                )
-            )
+            for site in (inactive, muted, active):
+                s.add(Page(site_id=site.id, url=fx.url("/p"), next_check_at=due))
 
+        crawled: list[str] = []
         fetcher = DefaultFetcher()
-        llm = FakeLLMClient()
-        task = asyncio.create_task(
-            crawl_scheduler_loop(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
-        )
+        llm = FakeLLMClient(on_call=lambda _html, _url, site_name: crawled.append(site_name))
         try:
-            await asyncio.sleep(3)  # enough for ~3 ticks
+            await _tick(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
         finally:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
             await fetcher.aclose()
-    # Nothing crawled — active-site filter held.
-    # Note: muted sites DO still have pages crawled when they are the alert-mute
-    # case in spec §3; but the scheduler here is gated by the site.muted_until
-    # row condition per spec §3.6 → so neither site gets crawled.
-    assert llm.call_count == 0
+
+    # Only the active, unmuted site is crawled. Muted sites DO still have pages
+    # crawled in the alert-mute case of spec §3, but the scheduler is gated by
+    # the site.muted_until row condition per spec §3.6.
+    assert crawled == ["Active"]
     await engine.dispose()
 
 

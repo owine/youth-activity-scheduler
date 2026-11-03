@@ -115,7 +115,6 @@ async def test_fetch_enforces_per_site_concurrency_of_1():
     finally:
         await fetcher.aclose()
 
-    # With a per-site lock, we never see start-start-end-end.
-    for i in range(len(order) - 1):
-        if order[i] == "start":
-            assert order[i + 1] == "end"
+    # With a per-site lock, we never see start-start-end-end. Asserting the
+    # full list also catches a fetch that never reached the handler.
+    assert order == ["start", "end", "start", "end"]

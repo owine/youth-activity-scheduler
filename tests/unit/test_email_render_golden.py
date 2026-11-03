@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from tests.golden._scenarios import (
     seed_crawl_failed,
@@ -22,10 +21,9 @@ from tests.golden._scenarios import (
     seed_test_send,
     seed_watchlist_hit,
 )
-from yas.db.base import Base
 from yas.db.models import Alert
 from yas.db.models._types import AlertType
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.email import render_email
 from yas.email.registry import EmailKind
 
@@ -53,11 +51,8 @@ Scenario = Callable[[AsyncSession], Awaitable[tuple[Alert, list[Alert]]]]
     ],
     ids=lambda v: getattr(v, "value", v.__name__ if callable(v) else str(v)),
 )
-async def test_render_golden(kind: EmailKind, seed: Scenario, tmp_path: Any) -> None:
-    eng = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/g.db")
-    async with eng.begin() as c:
-        await c.run_sync(Base.metadata.create_all)
-    async with session_scope(eng) as s:
+async def test_render_golden(kind: EmailKind, seed: Scenario, engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         lead, members = await seed(s)
         rendered = await render_email(s, kind, lead, members)
 

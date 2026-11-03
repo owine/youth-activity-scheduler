@@ -43,6 +43,9 @@ def test_main_initialises_error_reporting_before_migrating(monkeypatch):
     monkeypatch.setenv("YAS_ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.setattr(entry, "init_sentry", lambda _settings: calls.append("init_sentry"))
     monkeypatch.setattr(migrations, "upgrade_to_head", lambda _url: calls.append("migrate"))
+    # main() configures process-global logging; keep it from leaking into
+    # later tests that capture debug events.
+    monkeypatch.setattr(entry, "configure_logging", lambda **_kwargs: None)
 
     assert entry.main(["migrate"]) == 0
     assert calls == ["init_sentry", "migrate"]

@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from yas.alerts.enqueuer import (
     enqueue_crawl_failed,
@@ -17,18 +16,9 @@ from yas.alerts.enqueuer import (
     enqueue_site_stagnant,
     enqueue_watchlist_hit,
 )
-from yas.db.base import Base
 from yas.db.models import Alert, Kid, Offering, Page, Site, WatchlistEntry
 from yas.db.models._types import AlertType, OfferingStatus
 from yas.db.session import session_scope
-
-
-async def _make_engine(tmp_path: Any) -> Any:
-    url = f"sqlite+aiosqlite:///{tmp_path}/m.db"
-    engine = create_async_engine(url)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
 
 
 async def _seed(
@@ -62,8 +52,7 @@ async def _seed(
 
 
 @pytest.mark.asyncio
-async def test_new_match_skipped_when_offering_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_new_match_skipped_when_offering_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     async with session_scope(engine) as s:
@@ -75,8 +64,7 @@ async def test_new_match_skipped_when_offering_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_new_match_skipped_when_site_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_new_match_skipped_when_site_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
@@ -85,8 +73,7 @@ async def test_new_match_skipped_when_site_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_new_match_enqueues_when_both_unmuted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_new_match_enqueues_when_both_unmuted(engine):
     await _seed(engine)
     async with session_scope(engine) as s:
         result = await enqueue_new_match(s, kid_id=1, offering_id=1, score=0.9, reasons={})
@@ -94,8 +81,7 @@ async def test_new_match_enqueues_when_both_unmuted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_new_match_enqueues_when_mute_in_past(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_new_match_enqueues_when_mute_in_past(engine):
     past = datetime.now(UTC) - timedelta(days=1)
     await _seed(engine, offering_muted_until=past)
     async with session_scope(engine) as s:
@@ -104,8 +90,7 @@ async def test_new_match_enqueues_when_mute_in_past(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_watchlist_hit_skipped_when_offering_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_watchlist_hit_skipped_when_offering_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     async with session_scope(engine) as s:
@@ -125,8 +110,7 @@ async def test_watchlist_hit_skipped_when_offering_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_watchlist_hit_skipped_when_site_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_watchlist_hit_skipped_when_site_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
@@ -139,8 +123,7 @@ async def test_watchlist_hit_skipped_when_site_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_schedule_posted_skipped_when_site_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_schedule_posted_skipped_when_site_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
@@ -149,8 +132,7 @@ async def test_schedule_posted_skipped_when_site_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_crawl_failed_skipped_when_site_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_crawl_failed_skipped_when_site_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
@@ -161,8 +143,7 @@ async def test_crawl_failed_skipped_when_site_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_site_stagnant_skipped_when_site_muted(tmp_path):
-    engine = await _make_engine(tmp_path)
+async def test_site_stagnant_skipped_when_site_muted(engine):
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, site_muted_until=future)
     async with session_scope(engine) as s:
@@ -171,9 +152,8 @@ async def test_site_stagnant_skipped_when_site_muted(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_reg_opens_countdowns_skipped_when_offering_muted(tmp_path):
+async def test_reg_opens_countdowns_skipped_when_offering_muted(engine):
     """All three reg-opens variants are gated by a single mute check."""
-    engine = await _make_engine(tmp_path)
     future = datetime.now(UTC) + timedelta(days=30)
     await _seed(engine, offering_muted_until=future)
     async with session_scope(engine) as s:
