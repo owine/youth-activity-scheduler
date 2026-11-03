@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import structlog.testing
 
 from yas.alerts.rate_limit import (
     coalesce,
@@ -131,3 +132,35 @@ def test_quiet_hours_none_fields_returns_false():
 def test_quiet_hours_boundary_inclusive_at_start_exclusive_at_end():
     assert is_in_quiet_hours(datetime(2026, 5, 5, 22, 0, tzinfo=UTC), "22:00", "07:00") is True
     assert is_in_quiet_hours(datetime(2026, 5, 5, 7, 0, tzinfo=UTC), "22:00", "07:00") is False
+
+
+@pytest.fixture
+def _fresh_quiet_hours_warnings(monkeypatch):
+    """The warn-once memory is process-wide; start each test without it."""
+    import yas.alerts.rate_limit as rate_limit
+
+    monkeypatch.setattr(rate_limit, "_warned_invalid_quiet_hours", set())
+
+
+@pytest.mark.usefixtures("_fresh_quiet_hours_warnings")
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [("22:00", "24:00"), ("25:99", "07:00"), ("22:00", "7am"), ("", "07:00"), ("22:60", "07:00")],
+)
+def test_quiet_hours_invalid_value_is_not_quiet(start, end):
+    """A bad stored value used to raise ValueError inside the delivery loop,
+    which exited the worker. The window is ignored instead, with a warning."""
+    with structlog.testing.capture_logs() as logs:
+        assert is_in_quiet_hours(datetime(2026, 5, 5, 23, 0, tzinfo=UTC), start, end) is False
+    assert [e["event"] for e in logs if e["log_level"] == "warning"] == [
+        "delivery.quiet_hours.invalid"
+    ]
+
+
+@pytest.mark.usefixtures("_fresh_quiet_hours_warnings")
+def test_quiet_hours_invalid_value_warns_once():
+    now = datetime(2026, 5, 5, 23, 0, tzinfo=UTC)
+    with structlog.testing.capture_logs() as logs:
+        for _ in range(3):
+            assert is_in_quiet_hours(now, "21:00", "24:30") is False
+    assert len([e for e in logs if e["event"] == "delivery.quiet_hours.invalid"]) == 1

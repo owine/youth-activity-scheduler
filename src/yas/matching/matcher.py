@@ -9,7 +9,12 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from yas.alerts.enqueuer import dedup_key_for, enqueue_new_match, enqueue_watchlist_hit
+from yas.alerts.enqueuer import (
+    _kid_alert_on,
+    dedup_key_for,
+    enqueue_new_match,
+    enqueue_watchlist_hit,
+)
 from yas.config import get_settings
 from yas.db.models import (
     Alert,
@@ -69,9 +74,27 @@ async def _home_coords(session: AsyncSession, home_id: int | None) -> tuple[floa
     return (loc.lat, loc.lon)
 
 
-async def _offering_coords(session: AsyncSession, offering: Offering) -> tuple[float, float] | None:
+# Coordinates of every geocoded location, keyed by id. rematch_kid loads it once
+# rather than querying per offering.
+LocationCoords = dict[int, tuple[float, float]]
+
+
+async def _location_coords(session: AsyncSession) -> LocationCoords:
+    rows = await session.execute(
+        select(Location.id, Location.lat, Location.lon).where(
+            Location.lat.is_not(None), Location.lon.is_not(None)
+        )
+    )
+    return {loc_id: (lat, lon) for loc_id, lat, lon in rows if lat is not None and lon is not None}
+
+
+async def _offering_coords(
+    session: AsyncSession, offering: Offering, coords: LocationCoords | None = None
+) -> tuple[float, float] | None:
     if offering.location_id is None:
         return None
+    if coords is not None:
+        return coords.get(offering.location_id)
     loc = (
         await session.execute(select(Location).where(Location.id == offering.location_id))
     ).scalar_one_or_none()
@@ -84,10 +107,11 @@ async def _compute_distance_mi(
     session: AsyncSession,
     home: tuple[float, float] | None,
     offering: Offering,
+    location_coords: LocationCoords | None = None,
 ) -> float | None:
     if home is None:
         return None
-    coords = await _offering_coords(session, offering)
+    coords = await _offering_coords(session, offering, location_coords)
     if coords is None:
         return None
     return great_circle_miles(home[0], home[1], coords[0], coords[1])
@@ -119,13 +143,16 @@ async def _compute_drive_minutes(
     session: AsyncSession,
     home: tuple[float, float] | None,
     offering: Offering,
+    location_coords: LocationCoords | None = None,
+    *,
+    provider: DriveTimeProvider | None,
 ) -> float | None:
-    """Cache-first drive-time lookup. Returns None when feature disabled,
-    when no home/offering coords, or when the OSRM provider fails."""
-    provider = _get_drive_time_provider()
+    """Cache-first drive-time lookup. Returns None when feature disabled
+    (`provider` is None), when no home/offering coords, or when the OSRM
+    provider fails."""
     if provider is None or home is None:
         return None
-    coords = await _offering_coords(session, offering)
+    coords = await _offering_coords(session, offering, location_coords)
     if coords is None:
         return None
     result = await compute_drive_time(session, provider, home, coords)
@@ -234,9 +261,13 @@ async def _evaluate_pair(
     watchlist_entries: list[WatchlistEntry] | None = None,
     school_holidays: set[date] | None = None,
     enrollment_offering_map: dict[int, int] | None = None,
+    location_coords: LocationCoords | None = None,
+    drive_time_provider: DriveTimeProvider | None,
 ) -> tuple[bool, float, dict[str, Any]]:
-    distance_mi = await _compute_distance_mi(session, home, offering)
-    drive_minutes = await _compute_drive_minutes(session, home, offering)
+    distance_mi = await _compute_distance_mi(session, home, offering, location_coords)
+    drive_minutes = await _compute_drive_minutes(
+        session, home, offering, location_coords, provider=drive_time_provider
+    )
     if blocks is None:
         blocks = await _kid_blocks(session, kid.id)
     if watchlist_entries is None:
@@ -302,18 +333,26 @@ async def _upsert_match(
     reasons: dict[str, Any],
     *,
     kid: Kid,
+    kid_matches: dict[int, Match] | None = None,
+    alerted_keys: set[str] | None = None,
 ) -> bool:
     """Returns True if new (insert), False if existing row updated.
+
+    `kid_matches` (the kid's match rows by offering id) and `alerted_keys` (see
+    `_alerted_keys`) are rematch_kid's preloads; without them each is a query.
 
     Either way, alerts the match the first time it is alert-worthy; see
     `_alert_match_once`. This is the only place new_match / watchlist_hit alerts
     are created, for both the crawl pipeline's rematch and the sweep
-    (rematch_kid / rematch_all_active_kids)."""
-    existing = (
-        await session.execute(
-            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-        )
-    ).scalar_one_or_none()
+    (rematch_kid)."""
+    if kid_matches is not None:
+        existing = kid_matches.get(offering_id)
+    else:
+        existing = (
+            await session.execute(
+                select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+            )
+        ).scalar_one_or_none()
     now = datetime.now(UTC)
     if existing is None:
         session.add(
@@ -329,8 +368,32 @@ async def _upsert_match(
         existing.score = score
         existing.reasons = reasons
         existing.computed_at = now
-    await _alert_match_once(session, kid, offering_id, score, reasons)
+    await _alert_match_once(session, kid, offering_id, score, reasons, alerted_keys)
     return existing is None
+
+
+def _match_alert_keys(kid_id: int, offering_id: int) -> list[str]:
+    # Either type counts: a match is alerted once, whichever it was. Otherwise
+    # deleting a watchlist entry turns its sent watchlist_hit matches into
+    # new_match ones, and each would alert again.
+    return [
+        dedup_key_for(t, kid_id=kid_id, offering_id=offering_id)
+        for t in (AlertType.new_match, AlertType.watchlist_hit)
+    ]
+
+
+async def _alerted_keys(session: AsyncSession, kid_id: int) -> set[str]:
+    """Dedup keys of the kid's match alerts already sent or skipped, any offering.
+
+    The column filters only narrow the rows loaded; callers still test exact
+    keys, and the enqueuers write each key with this kid_id and type."""
+    rows = await session.execute(
+        select(Alert.dedup_key)
+        .where(Alert.kid_id == kid_id)
+        .where(Alert.type.in_([AlertType.new_match.value, AlertType.watchlist_hit.value]))
+        .where(or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)))
+    )
+    return set(rows.scalars())
 
 
 async def _alert_match_once(
@@ -339,6 +402,7 @@ async def _alert_match_once(
     offering_id: int,
     score: float,
     reasons: dict[str, Any],
+    alerted_keys: set[str] | None = None,
 ) -> None:
     """Enqueue the match's alert unless one was already sent or skipped, of
     either type.
@@ -359,22 +423,23 @@ async def _alert_match_once(
     watchlist_hit = (reasons or {}).get("watchlist_hit")
     if not watchlist_hit and score < kid.alert_score_threshold:
         return
-    # Either type counts: a match is alerted once, whichever it was. Otherwise
-    # deleting a watchlist entry turns its sent watchlist_hit matches into
-    # new_match ones, and each would alert again.
-    keys = [
-        dedup_key_for(t, kid_id=kid.id, offering_id=offering_id)
-        for t in (AlertType.new_match, AlertType.watchlist_hit)
-    ]
-    already = (
+    if not watchlist_hit and not _kid_alert_on(kid, "new_match", default=True):
+        # enqueue_new_match's own first check, made before its kid query: each
+        # query autoflushes, so on a sweep it kept the write lock from the first
+        # match row to the commit.
+        return
+    keys = _match_alert_keys(kid.id, offering_id)
+    if alerted_keys is not None:
+        if any(k in alerted_keys for k in keys):
+            return
+    elif (
         await session.execute(
             select(Alert.id)
             .where(Alert.dedup_key.in_(keys))
             .where(or_(Alert.sent_at.is_not(None), Alert.skipped.is_(True)))
             .limit(1)
         )
-    ).first()
-    if already is not None:
+    ).first() is not None:
         return
     if watchlist_hit:
         await enqueue_watchlist_hit(
@@ -390,12 +455,20 @@ async def _alert_match_once(
         )
 
 
-async def _delete_match_if_exists(session: AsyncSession, kid_id: int, offering_id: int) -> bool:
-    existing = (
-        await session.execute(
-            select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
-        )
-    ).scalar_one_or_none()
+async def _delete_match_if_exists(
+    session: AsyncSession,
+    kid_id: int,
+    offering_id: int,
+    kid_matches: dict[int, Match] | None = None,
+) -> bool:
+    if kid_matches is not None:
+        existing = kid_matches.get(offering_id)
+    else:
+        existing = (
+            await session.execute(
+                select(Match).where(Match.kid_id == kid_id, Match.offering_id == offering_id)
+            )
+        ).scalar_one_or_none()
     if existing is None:
         return False
     await session.delete(existing)
@@ -416,6 +489,18 @@ async def rematch_kid(
     watchlist_entries = await _kid_watchlist(session, kid_id)
     school_holidays = _school_holidays(kid)
     enrollment_offering_map = await _kid_enrollment_offering_map(session, kid_id)
+    # Per-offering lookups, preloaded: the sweep runs this for every kid against
+    # every offering, and ~3 queries per pair kept its transaction (and SQLite's
+    # write lock) open for seconds.
+    location_coords = await _location_coords(session)
+    kid_matches = {
+        m.offering_id: m
+        for m in (await session.execute(select(Match).where(Match.kid_id == kid_id))).scalars()
+    }
+    alerted_keys = await _alerted_keys(session, kid_id)
+    # Resolved once per call: it reads Settings, which re-parses the environment
+    # and .env, and per offering that was most of a sweep's run time.
+    drive_time_provider = _get_drive_time_provider()
     result = MatchResult(kid_id=kid_id)
     for off in offerings:
         include, score, reasons = await _evaluate_pair(
@@ -429,13 +514,24 @@ async def rematch_kid(
             watchlist_entries=watchlist_entries,
             school_holidays=school_holidays,
             enrollment_offering_map=enrollment_offering_map,
+            location_coords=location_coords,
+            drive_time_provider=drive_time_provider,
         )
         key = (kid_id, off.id)
         if include:
-            inserted = await _upsert_match(session, kid_id, off.id, score, reasons, kid=kid)
+            inserted = await _upsert_match(
+                session,
+                kid_id,
+                off.id,
+                score,
+                reasons,
+                kid=kid,
+                kid_matches=kid_matches,
+                alerted_keys=alerted_keys,
+            )
             (result.new if inserted else result.updated).append(key)
         else:
-            if await _delete_match_if_exists(session, kid_id, off.id):
+            if await _delete_match_if_exists(session, kid_id, off.id, kid_matches):
                 result.removed.append(key)
     return result
 
@@ -448,6 +544,7 @@ async def rematch_offering(
         today = date.today()
     home_id, default_distance = await _household_defaults(session)
     home = await _home_coords(session, home_id)
+    drive_time_provider = _get_drive_time_provider()
     result = MatchResult(offering_id=offering_id)
     for kid in await _active_kids(session):
         include, score, reasons = await _evaluate_pair(
@@ -457,6 +554,7 @@ async def rematch_offering(
             home=home,
             default_max_distance=default_distance,
             today=today,
+            drive_time_provider=drive_time_provider,
         )
         key = (kid.id, offering_id)
         if include:
@@ -466,12 +564,3 @@ async def rematch_offering(
             if await _delete_match_if_exists(session, kid.id, offering_id):
                 result.removed.append(key)
     return result
-
-
-async def rematch_all_active_kids(
-    session: AsyncSession, *, today: date | None = None
-) -> list[MatchResult]:
-    results: list[MatchResult] = []
-    for kid in await _active_kids(session):
-        results.append(await rematch_kid(session, kid.id, today=today))
-    return results

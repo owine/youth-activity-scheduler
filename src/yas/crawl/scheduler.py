@@ -17,6 +17,7 @@ from yas.db.session import session_scope
 from yas.llm.client import LLMClient
 from yas.logging import get_logger, traceback_tail
 from yas.observability import crawl_scope
+from yas.worker.loop_guard import loop_iteration
 
 log = get_logger("yas.crawl.scheduler")
 
@@ -36,7 +37,8 @@ async def crawl_scheduler_loop(
     )
     try:
         while True:
-            await _tick(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
+            with loop_iteration("crawl_scheduler"):
+                await _tick(engine=engine, settings=settings, fetcher=fetcher, llm=llm)
             await asyncio.sleep(settings.crawl_scheduler_tick_s)
     except asyncio.CancelledError:
         log.info("scheduler.stop")

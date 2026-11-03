@@ -26,6 +26,7 @@ from yas.db.models import GeocodeAttempt, Location, Offering
 from yas.db.session import session_scope
 from yas.geo.client import Geocoder, GeocoderUnavailable
 from yas.logging import get_logger
+from yas.worker.loop_guard import loop_iteration
 
 log = get_logger("yas.geo.enricher")
 
@@ -98,6 +99,9 @@ async def enrich_ungeocoded_locations(
     The batch bounds geocoder calls, not rows scanned: negative-cached locations
     are skipped before they can use a slot, so they can't starve the ones
     behind them.
+
+    Commits `session` before each geocoder call, so each address's outcome is
+    its own transaction; the caller's scope commits the last one.
     """
     updated = 0
     not_found = 0
@@ -141,6 +145,11 @@ async def enrich_ungeocoded_locations(
         if calls >= batch_size:
             break
         calls += 1
+        # Commit the previous address's outcome (and its rematch) before the next
+        # network call. Flushed writes hold SQLite's only write lock until the
+        # commit, and a geocode takes at least a second, so a batch held in one
+        # transaction starves the heartbeat and API writes past the busy timeout.
+        await session.commit()
         try:
             result = await geocoder.geocode(loc.address or "")
         except GeocoderUnavailable as exc:
@@ -203,22 +212,23 @@ async def geocode_enricher_loop(
     )
     try:
         while True:
-            async with session_scope(engine) as s:
-                result = await enrich_ungeocoded_locations(
-                    s,
-                    geocoder,
-                    batch_size=settings.geocode_batch_size,
-                    on_rematch=rematch_offering,
-                )
-            if result.updated or result.not_found or result.errored or result.unavailable:
-                log.info(
-                    "geocode.tick",
-                    updated=result.updated,
-                    not_found=result.not_found,
-                    errored=result.errored,
-                    unavailable=result.unavailable,
-                    skipped=result.skipped,
-                )
+            with loop_iteration("geocode_enricher"):
+                async with session_scope(engine) as s:
+                    result = await enrich_ungeocoded_locations(
+                        s,
+                        geocoder,
+                        batch_size=settings.geocode_batch_size,
+                        on_rematch=rematch_offering,
+                    )
+                if result.updated or result.not_found or result.errored or result.unavailable:
+                    log.info(
+                        "geocode.tick",
+                        updated=result.updated,
+                        not_found=result.not_found,
+                        errored=result.errored,
+                        unavailable=result.unavailable,
+                        skipped=result.skipped,
+                    )
             await asyncio.sleep(settings.geocode_tick_s)
     except asyncio.CancelledError:
         log.info("geocode.stop")

@@ -9,7 +9,7 @@ import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
 import { useHousehold } from '@/lib/queries';
-import { ApiError } from '@/lib/api';
+import { apiErrorDetail } from '@/lib/api';
 import type { SmtpConfig, ForwardEmailConfig } from '@/lib/types';
 
 // Schemas: credentials are optional values now. Empty → fall back to env.
@@ -106,7 +106,7 @@ export function EmailChannelSection() {
         form.setFieldValue('password_value', '');
         form.setFieldValue('api_token_value', '');
       } catch (err) {
-        const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+        const detail = apiErrorDetail(err);
         setErrorMsg(detail ?? (err as Error).message);
       }
     },
@@ -364,8 +364,7 @@ export function EmailChannelSection() {
             setErrorMsg(null);
             await update.mutateAsync({ smtp_config_json: null });
           } catch (err) {
-            const detail =
-              err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+            const detail = apiErrorDetail(err);
             setErrorMsg(detail ?? (err as Error).message);
           }
         }}

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+# 00:00-23:59. The delivery loop parses quiet hours with datetime.time on every
+# tick, so a value it can't parse ("24:00") must not get stored.
+_HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 
 
 class CredentialStatus(BaseModel):
@@ -64,3 +69,10 @@ class HouseholdPatch(BaseModel):
     ha_config_json: dict[str, Any] | None = None
     ntfy_config_json: dict[str, Any] | None = None
     pushover_config_json: dict[str, Any] | None = None
+
+    @field_validator("digest_time", "quiet_hours_start", "quiet_hours_end")
+    @classmethod
+    def _valid_hhmm(cls, v: str | None) -> str | None:
+        if v is not None and not _HHMM.fullmatch(v):
+            raise ValueError("must be HH:MM, 00:00-23:59")
+        return v

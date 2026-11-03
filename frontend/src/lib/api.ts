@@ -7,6 +7,29 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server's error message from an ApiError, or null.
+ *
+ * FastAPI sends `detail` as a string for HTTPException, but as a list of
+ * `{loc, msg, type}` objects for a request-validation 422. Rendering that list
+ * as a message crashes React, so it is flattened to "field: msg; …".
+ */
+export function apiErrorDetail(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  const detail = (err.body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d) => {
+      const item = d as { loc?: unknown[]; msg?: unknown };
+      const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : undefined;
+      const msg = typeof item.msg === 'string' ? item.msg : JSON.stringify(d);
+      return field !== undefined && field !== 'body' ? `${String(field)}: ${msg}` : msg;
+    });
+    return parts.length ? parts.join('; ') : null;
+  }
+  return null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, {
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },

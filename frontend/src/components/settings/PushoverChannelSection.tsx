@@ -8,7 +8,7 @@ import { CredentialField } from './CredentialField';
 import { TestSendButton } from './TestSendButton';
 import { useUpdateHousehold } from '@/lib/mutations';
 import { useHousehold } from '@/lib/queries';
-import { ApiError } from '@/lib/api';
+import { apiErrorDetail } from '@/lib/api';
 import { touchedFormErrors } from '@/lib/formError';
 import type { PushoverConfig } from '@/lib/types';
 
@@ -68,7 +68,7 @@ export function PushoverChannelSection() {
         form.setFieldValue('user_key_value', '');
         form.setFieldValue('app_token_value', '');
       } catch (err) {
-        const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+        const detail = apiErrorDetail(err);
         setErrorMsg(detail ?? (err as Error).message);
       }
     },
@@ -230,8 +230,7 @@ export function PushoverChannelSection() {
             setErrorMsg(null);
             await update.mutateAsync({ pushover_config_json: null });
           } catch (err) {
-            const detail =
-              err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+            const detail = apiErrorDetail(err);
             setErrorMsg(detail ?? (err as Error).message);
           }
         }}

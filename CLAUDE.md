@@ -135,7 +135,15 @@ API, detectable only as `/readyz` reporting `heartbeat_fresh: false`.
 
 `worker/runner.py` runs every background loop as a task in one `asyncio.TaskGroup`: heartbeat,
 crawl scheduler, daily sweep, geocode enricher, alert delivery, digest, detector. Each is
-individually gated by a `Settings` flag.
+individually gated by a `Settings` flag. Each wraps one iteration in
+`worker/loop_guard.py::loop_iteration`, which logs `worker.loop_iteration_failed` and reports to
+GlitchTip, so one bad tick doesn't take the process down; a new loop must do the same. The daily
+loops (sweep, digest, detector) mark the day attempted before running, so a failure retries
+tomorrow (or on restart), not every 60s.
+
+Loops commit per unit of work (alert group, kid, geocode) and never make a network call while
+their session holds flushed writes: SQLite has one write lock, and holding it across a slow send
+fails the heartbeat and API writes with `database is locked` after the 5s busy timeout.
 
 ### Crawl pipeline
 
