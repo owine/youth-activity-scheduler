@@ -293,7 +293,7 @@ async def test_resaving_channel_without_secret_keeps_stored_secret(client):
     await c.patch(
         "/api/household",
         json={
-            "smtp_config_json": {**_SMTP, "password_value": "s3cret"},
+            "smtp_config_json": {**_SMTP, "password_value": "kept"},
             "ntfy_config_json": {
                 "base_url": "https://ntfy.sh",
                 "topic": "t",
@@ -320,7 +320,7 @@ async def test_resaving_channel_without_secret_keeps_stored_secret(client):
     assert hh.smtp_config_json == {
         **_SMTP,
         "host": "smtp2.example.com",
-        "password_value": "s3cret",
+        "password_value": "kept",
     }
     assert hh.ntfy_config_json == {
         "base_url": "https://ntfy.sh",
