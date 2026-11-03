@@ -908,10 +908,10 @@ async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentr
 
 
 @pytest.mark.asyncio
-async def test_push_only_group_with_no_push_notifier_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
-    """reg_opens_1h routes only to "push". With no push-capable notifier the
-    alias can't resolve, so the group waits for one like any unconfigured
-    channel, rather than being retired as it was before #641."""
+async def test_countdown_with_no_push_notifier_is_retired_not_deferred(tmp_path):  # type: ignore[no-untyped-def]
+    """reg_opens_1h routes only to "push". Deferred hourly for a push channel that
+    may never be configured, it outran its own grace window (which measures from
+    the scheduled_for the deferral moves) and went out days stale once one was."""
     engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
     async with session_scope(engine) as s:
@@ -926,10 +926,27 @@ async def test_push_only_group_with_no_push_notifier_is_deferred(tmp_path):  # t
 
     async with session_scope(engine) as s:
         updated = (await s.execute(select(Alert).where(Alert.id == alert_id))).scalar_one()
-        assert updated.skipped is False
+        assert updated.skipped is True
         assert updated.sent_at is None
-        assert updated.scheduled_for.replace(tzinfo=UTC) > now + timedelta(minutes=59)
+        assert updated.payload_json["_skipped_reason"] == "no notifier for push"
+        assert "_failed" not in updated.payload_json  # setup, not a delivery issue
     assert email_notifier.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_push_only_watchlist_hit_with_no_push_notifier_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
+    """Not time-sensitive, so it waits for a push channel; skipping would count
+    the match as alerted and lose it for good."""
+    engine = await _make_engine(tmp_path)
+    now = datetime.now(UTC)
+    row = await _send_one(
+        engine,
+        alert_type=AlertType.watchlist_hit,
+        routing=["push"],
+        notifiers={"email": _email_notifier("email")},
+    )
+    assert row.skipped is False and row.sent_at is None
+    assert row.scheduled_for.replace(tzinfo=UTC) > now + timedelta(minutes=59)
 
 
 @pytest.mark.asyncio
@@ -1089,10 +1106,10 @@ async def test_coalesced_send_uses_one_push_of_the_budget(tmp_path):  # type: ig
 
 
 @pytest.mark.asyncio
-async def test_push_only_group_in_quiet_hours_waits_for_them_to_end(tmp_path):  # type: ignore[no-untyped-def]
-    """Default reg_opens_1h / push_cap route only to "push". With the alias now
-    resolving, quiet hours suppressed every channel and left the rows untouched,
-    so they were re-selected and re-rendered every tick until quiet hours ended."""
+async def test_push_only_group_in_quiet_hours_is_skipped_not_buffered(tmp_path):  # type: ignore[no-untyped-def]
+    """Spec §3.8: push is skipped during quiet hours, not buffered. With the
+    alias now resolving, a push-only group used to be left untouched, so it was
+    re-rendered every tick and then sent, hours stale, when quiet hours ended."""
     engine = await _make_engine(tmp_path)
     ntfy = _push_notifier("ntfy")
     now = datetime.now(UTC)
@@ -1106,10 +1123,29 @@ async def test_push_only_group_in_quiet_hours_waits_for_them_to_end(tmp_path):  
         quiet_hours=(start, end),
     )
     assert ntfy.call_count == 0
-    assert row.sent_at is None and row.skipped is False
-    held = row.scheduled_for.replace(tzinfo=UTC)
-    assert timedelta(hours=1, minutes=58) < held - now <= timedelta(hours=2)
-    assert held.strftime("%H:%M") == end
+    assert row.sent_at is None
+    assert row.skipped is True
+    assert row.payload_json["_skipped_reason"] == "quiet hours"
+    assert "_failed" not in row.payload_json
+
+
+@pytest.mark.asyncio
+async def test_disabled_routing_does_not_resolve_the_push_alias(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+    """Resolving first logged an emergency downgrade for a type that sends nothing."""
+    import yas.alerts.delivery as delivery
+
+    calls: list[object] = []
+    monkeypatch.setattr(delivery, "resolve_channels", lambda *a: calls.append(a) or [])
+    engine = await _make_engine(tmp_path)
+    async with session_scope(engine) as s:
+        s.add(AlertRouting(type=AlertType.reg_opens_now.value, channels=["push"], enabled=False))
+        a = _alert(alert_type=AlertType.reg_opens_now.value)
+        s.add(a)
+        await s.flush()
+        (group,) = coalesce([a], window_s=600)
+        await send_alert_group(s, group, {"ntfy": _push_notifier("ntfy")}, _settings(), None)
+        assert a.payload_json["_skipped_reason"] == "routing disabled"
+    assert calls == []
 
 
 @pytest.mark.asyncio

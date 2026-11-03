@@ -15,7 +15,6 @@ from yas.alerts.rate_limit import (
     AlertGroup,
     count_pushes_sent_in_last_hour,
     is_in_quiet_hours,
-    quiet_hours_end,
     should_rate_limit_push,
 )
 from yas.alerts.routing import ROUTABLE_CHANNELS, get_routing, resolve_channels
@@ -53,6 +52,11 @@ _COUNTDOWN_TYPES: frozenset[str] = frozenset(
         AlertType.reg_opens_1h.value,
     }
 )
+# Types whose message is only true near a fixed moment. Deferring one for a
+# notifier that may never be configured would deliver it stale, and the grace
+# window can't catch that, because it measures from ``scheduled_for``, which
+# the deferral itself moves.
+_TIME_SENSITIVE_TYPES: frozenset[str] = _COUNTDOWN_TYPES | {AlertType.reg_opens_now.value}
 
 
 def _apply_grace_window(
@@ -115,24 +119,27 @@ async def send_alert_group(
     - Routing disabled         → members marked skipped with "routing disabled".
     - No routed channel has a notifier → deferred an hour if any is a known
                                   channel, else members marked skipped.
+                                  Time-sensitive types (registration
+                                  countdowns, reg_opens_now) are skipped
+                                  rather than deferred.
     - Rate-capped              → push channels skipped and enqueue_push_cap
                                   called; other channels still send. Members
                                   are marked skipped "rate capped" only when
                                   push was all they routed to.
     - Quiet hours              → push channels skipped (not retried); a group
-                                  that routed only to push is held until
-                                  quiet hours end.
+                                  that routed only to push is marked skipped
+                                  "quiet hours" (spec §3.8: not buffered).
     """
     lead = group.lead
     members: list[Alert] = group.members
 
     # 1. Routing lookup -------------------------------------------------------
     routed, enabled = await get_routing(session, AlertType(group.alert_type))
-    channels = resolve_channels(routed, notifiers, AlertType(group.alert_type))
     if not enabled:
         _mark_all_skipped(members, "routing disabled")
         log.info("delivery.routing_disabled", alert_type=group.alert_type)
         return
+    channels = resolve_channels(routed, notifiers, AlertType(group.alert_type))
 
     if not channels:
         # Digest-only types (site_stagnant, schedule_posted, no_matches_for_kid)
@@ -151,7 +158,9 @@ async def send_alert_group(
         # leave the rows unsent and unskipped, so the due query re-selected and
         # re-rendered them every tick. Routing setup, not a failure, so no
         # GlitchTip event either way.
-        if any(name in ROUTABLE_CHANNELS for name in channels):
+        if any(name in ROUTABLE_CHANNELS for name in channels) and (
+            group.alert_type not in _TIME_SENSITIVE_TYPES
+        ):
             # A real channel (or the "push" alias) that isn't configured yet,
             # or whose notifier failed to build this tick: hold the group and
             # deliver once it exists. Skipping would lose it for good, since a
@@ -165,9 +174,19 @@ async def send_alert_group(
                 channels=list(channels),
             )
             return
+        reason = f"no notifier for {', '.join(channels)}"
+        if group.alert_type in _TIME_SENSITIVE_TYPES and any(
+            name in ROUTABLE_CHANNELS for name in channels
+        ):
+            # A countdown with nowhere to go yet. Retire it rather than hold it:
+            # it would be stale by the time a channel appears. Setup, not a
+            # failure, so it stays out of the digest's delivery issues.
+            _mark_all_skipped(members, reason)
+            log.info("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
+            return
         # Only names no notifier can exist under. The routing API rejects
         # these, so this is a row written some other way.
-        _mark_all_skipped(members, f"no notifier for {', '.join(channels)}", failed=True)
+        _mark_all_skipped(members, reason, failed=True)
         log.warning("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
         return
 
@@ -240,7 +259,7 @@ async def send_alert_group(
     # suppress itself on every attempt.
     push_cap_checked = group.alert_type == AlertType.push_cap.value
     push_capped = False
-    quiet_until: datetime | None = None
+    quiet_suppressed = False
 
     for channel_name in channels:
         notifier = notifiers.get(channel_name)
@@ -264,7 +283,7 @@ async def send_alert_group(
                     channel=channel_name,
                     alert_type=group.alert_type,
                 )
-                quiet_until = quiet_hours_end(now, qend)
+                quiet_suppressed = True
                 continue  # hard suppression — no retry advancement
 
         # Push rate cap check (run once for the whole group) ------------------
@@ -420,18 +439,12 @@ async def send_alert_group(
         _mark_all_skipped(members, "rate capped")
         return
 
-    if quiet_until is not None:
-        # Push was all this group routed to, and it's quiet hours. Hold the group
-        # until they end instead of re-selecting and re-rendering it every tick.
-        # A countdown that is past its grace window by then is dropped by
-        # _apply_grace_window, as before.
-        for a in members:
-            a.scheduled_for = quiet_until
-        log.info(
-            "delivery.quiet_hours.deferred",
-            alert_type=group.alert_type,
-            until=quiet_until.isoformat(),
-        )
+    if quiet_suppressed:
+        # Push was all this group routed to, and it's quiet hours. Spec §3.8:
+        # push is skipped during quiet hours, not buffered. Retire the group;
+        # leaving it untouched re-selected and re-rendered it every tick until
+        # quiet hours ended, then sent it (a countdown, hours stale).
+        _mark_all_skipped(members, "quiet hours")
 
 
 # ---------------------------------------------------------------------------

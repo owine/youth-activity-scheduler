@@ -19,6 +19,9 @@ _NEVER_COALESCE = frozenset(
         AlertType.watchlist_hit.value,
         AlertType.crawl_failed.value,
         AlertType.digest.value,
+        # Each notice reports its own hour's count (build_push_cap reads only
+        # the lead), so two notices due together must not merge into one.
+        AlertType.push_cap.value,
     }
 )
 
@@ -127,12 +130,3 @@ def is_in_quiet_hours(
     if start <= end:
         return start <= now_t < end
     return now_t >= start or now_t < end
-
-
-def quiet_hours_end(now: datetime, quiet_end: str) -> datetime:
-    """The next time quiet hours end (``quiet_end`` is UTC HH:MM) after ``now``."""
-    end = _parse_hhmm(quiet_end)
-    candidate = now.replace(hour=end.hour, minute=end.minute, second=0, microsecond=0)
-    if candidate <= now:
-        candidate += timedelta(days=1)
-    return candidate
