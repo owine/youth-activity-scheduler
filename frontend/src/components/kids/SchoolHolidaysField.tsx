@@ -1,5 +1,5 @@
 import { DayPicker } from 'react-day-picker';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface Props {
   value: string[];
@@ -8,7 +8,10 @@ interface Props {
 }
 
 export function SchoolHolidaysField({ value, onChange, error }: Props) {
-  const dates = value.map((s) => new Date(s));
+  // parseISO reads a date-only string as local midnight; new Date('YYYY-MM-DD')
+  // is UTC midnight, i.e. the previous day west of UTC, and every save would
+  // then shift the holidays back a day.
+  const dates = value.map((s) => parseISO(s));
 
   const handleSelect = (selected: Date[] | undefined) => {
     onChange((selected ?? []).map((d) => format(d, 'yyyy-MM-dd')));
@@ -23,7 +26,7 @@ export function SchoolHolidaysField({ value, onChange, error }: Props) {
             key={d}
             className="inline-flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs"
           >
-            {format(new Date(d), 'MMM d, yyyy')}
+            {format(parseISO(d), 'MMM d, yyyy')}
             <button
               type="button"
               aria-label={`Remove ${d}`}

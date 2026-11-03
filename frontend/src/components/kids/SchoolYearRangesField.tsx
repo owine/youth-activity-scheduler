@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { DayPicker } from 'react-day-picker';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface YearRange {
   start: string;
@@ -39,7 +39,7 @@ export function SchoolYearRangesField({ value, onChange, error }: Props) {
             key={`${r.start}-${r.end}`}
             className="inline-flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs"
           >
-            {format(new Date(r.start), 'MMM d, yyyy')} → {format(new Date(r.end), 'MMM d, yyyy')}
+            {format(parseISO(r.start), 'MMM d, yyyy')} → {format(parseISO(r.end), 'MMM d, yyyy')}
             <button
               type="button"
               aria-label={`Remove range ${i}`}

@@ -4,8 +4,8 @@ import { useQueries } from '@tanstack/react-query';
 import type { View } from 'react-big-calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
-import { useKids } from '@/lib/queries';
-import { api } from '@/lib/api';
+import { format } from 'date-fns';
+import { kidCalendarQueryOptions, useKids } from '@/lib/queries';
 import { CalendarView } from '@/components/calendar/CalendarView';
 import { CalendarEventPopover } from '@/components/calendar/CalendarEventPopover';
 import { CombinedCalendarFilters } from '@/components/calendar/CombinedCalendarFilters';
@@ -75,11 +75,12 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
 
   const queries = useQueries({
     queries: activeKids.map((k) => ({
-      queryKey: ['kid-calendar', k.id, from, to, filters.includeMatches],
-      queryFn: () =>
-        api.get<KidCalendarResponse>(
-          `/api/kids/${k.id}/calendar?from=${from}&to=${to}${filters.includeMatches ? '&include_matches=true' : ''}`,
-        ),
+      ...kidCalendarQueryOptions({
+        kidId: k.id,
+        from,
+        to,
+        includeMatches: filters.includeMatches,
+      }),
       enabled: kids.isSuccess,
     })),
   });
@@ -164,7 +165,9 @@ export function CalendarPage({ searchParams }: { searchParams: SearchParams }) {
         view={view}
         onView={(v) => updateSearch({ view: v })}
         date={cursor}
-        onNavigate={(d) => updateSearch({ date: d.toISOString().slice(0, 10) })}
+        // Local calendar date: toISOString() is the UTC date, which is already
+        // tomorrow on a US evening (and yesterday at local midnight east of UTC).
+        onNavigate={(d) => updateSearch({ date: format(d, 'yyyy-MM-dd') })}
         onSelectEvent={(e: CalendarEvent) => setSelected(e as CombinedCalendarEvent)}
         eventStyle={(e) => {
           const cev = e as CombinedCalendarEvent;

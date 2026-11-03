@@ -113,6 +113,20 @@ describe('CalendarEventPopover', () => {
     expect(screen.getByRole('button', { name: /delete block/i })).toBeInTheDocument();
   });
 
+  it('offers no Delete block on a holiday, which has no block behind it', () => {
+    renderPopover({
+      id: 'holiday:1:2026-11-26',
+      kind: 'holiday',
+      date: '2026-11-26',
+      time_start: null,
+      time_end: null,
+      all_day: true,
+      title: 'Holiday',
+    });
+    expect(screen.getByText('Holiday')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete block/i })).not.toBeInTheDocument();
+  });
+
   it('suppresses Delete on enrollment-linked blocks and shows hint', () => {
     renderPopover(enrollmentLinkedBlock);
     expect(screen.queryByRole('button', { name: /delete block/i })).not.toBeInTheDocument();

@@ -101,4 +101,19 @@ describe('HouseholdSection', () => {
       { timeout: 2000 },
     );
   });
+
+  it('re-enables the distance input when "No limit" is unchecked', async () => {
+    render(<HouseholdSection />, { wrapper: wrap(makeQc(), baseHh) });
+    const distance = screen.getByLabelText(/default max distance/i);
+    const noLimit = screen.getByRole('checkbox', { name: /no limit/i });
+    expect(noLimit).toBeChecked();
+    expect(distance).toBeDisabled();
+
+    await userEvent.click(noLimit);
+    expect(noLimit).not.toBeChecked();
+    expect(distance).toBeEnabled();
+
+    await userEvent.click(noLimit);
+    expect(distance).toBeDisabled();
+  });
 });

@@ -99,6 +99,10 @@ export function CalendarEventPopover({
   const isMatch = event?.kind === 'match';
   const isEnrollment = event?.kind === 'enrollment';
   const isLinkedBlock = event?.kind === 'unavailability' && event.from_enrollment_id != null;
+  // Only a standalone unavailability block can be deleted. Holidays come from
+  // the kid's school_holidays list and have no block_id behind them.
+  const isDeletableBlock =
+    event?.kind === 'unavailability' && event.block_id != null && !isLinkedBlock;
 
   return (
     <Sheet
@@ -161,7 +165,7 @@ export function CalendarEventPopover({
                   Cancel enrollment
                 </Button>
               )}
-              {!isMatch && !isEnrollment && !isLinkedBlock && (
+              {isDeletableBlock && (
                 <Button onClick={handleDelete} disabled={inFlight} variant="destructive">
                   Delete block
                 </Button>

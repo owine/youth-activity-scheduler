@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, queryOptions, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 import type {
   AlertListResponse,
@@ -35,6 +35,9 @@ export function useInboxSummary(opts?: { days?: number; includeClosed?: boolean 
       }`;
       return api.get<InboxSummary>(url);
     },
+    // Toggling "Show closed" changes the key; keep showing the current alerts
+    // meanwhile instead of dropping back to the loading skeleton.
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000,
   });
 }
@@ -82,6 +85,9 @@ export function useAllMatches({ minScore, limit = 500 }: { minScore: number; lim
   return useQuery({
     queryKey: ['matches', 'all', { minScore, limit }],
     queryFn: () => api.get<Match[]>(`/api/matches?min_score=${minScore}&limit=${limit}`),
+    // Each slider step is a new key; keep the current rows meanwhile so the
+    // page (and the slider being dragged) is not swapped for a skeleton.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -122,24 +128,37 @@ export function useAlertRouting() {
   });
 }
 
-export function useKidCalendar({
-  kidId,
-  from,
-  to,
-  includeMatches = false,
-}: {
+interface KidCalendarParams {
   kidId: number;
   from: string;
   to: string;
   includeMatches?: boolean;
-}) {
-  return useQuery({
+}
+
+/**
+ * Shared by the per-kid calendar and the combined calendar, so that the
+ * enroll / cancel / mute / delete-block mutations, which invalidate
+ * ['kids', kidId, 'calendar'], refresh both views.
+ */
+export function kidCalendarQueryOptions({
+  kidId,
+  from,
+  to,
+  includeMatches = false,
+}: KidCalendarParams) {
+  return queryOptions({
     queryKey: ['kids', kidId, 'calendar', from, to, includeMatches ? 'with-matches' : 'no-matches'],
     queryFn: () =>
       api.get<KidCalendarResponse>(
         `/api/kids/${kidId}/calendar?from=${from}&to=${to}${includeMatches ? '&include_matches=true' : ''}`,
       ),
-    enabled: Number.isFinite(kidId) && !!from && !!to,
+  });
+}
+
+export function useKidCalendar(params: KidCalendarParams) {
+  return useQuery({
+    ...kidCalendarQueryOptions(params),
+    enabled: Number.isFinite(params.kidId) && !!params.from && !!params.to,
   });
 }
 
@@ -168,6 +187,8 @@ export function useAlerts(filters: OutboxFilterState, pageSize = 25) {
     queryKey: ['alerts', 'list', filters, pageSize],
     queryFn: () =>
       api.get<AlertListResponse>(`/api/alerts?${_serializeOutboxFilters(filters, pageSize)}`),
+    // Filter and page changes are new keys; keep the current page meanwhile.
+    placeholderData: keepPreviousData,
   });
 }
 

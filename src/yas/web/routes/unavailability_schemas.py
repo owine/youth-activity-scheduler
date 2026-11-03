@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, time
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from yas.web.routes._types import UtcDatetime
 
 _ALLOWED_SOURCES = {"manual", "custom"}
 
@@ -51,4 +53,4 @@ class UnavailabilityOut(BaseModel):
     date_end: date | None
     source_enrollment_id: int | None
     active: bool
-    created_at: datetime
+    created_at: UtcDatetime

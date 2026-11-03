@@ -7,6 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from yas.db.models._types import EnrollmentStatus
+from yas.web.routes._types import UtcDatetime
 from yas.web.routes.matches_schemas import OfferingSummary
 
 
@@ -32,7 +33,7 @@ class EnrollmentOut(BaseModel):
     kid_id: int
     offering_id: int
     status: EnrollmentStatus
-    enrolled_at: datetime | None
+    enrolled_at: UtcDatetime | None
     notes: str | None
-    created_at: datetime
+    created_at: UtcDatetime
     offering: OfferingSummary

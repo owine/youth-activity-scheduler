@@ -110,4 +110,14 @@ describe('SchoolYearRangesField', () => {
     // Button should reappear after cancel
     expect(screen.getByRole('button', { name: /\+ Add school year range/ })).toBeInTheDocument();
   });
+
+  it('shows range chips on the stored calendar days', () => {
+    render(
+      <SchoolYearRangesField
+        value={[{ start: '2025-09-01', end: '2026-06-15' }]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Sep 1, 2025 → Jun 15, 2026')).toBeInTheDocument();
+  });
 });

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.db.models import Offering
 from yas.db.session import session_scope
+from yas.web.routes._types import UtcDatetime
 
 router = APIRouter(prefix="/api/offerings", tags=["offerings"])
 
@@ -30,7 +31,7 @@ class OfferingMuteOut(BaseModel):
     id: int
     name: str
     site_id: int
-    muted_until: datetime | None
+    muted_until: UtcDatetime | None
 
 
 @router.patch("/{offering_id}", response_model=OfferingMuteOut)

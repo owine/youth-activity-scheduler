@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
 import {
   useCloseAlert,
@@ -620,6 +620,10 @@ describe('useUpdateKid', () => {
   });
 });
 
+// The watchlist page renders useKid(kidId).data.watchlist, so the watchlist
+// mutations must patch and invalidate the kid detail cache ['kids', kidId].
+const kidWatchlist = (qc: QueryClient) => qc.getQueryData<KidDetail>(['kids', 1])?.watchlist;
+
 describe('useCreateWatchlistEntry', () => {
   it('succeeds and returns the new entry from the server', async () => {
     const qc = new QueryClient();
@@ -631,92 +635,93 @@ describe('useCreateWatchlistEntry', () => {
     });
     expect(result.current.isSuccess).toBe(true);
   });
+
+  it('invalidates the kid detail the watchlist page reads', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid());
+    const { result } = renderHook(() => useCreateWatchlistEntry(), {
+      wrapper: makeWrapper(qc),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, pattern: 'soccer' });
+    });
+    expect(qc.getQueryState(['kids', 1])?.isInvalidated).toBe(true);
+  });
 });
 
 describe('useUpdateWatchlistEntry', () => {
-  it('optimistically updates the entry in-place in the list cache', async () => {
+  it('optimistically updates the entry in-place in the kid cache', async () => {
     const qc = new QueryClient();
     const entry = seedWatchlistEntry({ id: 10, pattern: 't-ball' });
-    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid({ watchlist: [entry] }));
 
     const { result } = renderHook(() => useUpdateWatchlistEntry(), {
       wrapper: makeWrapper(qc),
     });
     result.current.mutate({ kidId: 1, entryId: 10, patch: { pattern: 'soccer' } });
-    await waitFor(() => {
-      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
-      return list?.[0]?.pattern === 'soccer';
-    });
+    await waitFor(() => expect(kidWatchlist(qc)?.[0]?.pattern).toBe('soccer'));
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(qc.getQueryState(['kids', 1])?.isInvalidated).toBe(true);
   });
 
-  it('rolls back the list cache on server error', async () => {
+  it('rolls back the kid cache on server error', async () => {
     server.use(
-      http.patch('/api/watchlist/:id', () =>
-        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
-      ),
+      http.patch('/api/watchlist/:id', async () => {
+        await delay(50); // long enough to observe the optimistic state
+        return HttpResponse.json({ detail: 'boom' }, { status: 500 });
+      }),
     );
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const entry = seedWatchlistEntry({ id: 10, pattern: 't-ball' });
-    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid({ watchlist: [entry] }));
 
     const { result } = renderHook(() => useUpdateWatchlistEntry(), {
       wrapper: makeWrapper(qc),
     });
     result.current.mutate({ kidId: 1, entryId: 10, patch: { pattern: 'soccer' } });
-    // Optimistic update fires; wait for it
-    await waitFor(() => {
-      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
-      return list?.[0]?.pattern === 'soccer';
-    });
+    await waitFor(() => expect(kidWatchlist(qc)?.[0]?.pattern).toBe('soccer'));
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'])?.[0]?.pattern).toBe(
-      't-ball',
-    );
+    expect(kidWatchlist(qc)?.[0]?.pattern).toBe('t-ball');
   });
 });
 
 describe('useDeleteWatchlistEntry', () => {
-  it('optimistically removes the entry from the list cache', async () => {
+  it('optimistically removes the entry from the kid cache', async () => {
     const qc = new QueryClient();
     const entry = seedWatchlistEntry({ id: 10 });
-    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid({ watchlist: [entry] }));
 
     const { result } = renderHook(() => useDeleteWatchlistEntry(), {
       wrapper: makeWrapper(qc),
     });
     result.current.mutate({ kidId: 1, entryId: 10 });
-    await waitFor(() => {
-      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
-      return list?.length === 0;
-    });
+    await waitFor(() => expect(kidWatchlist(qc)).toHaveLength(0));
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(qc.getQueryState(['kids', 1])?.isInvalidated).toBe(true);
   });
 
-  it('rolls back the list cache on server error', async () => {
+  it('rolls back the kid cache on server error', async () => {
     server.use(
-      http.delete('/api/watchlist/:id', () =>
-        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
-      ),
+      http.delete('/api/watchlist/:id', async () => {
+        await delay(50); // long enough to observe the optimistic state
+        return HttpResponse.json({ detail: 'boom' }, { status: 500 });
+      }),
     );
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const entry = seedWatchlistEntry({ id: 10 });
-    qc.setQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'], [entry]);
+    qc.setQueryData<KidDetail>(['kids', 1], seedKid({ watchlist: [entry] }));
 
     const { result } = renderHook(() => useDeleteWatchlistEntry(), {
       wrapper: makeWrapper(qc),
     });
     result.current.mutate({ kidId: 1, entryId: 10 });
-    await waitFor(() => {
-      const list = qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist']);
-      return list?.length === 0;
-    });
+    await waitFor(() => expect(kidWatchlist(qc)).toHaveLength(0));
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(qc.getQueryData<WatchlistEntry[]>(['kids', 1, 'watchlist'])).toHaveLength(1);
+    expect(kidWatchlist(qc)).toHaveLength(1);
   });
 });
 
@@ -1136,5 +1141,60 @@ describe('useResendAlert', () => {
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const { result } = renderHook(() => useResendAlert(), { wrapper: makeWrapper(qc) });
     await expect(result.current.mutateAsync({ alertId: 7 })).rejects.toThrow();
+  });
+});
+
+// Enrolling / cancelling changes the enrollments list and, because the backend
+// rematches, the kid's matches. Closing / reopening changes the Outbox list.
+describe('cross-view invalidation', () => {
+  const invalidatedKeys = (spy: { mock: { calls: unknown[][] } }) =>
+    spy.mock.calls.map((c) => (c[0] as { queryKey: unknown }).queryKey);
+
+  it('useEnrollOffering invalidates enrollments and matches', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useEnrollOffering(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, offeringId: 7 });
+    });
+    expect(invalidatedKeys(spy)).toEqual(
+      expect.arrayContaining([['kids', 1, 'calendar'], ['kids', 1, 'enrollments'], ['matches']]),
+    );
+  });
+
+  it('useCancelEnrollment invalidates enrollments and matches', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useCancelEnrollment(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ kidId: 1, enrollmentId: 42 });
+    });
+    expect(invalidatedKeys(spy)).toEqual(
+      expect.arrayContaining([['kids', 1, 'calendar'], ['kids', 1, 'enrollments'], ['matches']]),
+    );
+  });
+
+  it('useCloseAlert invalidates the Outbox alerts list', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useCloseAlert(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ alertId: 1, reason: 'acknowledged' });
+    });
+    expect(invalidatedKeys(spy)).toEqual(
+      expect.arrayContaining([['inbox', 'summary'], ['alerts']]),
+    );
+  });
+
+  it('useReopenAlert invalidates the Outbox alerts list', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries');
+    const { result } = renderHook(() => useReopenAlert(), { wrapper: makeWrapper(qc) });
+    await act(async () => {
+      await result.current.mutateAsync({ alertId: 1 });
+    });
+    expect(invalidatedKeys(spy)).toEqual(
+      expect.arrayContaining([['inbox', 'summary'], ['alerts']]),
+    );
   });
 });

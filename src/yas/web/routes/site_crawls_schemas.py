@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
+
+from yas.web.routes._types import UtcDatetime
 
 
 class CrawlRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     site_id: int
-    started_at: datetime
-    finished_at: datetime | None
+    started_at: UtcDatetime
+    finished_at: UtcDatetime | None
     status: str
     pages_fetched: int
     changes_detected: int

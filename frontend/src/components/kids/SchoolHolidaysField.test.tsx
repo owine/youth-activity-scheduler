@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { format } from 'date-fns';
 import { SchoolHolidaysField } from './SchoolHolidaysField';
 
 describe('SchoolHolidaysField', () => {
@@ -70,5 +71,26 @@ describe('SchoolHolidaysField', () => {
       // onChange should have been called with a date array
       expect(onChange).toHaveBeenCalled();
     }
+  });
+
+  // Date-only strings must be read as local calendar days. new Date('YYYY-MM-DD')
+  // is UTC midnight, which is the previous evening anywhere west of UTC (run the
+  // suite with TZ=America/New_York to reproduce).
+  it('shows the stored calendar day on the chip, not the day before', () => {
+    render(<SchoolHolidaysField value={['2025-12-25']} onChange={vi.fn()} />);
+    expect(screen.getByText('Dec 25, 2025')).toBeInTheDocument();
+  });
+
+  it('keeps existing holidays on their own day when another is picked', async () => {
+    const onChange = vi.fn();
+    const month = format(new Date(), 'yyyy-MM');
+    render(<SchoolHolidaysField value={[`${month}-15`]} onChange={onChange} />);
+    // DayPicker opens on the current month; day buttons are labelled with the date.
+    const day20 = screen
+      .getAllByRole('button')
+      .find((b) => b.textContent?.trim() === '20' && !b.closest('[data-outside]'));
+    expect(day20).toBeDefined();
+    await userEvent.click(day20!);
+    expect(onChange).toHaveBeenCalledWith([`${month}-15`, `${month}-20`]);
   });
 });

@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
+from yas.web.routes._types import UtcDatetime
+
 
 class PageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -23,8 +25,8 @@ class PageOut(BaseModel):
     url: str
     kind: str
     content_hash: str | None = None
-    last_fetched: datetime | None = None
-    next_check_at: datetime | None = None
+    last_fetched: UtcDatetime | None = None
+    next_check_at: UtcDatetime | None = None
 
 
 class SiteCreate(BaseModel):
@@ -55,5 +57,5 @@ class SiteOut(BaseModel):
     needs_browser: bool
     active: bool
     default_cadence_s: int
-    muted_until: datetime | None
+    muted_until: UtcDatetime | None
     pages: list[PageOut] = []

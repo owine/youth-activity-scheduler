@@ -55,8 +55,11 @@ export function FilterBar({ value, onChange, kids, programTypeOptions }: Props) 
 
         {/* 2. Min score slider */}
         <div className="flex items-center gap-3">
-          <label className="text-sm font-medium">Min score:</label>
+          <label htmlFor="offerings-min-score" className="text-sm font-medium">
+            Min score:
+          </label>
           <input
+            id="offerings-min-score"
             type="range"
             min="0"
             max="1"
