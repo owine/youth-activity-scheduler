@@ -12,7 +12,7 @@ with ``watchlist_hits`` and update this check accordingly."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
@@ -50,16 +50,22 @@ async def daily_digest_loop(
     engine: AsyncEngine,
     settings: Settings,
     llm: LLMClient | None,
+    *,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> None:
     """Every 60 s check whether it is time to send the daily digest.
 
     At most one run per calendar day; skips days with no actionable content
-    when ``settings.alert_digest_empty_skip`` is True.
+    when ``settings.alert_digest_empty_skip`` is True. ``sleep`` is injectable
+    so tests can drive exactly one tick without patching ``asyncio.sleep``
+    process-wide.
     """
     target = _parse_hhmm(settings.alert_digest_time_utc)
     last_run: date | None = None
     guard = LoopGuard("digest")
     log.info("digest.start", time_utc=settings.alert_digest_time_utc)
+    # Resolved per call, not at definition, so a patched asyncio.sleep applies.
+    sleep = sleep or asyncio.sleep
     try:
         while True:
             now = datetime.now(UTC)
@@ -103,7 +109,7 @@ async def daily_digest_loop(
 
                 log.info("digest.ran", kids=len(kids), for_date=today.isoformat())
 
-            await asyncio.sleep(60)
+            await sleep(60)
     except asyncio.CancelledError:
         log.info("digest.stop")
         raise

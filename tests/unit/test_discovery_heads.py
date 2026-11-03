@@ -100,7 +100,7 @@ async def test_missing_title_defaults_to_empty_string():
 @respx.mock
 async def test_scrape_heads_concurrently_respects_semaphore():
     """Fire 30 overlapping fetches through a semaphore of 3; assert peak
-    concurrency never exceeds 3."""
+    concurrency reaches exactly 3 (never more, and not serialized)."""
     peak = {"count": 0, "max": 0}
 
     async def slow_handler(request):
@@ -123,4 +123,4 @@ async def test_scrape_heads_concurrently_respects_semaphore():
         )
     assert len(results) == 30
     assert all(r is not None for r in results)
-    assert peak["max"] <= 3
+    assert peak["max"] == 3

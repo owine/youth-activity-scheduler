@@ -3,7 +3,6 @@ from datetime import date, time, timedelta
 import pytest
 from sqlalchemy import select
 
-from yas.db.base import Base
 from yas.db.models import (
     Enrollment,
     HouseholdSettings,
@@ -22,14 +21,15 @@ from yas.db.models._types import (
     UnavailabilitySource,
     WatchlistPriority,
 )
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.matching.matcher import rematch_kid, rematch_offering
 
-# Dates are anchored to today rather than hardcoded so these tests never become
-# time-bombs: the matcher's hard gates compare offering end_date and kid age
-# against date.today(), so a fixed calendar date would silently flip a passing
-# test to failing once wall-clock time crossed it.
-TODAY = date.today()
+# A fixed "today", passed to every rematch call as ``today=``. The matcher's
+# hard gates compare offering end_date and kid age against it, so the fixtures
+# below are built relative to it. Passing it explicitly (rather than letting the
+# matcher call date.today()) keeps the tests from becoming time-bombs and from
+# flipping when a run straddles midnight.
+TODAY = date(2026, 5, 13)
 # An offering that is currently active: started a month ago, ends two months out.
 ACTIVE_START = TODAY - timedelta(days=30)
 ACTIVE_END = TODAY + timedelta(days=60)
@@ -48,16 +48,12 @@ def _dob_for_age(years: int) -> date:
     return _years_before(TODAY, years)
 
 
-async def _setup(tmp_path):
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/m.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def _seed(engine):
     async with session_scope(engine) as s:
         s.add(HouseholdSettings(id=1, default_max_distance_mi=20.0))
         s.add(Site(id=1, name="X", base_url="https://x"))
         await s.flush()
         s.add(Page(id=1, site_id=1, url="https://x/p"))
-    return engine
 
 
 async def _kid(session, **kwargs):
@@ -93,13 +89,13 @@ async def _offering(session, **kwargs):
 
 
 @pytest.mark.asyncio
-async def test_rematch_kid_writes_matching_row(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_rematch_kid_writes_matching_row(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await _kid(s)
         await _offering(s)
     async with session_scope(engine) as s:
-        result = await rematch_kid(s, kid_id=1)
+        result = await rematch_kid(s, kid_id=1, today=TODAY)
     assert len(result.new) == 1
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
@@ -108,27 +104,26 @@ async def test_rematch_kid_writes_matching_row(tmp_path):
         assert 0.0 <= rows[0].score <= 1.0
         assert "gates" in rows[0].reasons
         assert "score_breakdown" in rows[0].reasons
-    await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_age_gate_uses_start_date(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_age_gate_uses_start_date(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         # kid is 4 today but turns 5 (in ~15 days) before the offering starts (in 30)
         young_dob = _years_before(TODAY + timedelta(days=15), 5)
         await _kid(s, dob=young_dob, interests=["soccer"])
         await _offering(s, age_min=5, start_date=TODAY + timedelta(days=30))
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=1)
+        await rematch_kid(s, kid_id=1, today=TODAY)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
         assert len(rows) == 1  # matched despite today's age = 4
 
 
 @pytest.mark.asyncio
-async def test_summer_offering_passes_school_year_gate(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_summer_offering_passes_school_year_gate(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["soccer"])
         # school block starts after the summer offering ends (no date overlap)
@@ -152,15 +147,15 @@ async def test_summer_offering_passes_school_year_gate(tmp_path):
             time_end=time(12, 0),
         )
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=1)
+        await rematch_kid(s, kid_id=1, today=TODAY)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
         assert len(rows) == 1
 
 
 @pytest.mark.asyncio
-async def test_watchlist_bypasses_all_hard_gates(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_watchlist_bypasses_all_hard_gates(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["swim"], max_distance_mi=1.0)  # not soccer; tiny distance
         # location with unavailable coords so distance stays unknown = fail-open on distance
@@ -176,7 +171,7 @@ async def test_watchlist_bypasses_all_hard_gates(tmp_path):
         )
         await _offering(s)  # program_type soccer, age 6-8 (kid is 6 on 2026-05-01)
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=1)
+        await rematch_kid(s, kid_id=1, today=TODAY)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
         assert len(rows) == 1
@@ -184,8 +179,8 @@ async def test_watchlist_bypasses_all_hard_gates(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_enrollment_block_prevents_sibling_match(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_enrollment_block_prevents_sibling_match(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         kid_a = await _kid(s, interests=["soccer"])
         kid_b = await _kid(s, name="Kid B", dob=_dob_for_age(7), interests=["soccer"])
@@ -214,8 +209,8 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
             )
         )
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=kid_a.id)
-        await rematch_kid(s, kid_id=kid_b.id)
+        await rematch_kid(s, kid_id=kid_a.id, today=TODAY)
+        await rematch_kid(s, kid_id=kid_b.id, today=TODAY)
     async with session_scope(engine) as s:
         # Kid A matches the enrolled offering (obviously) but not the conflicting sibling
         rows_a = (await s.execute(select(Match).where(Match.kid_id == kid_a.id))).scalars().all()
@@ -226,33 +221,33 @@ async def test_enrollment_block_prevents_sibling_match(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_failed_gate_removes_existing_match(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_failed_gate_removes_existing_match(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         kid = await _kid(s, interests=["soccer"])
         await _offering(s)
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=1)
+        await rematch_kid(s, kid_id=1, today=TODAY)
     async with session_scope(engine) as s:
         # change the kid to a different age so the match should drop
         kid = (await s.execute(select(Kid))).scalar_one()
         kid.dob = _dob_for_age(16)  # too old for the age 6-8 offering
     async with session_scope(engine) as s:
-        await rematch_kid(s, kid_id=1)
+        await rematch_kid(s, kid_id=1, today=TODAY)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
         assert rows == []
 
 
 @pytest.mark.asyncio
-async def test_rematch_offering_touches_all_kids(tmp_path):
-    engine = await _setup(tmp_path)
+async def test_rematch_offering_touches_all_kids(engine):
+    await _seed(engine)
     async with session_scope(engine) as s:
         await _kid(s)
         await _kid(s, name="Sib", interests=["soccer"])
         await _offering(s)
     async with session_scope(engine) as s:
-        await rematch_offering(s, offering_id=1)
+        await rematch_offering(s, offering_id=1, today=TODAY)
     async with session_scope(engine) as s:
         rows = (await s.execute(select(Match))).scalars().all()
         assert len(rows) == 2

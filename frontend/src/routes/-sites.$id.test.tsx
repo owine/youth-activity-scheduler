@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -21,6 +21,7 @@ const siteFixture = {
 
 describe('SiteDetailPage', () => {
   afterEach(() => {
+    vi.useRealTimers();
     server.resetHandlers();
   });
 
@@ -38,6 +39,9 @@ describe('SiteDetailPage', () => {
   };
 
   it('"Crawl now" button fires useCrawlNow mutation', async () => {
+    // shouldAdvanceTime keeps the clock moving for MSW and React Query; the
+    // explicit advance below is what fires the label's 2000ms timer.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let crawlNowCalled = false;
 
     server.use(
@@ -67,8 +71,9 @@ describe('SiteDetailPage', () => {
     // Verify "Queued ✓" label appears briefly
     expect(await screen.findByText(/Queued ✓/i, {}, { timeout: 3000 })).toBeInTheDocument();
 
-    // Wait a bit for the label to disappear due to the 2000ms timeout
-    await new Promise((resolve) => setTimeout(resolve, 2100));
+    // The label clears on a 2000ms timer. Advance the fake clock past it
+    // rather than racing a real sleep against the real timer.
+    await act(() => vi.advanceTimersByTimeAsync(2000));
 
     expect(screen.queryByText(/Queued ✓/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /crawl now/i })).toBeInTheDocument();

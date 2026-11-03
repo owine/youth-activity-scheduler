@@ -1,15 +1,9 @@
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
 import { Footer } from './Footer';
-
-const server = setupServer();
-
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
 
 function renderFooter() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

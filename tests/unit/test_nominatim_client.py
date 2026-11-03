@@ -43,7 +43,7 @@ async def test_transport_error_retries_once_then_raises_unavailable():
     route = respx.get(NominatimClient.BASE_URL).mock(
         side_effect=[httpx.ConnectError("boom"), httpx.ConnectError("boom")],
     )
-    client = NominatimClient(min_interval_s=0.0)
+    client = NominatimClient(min_interval_s=0.0, retry_delay_s=0.0)
     try:
         with pytest.raises(GeocoderUnavailable):
             await client.geocode("Chicago")

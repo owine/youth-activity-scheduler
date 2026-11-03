@@ -59,18 +59,18 @@ vi.mock('@tanstack/react-router', async () => {
   };
 });
 
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
+import { server } from '@/test/server';
 import { CalendarPage } from './calendar';
 
 const sam = { id: 1, name: 'Sam', dob: '2019-05-01', interests: [], active: true };
 const lila = { id: 2, name: 'Lila', dob: '2017-08-12', interests: [], active: true };
 
-const server = setupServer(
+const calendarHandlers = [
   http.get('/api/kids', () => HttpResponse.json([sam, lila])),
   http.get('/api/kids/1/calendar', () =>
     HttpResponse.json({
@@ -108,11 +108,11 @@ const server = setupServer(
       ],
     }),
   ),
-);
+];
 
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+// The shared server (src/test/setup.ts) errors on unhandled requests and is
+// reset after each test, so the overrides are re-applied per test.
+beforeEach(() => server.use(...calendarHandlers));
 
 function renderPage(
   searchParams: Record<string, string> = {},

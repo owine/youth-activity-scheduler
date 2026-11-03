@@ -6,12 +6,12 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from yas.db.base import Base
 from yas.db.models import Alert, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, CrawlStatus, PageKind
 from yas.db.models.crawl_run import CrawlRun
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.email import EmailRenderError
 from yas.email.builders import (
     build_crawl_failed,
@@ -44,17 +44,9 @@ from yas.email.payloads import (
 NOW = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
 
 
-async def _engine(tmp_path: Any):
-    eng = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/b.db")
-    async with eng.begin() as c:
-        await c.run_sync(Base.metadata.create_all)
-    return eng
-
-
 @pytest.mark.asyncio
-async def test_build_new_match_single(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_new_match_single(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         site = Site(name="Park", base_url="https://p.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -102,10 +94,9 @@ async def test_build_new_match_single(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_new_match_coalesced(tmp_path: Any) -> None:
+async def test_build_new_match_coalesced(engine: AsyncEngine) -> None:
     """Two member alerts -> both offerings in payload.matches, ordered by score desc."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Park", base_url="https://p.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -175,14 +166,13 @@ async def test_build_new_match_coalesced(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_new_match_leaves_out_offerings_that_are_gone(tmp_path: Any) -> None:
+async def test_build_new_match_leaves_out_offerings_that_are_gone(engine: AsyncEngine) -> None:
     """A coalesced group whose member offering was withdrawn (its match deleted)
     still renders for the offerings that remain. Failing the render would skip
     every member, losing the alert for the current offering too."""
     from yas.db.models._types import OfferingStatus
 
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Park", base_url="https://p.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -227,14 +217,13 @@ async def test_build_new_match_leaves_out_offerings_that_are_gone(tmp_path: Any)
 
 
 @pytest.mark.asyncio
-async def test_rendered_url_follows_the_offerings_the_email_shows(tmp_path: Any) -> None:
+async def test_rendered_url_follows_the_offerings_the_email_shows(engine: AsyncEngine) -> None:
     """When the lead alert's offering is the one left out, the push tap-through
     must not open the withdrawn program."""
     from yas.db.models._types import OfferingStatus
     from yas.email import render_email
 
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Park", base_url="https://p.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -284,10 +273,9 @@ async def test_rendered_url_follows_the_offerings_the_email_shows(tmp_path: Any)
 
 
 @pytest.mark.asyncio
-async def test_build_new_match_missing_offering(tmp_path: Any) -> None:
+async def test_build_new_match_missing_offering(engine: AsyncEngine) -> None:
     """payload_json points at a non-existent offering -> EmailRenderError."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         kid = Kid(name="Ada", dob=date(2019, 5, 1), created_at=NOW)
         s.add(kid)
         await s.flush()
@@ -307,10 +295,9 @@ async def test_build_new_match_missing_offering(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_new_match_no_kid(tmp_path: Any) -> None:
+async def test_build_new_match_no_kid(engine: AsyncEngine) -> None:
     """Lead alert without kid_id -> EmailRenderError."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.new_match.value,
             kid_id=None,
@@ -378,9 +365,8 @@ async def _seed_reg_opens_now_minimal(
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_now_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_now_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a, _off, _kid = await _seed_reg_opens_now_minimal(s)
         payload = await build_reg_opens_now(s, a, [a])
 
@@ -394,9 +380,8 @@ async def test_build_reg_opens_now_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_now_no_kid_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_now_no_kid_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.reg_opens_now.value,
             kid_id=None,
@@ -413,9 +398,8 @@ async def test_build_reg_opens_now_no_kid_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_now_missing_offering_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_now_missing_offering_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW)
         s.add(kid)
         await s.flush()
@@ -435,18 +419,16 @@ async def test_build_reg_opens_now_missing_offering_raises(tmp_path: Any) -> Non
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_now_no_url_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_now_no_url_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a, _, _ = await _seed_reg_opens_now_minimal(s, registration_url=None)
         with pytest.raises(EmailRenderError):
             await build_reg_opens_now(s, a, [a])
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_now_no_match_omits_score(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_now_no_match_omits_score(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a, _, _ = await _seed_reg_opens_now_minimal(s, with_match=False)
         payload = await build_reg_opens_now(s, a, [a])
 
@@ -459,11 +441,10 @@ async def test_build_reg_opens_now_no_match_omits_score(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_1h_happy_path(tmp_path: Any) -> None:
+async def test_build_reg_opens_1h_happy_path(engine: AsyncEngine) -> None:
     """Explicit ``now`` is preserved on the payload for determinism."""
-    eng = await _engine(tmp_path)
     fixed_now = NOW - timedelta(hours=1)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a, _off, _kid = await _seed_reg_opens_now_minimal(s)
         payload = await build_reg_opens_1h(s, a, [a], now=fixed_now)
 
@@ -476,9 +457,8 @@ async def test_build_reg_opens_1h_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_1h_no_kid_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_1h_no_kid_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.reg_opens_1h.value,
             kid_id=None,
@@ -495,9 +475,8 @@ async def test_build_reg_opens_1h_no_kid_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_1h_missing_offering_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_1h_missing_offering_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW)
         s.add(kid)
         await s.flush()
@@ -517,9 +496,8 @@ async def test_build_reg_opens_1h_missing_offering_raises(tmp_path: Any) -> None
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_1h_no_url_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_1h_no_url_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a, _, _ = await _seed_reg_opens_now_minimal(s, registration_url=None)
         with pytest.raises(EmailRenderError):
             await build_reg_opens_1h(s, a, [a])
@@ -531,11 +509,10 @@ async def test_build_reg_opens_1h_no_url_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_24h_happy_path(tmp_path: Any) -> None:
+async def test_build_reg_opens_24h_happy_path(engine: AsyncEngine) -> None:
     """Explicit ``now`` is preserved on the payload for determinism."""
-    eng = await _engine(tmp_path)
     fixed_now = NOW - timedelta(hours=24)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a, _off, _kid = await _seed_reg_opens_now_minimal(s)
         payload = await build_reg_opens_24h(s, a, [a], now=fixed_now)
 
@@ -548,9 +525,8 @@ async def test_build_reg_opens_24h_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_reg_opens_24h_missing_offering_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_reg_opens_24h_missing_offering_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid = Kid(name="Bo", dob=date(2019, 5, 1), created_at=NOW)
         s.add(kid)
         await s.flush()
@@ -609,9 +585,8 @@ async def _seed_watchlist_kid_and_offering(
 
 
 @pytest.mark.asyncio
-async def test_build_watchlist_hit_single_with_label(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_watchlist_hit_single_with_label(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid, off = await _seed_watchlist_kid_and_offering(s)
         a = Alert(
             type=AlertType.watchlist_hit.value,
@@ -636,9 +611,8 @@ async def test_build_watchlist_hit_single_with_label(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_watchlist_hit_single_no_label(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_watchlist_hit_single_no_label(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid, off = await _seed_watchlist_kid_and_offering(s)
         a = Alert(
             type=AlertType.watchlist_hit.value,
@@ -669,11 +643,10 @@ async def test_build_watchlist_hit_single_no_label(tmp_path: Any) -> None:
     ],
 )
 async def test_build_watchlist_hit_coalesced(
-    tmp_path: Any, second_pattern: str, label: str | None
+    engine: AsyncEngine, second_pattern: str, label: str | None
 ) -> None:
     """Two offerings -> ordered by score desc; the label shows only when shared."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         kid, off1 = await _seed_watchlist_kid_and_offering(
             s,
             name="Robotics Camp",
@@ -736,9 +709,8 @@ async def test_build_watchlist_hit_coalesced(
 
 
 @pytest.mark.asyncio
-async def test_build_schedule_posted_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_schedule_posted_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         site = Site(name="Lakeshore Rec", base_url="https://l.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -794,9 +766,8 @@ async def test_build_schedule_posted_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_schedule_posted_no_site_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_schedule_posted_no_site_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.schedule_posted.value,
             kid_id=None,
@@ -814,10 +785,9 @@ async def test_build_schedule_posted_no_site_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_schedule_posted_no_offerings_raises(tmp_path: Any) -> None:
+async def test_build_schedule_posted_no_offerings_raises(engine: AsyncEngine) -> None:
     """No offering_ids in payload AND fallback window yields nothing -> raise."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Empty Rec", base_url="https://e.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -843,9 +813,8 @@ async def test_build_schedule_posted_no_offerings_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_crawl_failed_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_crawl_failed_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         site = Site(name="Northshore Athletics", base_url="https://n.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -887,9 +856,8 @@ async def test_build_crawl_failed_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_crawl_failed_no_site_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_crawl_failed_no_site_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.crawl_failed.value,
             kid_id=None,
@@ -907,10 +875,9 @@ async def test_build_crawl_failed_no_site_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_crawl_failed_truncates_long_error(tmp_path: Any) -> None:
+async def test_build_crawl_failed_truncates_long_error(engine: AsyncEngine) -> None:
     """Errors longer than 200 chars are truncated with an ellipsis marker."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Talky Site", base_url="https://t.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -942,9 +909,8 @@ async def test_build_crawl_failed_truncates_long_error(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_site_stagnant_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_site_stagnant_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         site = Site(name="Hilldale Center", base_url="https://h.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -977,10 +943,9 @@ async def test_build_site_stagnant_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_site_stagnant_missing_days_raises(tmp_path: Any) -> None:
+async def test_build_site_stagnant_missing_days_raises(engine: AsyncEngine) -> None:
     """No days_since_change/days_silent key -> EmailRenderError."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site = Site(name="Hilldale Center", base_url="https://h.example.com", active=True)
         s.add(site)
         await s.flush()
@@ -1006,9 +971,8 @@ async def test_build_site_stagnant_missing_days_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_no_matches_for_kid_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_no_matches_for_kid_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid = Kid(name="Fia", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=14))
         s.add(kid)
         await s.flush()
@@ -1032,9 +996,8 @@ async def test_build_no_matches_for_kid_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_no_matches_for_kid_no_kid_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_no_matches_for_kid_no_kid_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.no_matches_for_kid.value,
             kid_id=None,
@@ -1056,9 +1019,8 @@ async def test_build_no_matches_for_kid_no_kid_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_push_cap_with_kid_happy_path(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_push_cap_with_kid_happy_path(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         kid = Kid(name="Gabe", dob=date(2019, 5, 1), created_at=NOW - timedelta(days=30))
         s.add(kid)
         await s.flush()
@@ -1083,10 +1045,9 @@ async def test_build_push_cap_with_kid_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_push_cap_without_kid_happy_path(tmp_path: Any) -> None:
+async def test_build_push_cap_without_kid_happy_path(engine: AsyncEngine) -> None:
     """System-wide push_cap with kid_id=None -> kid_name is None."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.push_cap.value,
             kid_id=None,
@@ -1107,9 +1068,8 @@ async def test_build_push_cap_without_kid_happy_path(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_push_cap_missing_count_raises(tmp_path: Any) -> None:
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+async def test_build_push_cap_missing_count_raises(engine: AsyncEngine) -> None:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.push_cap.value,
             kid_id=None,
@@ -1126,10 +1086,9 @@ async def test_build_push_cap_missing_count_raises(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_test_send_default_channel(tmp_path: Any) -> None:
+async def test_build_test_send_default_channel(engine: AsyncEngine) -> None:
     """Empty payload_json -> channel defaults to 'email'; now is timezone-aware."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.digest.value,
             kid_id=None,
@@ -1149,10 +1108,9 @@ async def test_build_test_send_default_channel(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_build_test_send_explicit_channel(tmp_path: Any) -> None:
+async def test_build_test_send_explicit_channel(engine: AsyncEngine) -> None:
     """Explicit channel in payload_json flows through to the payload."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         a = Alert(
             type=AlertType.digest.value,
             kid_id=None,
@@ -1170,10 +1128,9 @@ async def test_build_test_send_explicit_channel(tmp_path: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gather_digest_populates_site_name_and_groups(tmp_path: Any) -> None:
+async def test_gather_digest_populates_site_name_and_groups(engine: AsyncEngine) -> None:
     """Regression: site_name is resolved (was always ''); new_match_groups nests by site->program."""
-    eng = await _engine(tmp_path)
-    async with session_scope(eng) as s:
+    async with session_scope(engine) as s:
         site_a = Site(name="Park District", base_url="https://a.example.com", active=True)
         site_b = Site(name="YMCA", base_url="https://b.example.com", active=True)
         s.add_all([site_a, site_b])

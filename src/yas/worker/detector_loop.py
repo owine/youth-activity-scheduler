@@ -7,6 +7,7 @@ anomaly."""
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -26,15 +27,20 @@ log = get_logger("yas.worker.detector")
 async def daily_detector_loop(
     engine: AsyncEngine,
     settings: Settings,
+    *,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> None:
     """Every 60 s check whether it is time to run the detector sweep.
 
-    At most one run per calendar day.
+    At most one run per calendar day. ``sleep`` is injectable so tests can
+    drive exactly one tick without patching ``asyncio.sleep`` process-wide.
     """
     target = _parse_hhmm(settings.alert_detector_time_utc)
     last_run: date | None = None
     guard = LoopGuard("detector")
     log.info("detector.start", time_utc=settings.alert_detector_time_utc)
+    # Resolved per call, not at definition, so a patched asyncio.sleep applies.
+    sleep = sleep or asyncio.sleep
     try:
         while True:
             now = datetime.now(UTC)
@@ -86,7 +92,7 @@ async def daily_detector_loop(
                         for_date=today.isoformat(),
                     )
 
-            await asyncio.sleep(60)
+            await sleep(60)
     except asyncio.CancelledError:
         log.info("detector.stop")
         raise

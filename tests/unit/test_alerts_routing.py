@@ -6,22 +6,13 @@ from yas.alerts.routing import (
     get_routing,
     seed_default_routing,
 )
-from yas.db.base import Base
 from yas.db.models import AlertRouting
 from yas.db.models._types import AlertType
-from yas.db.session import create_engine_for, session_scope
-
-
-async def _engine(tmp_path):
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/r.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    return engine
+from yas.db.session import session_scope
 
 
 @pytest.mark.asyncio
-async def test_seed_populates_all_alert_types(tmp_path):
-    engine = await _engine(tmp_path)
+async def test_seed_populates_all_alert_types(engine):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
     async with session_scope(engine) as s:
@@ -31,8 +22,7 @@ async def test_seed_populates_all_alert_types(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_seed_idempotent(tmp_path):
-    engine = await _engine(tmp_path)
+async def test_seed_idempotent(engine):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
     async with session_scope(engine) as s:
@@ -43,8 +33,7 @@ async def test_seed_idempotent(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_routing_returns_channels_and_enabled(tmp_path):
-    engine = await _engine(tmp_path)
+async def test_get_routing_returns_channels_and_enabled(engine):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
     async with session_scope(engine) as s:
@@ -54,8 +43,7 @@ async def test_get_routing_returns_channels_and_enabled(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_routing_respects_disabled_flag(tmp_path):
-    engine = await _engine(tmp_path)
+async def test_get_routing_respects_disabled_flag(engine):
     async with session_scope(engine) as s:
         await seed_default_routing(s)
         row = (
@@ -86,8 +74,7 @@ def test_default_routing_reg_opens_now_has_push_and_email():
 
 
 @pytest.mark.asyncio
-async def test_get_routing_falls_back_when_row_missing(tmp_path):
-    engine = await _engine(tmp_path)
+async def test_get_routing_falls_back_when_row_missing(engine):
     # do NOT seed
     async with session_scope(engine) as s:
         channels, enabled = await get_routing(s, AlertType.watchlist_hit)

@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import {
   createRouter,
@@ -9,9 +8,10 @@ import {
   createMemoryHistory,
   RouterProvider,
 } from '@tanstack/react-router';
+import { server } from '@/test/server';
 import { AppShell } from './AppShell';
 
-const server = setupServer(
+const topBarHandlers = [
   http.get('/api/kids', () =>
     HttpResponse.json([{ id: 1, name: 'Sam', dob: '2019-05-01', interests: [], active: true }]),
   ),
@@ -40,11 +40,11 @@ const server = setupServer(
       site_activity: { refreshed_count: 0, posted_new_count: 0, stagnant_count: 0 },
     }),
   ),
-);
+];
 
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
+// The shared server (src/test/setup.ts) errors on unhandled requests and is
+// reset after each test, so the overrides are re-applied per test.
+beforeEach(() => server.use(...topBarHandlers));
 
 describe('TopBar', () => {
   it('renders kid switcher with active kids and alert badge with count', async () => {
