@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -21,7 +22,7 @@ from yas.web.routes.alerts_schemas import (
     AlertListResponse,
     AlertOut,
 )
-from yas.web.routes.inbox_alert_summary import summarize_alert
+from yas.web.routes.inbox_alert_summary import AlertNames, load_alert_names, summarize_alert
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -31,18 +32,19 @@ def _engine(req: Request) -> AsyncEngine:
     return engine
 
 
-async def _to_out(s: AsyncSession, alert: Alert) -> AlertOut:
-    """Convert an Alert row to AlertOut, populating summary_text."""
-    kid_name = None
-    if alert.kid_id is not None:
-        kid_name = (
-            await s.execute(select(Kid.name).where(Kid.id == alert.kid_id))
-        ).scalar_one_or_none()
+def _alert_out(alert: Alert, kid_name: str | None, names: AlertNames) -> AlertOut:
     try:
         at: AlertType | str = AlertType(alert.type)
     except ValueError:
         at = alert.type
-    summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
+    offering_name, site_name = names
+    summary = summarize_alert(
+        at,
+        kid_name=kid_name,
+        payload=alert.payload_json or {},
+        offering_name=offering_name,
+        site_name=site_name,
+    )
     return AlertOut(
         id=alert.id,
         type=alert.type,
@@ -59,6 +61,22 @@ async def _to_out(s: AsyncSession, alert: Alert) -> AlertOut:
         close_reason=alert.close_reason,
         summary_text=summary,
     )
+
+
+async def _to_outs(s: AsyncSession, rows: Sequence[tuple[Alert, str | None]]) -> list[AlertOut]:
+    """AlertOut for each (alert, kid_name) row, with names loaded in one batch."""
+    names = await load_alert_names(s, [a for a, _ in rows])
+    return [_alert_out(a, kid_name, names[a.id]) for a, kid_name in rows]
+
+
+async def _to_out(s: AsyncSession, alert: Alert) -> AlertOut:
+    """Convert one Alert row to AlertOut, looking up its kid's name."""
+    kid_name = None
+    if alert.kid_id is not None:
+        kid_name = (
+            await s.execute(select(Kid.name).where(Kid.id == alert.kid_id))
+        ).scalar_one_or_none()
+    return (await _to_outs(s, [(alert, kid_name)]))[0]
 
 
 @router.get("", response_model=AlertListResponse)
@@ -121,35 +139,7 @@ async def list_alerts(
         q = q.order_by(Alert.id.desc()).limit(limit).offset(offset)
         rows = (await s.execute(q)).all()
 
-        items: list[AlertOut] = []
-        for alert, kid_name in rows:
-            try:
-                at: AlertType | str = AlertType(alert.type)
-            except ValueError:
-                at = alert.type
-            summary = summarize_alert(
-                at,
-                kid_name=kid_name,
-                payload=alert.payload_json or {},
-            )
-            items.append(
-                AlertOut(
-                    id=alert.id,
-                    type=alert.type,
-                    kid_id=alert.kid_id,
-                    offering_id=alert.offering_id,
-                    site_id=alert.site_id,
-                    channels=list(alert.channels or []),
-                    scheduled_for=alert.scheduled_for,
-                    sent_at=alert.sent_at,
-                    skipped=alert.skipped,
-                    dedup_key=alert.dedup_key,
-                    payload_json=alert.payload_json or {},
-                    closed_at=alert.closed_at,
-                    close_reason=alert.close_reason,
-                    summary_text=summary,
-                )
-            )
+        items = await _to_outs(s, [(alert, kid_name) for alert, kid_name in rows])
         return AlertListResponse(items=items, total=total or 0, limit=limit, offset=offset)
 
 
@@ -166,27 +156,7 @@ async def get_alert(request: Request, alert_id: int) -> AlertOut:
         if row is None:
             raise HTTPException(status_code=404, detail=f"alert {alert_id} not found")
         alert, kid_name = row
-        try:
-            at: AlertType | str = AlertType(alert.type)
-        except ValueError:
-            at = alert.type
-        summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
-        return AlertOut(
-            id=alert.id,
-            type=alert.type,
-            kid_id=alert.kid_id,
-            offering_id=alert.offering_id,
-            site_id=alert.site_id,
-            channels=list(alert.channels or []),
-            scheduled_for=alert.scheduled_for,
-            sent_at=alert.sent_at,
-            skipped=alert.skipped,
-            dedup_key=alert.dedup_key,
-            payload_json=alert.payload_json or {},
-            closed_at=alert.closed_at,
-            close_reason=alert.close_reason,
-            summary_text=summary,
-        )
+        return (await _to_outs(s, [(alert, kid_name)]))[0]
 
 
 @router.post("/{alert_id}/resend", response_model=AlertOut, status_code=status.HTTP_202_ACCEPTED)
@@ -205,15 +175,23 @@ async def resend_alert(request: Request, alert_id: int) -> AlertOut:
             kid_id=original.kid_id,
             offering_id=original.offering_id,
             site_id=original.site_id,
-            channels=list(original.channels),
+            # A fresh send: delivery appends the channels it reaches, and the
+            # original's "_"-prefixed bookkeeping (_attempts, _skipped_reason,
+            # _failed) would make a resent give-up fail on its first hiccup.
+            channels=[],
             scheduled_for=now,
             sent_at=None,
             skipped=False,
             dedup_key=new_dedup_key,
-            payload_json=copy.deepcopy(original.payload_json),
+            payload_json={
+                k: copy.deepcopy(v)
+                for k, v in (original.payload_json or {}).items()
+                if not k.startswith("_")
+            },
         )
         s.add(cloned)
         await s.flush()
+        await s.refresh(cloned)
 
         return await _to_out(s, cloned)
 
@@ -242,7 +220,14 @@ async def bulk_close_alerts(request: Request, body: AlertBulkCloseIn) -> AlertBu
         await s.flush()
         for alert in rows:
             await s.refresh(alert)
-        closed_outs = [await _to_out(s, a) for a in rows]
+        kid_ids = {a.kid_id for a in rows if a.kid_id is not None}
+        kid_names: dict[int, str] = {}
+        if kid_ids:
+            kid_rows = await s.execute(select(Kid.id, Kid.name).where(Kid.id.in_(kid_ids)))
+            kid_names = {kid_id: name for kid_id, name in kid_rows.all()}
+        closed_outs = await _to_outs(
+            s, [(a, kid_names.get(a.kid_id) if a.kid_id else None) for a in rows]
+        )
         closed_outs.sort(key=lambda a: a.id)
         return AlertBulkCloseOut(closed=closed_outs, not_found=sorted(not_found))
 

@@ -51,11 +51,9 @@ export function PushoverChannelSection() {
             .map((s) => s.trim())
             .filter(Boolean) ?? [];
         const config: PushoverConfig = {
-          // Only send *_value when the user actually typed something —
-          // empty string keeps existing DB value cleared and falls back
-          // to env. Sending undefined (omitted) leaves any prior DB
-          // value alone since the patch endpoint replaces the whole
-          // config blob; we're explicit to avoid that footgun.
+          // Only send *_value when the user actually typed something. The
+          // PATCH endpoint keeps the stored secret for any *_value key that
+          // is omitted, so a blank field means "keep the saved value".
           ...(value.user_key_value ? { user_key_value: value.user_key_value } : {}),
           ...(value.app_token_value ? { app_token_value: value.app_token_value } : {}),
           ...(devices.length > 0 ? { devices } : {}),

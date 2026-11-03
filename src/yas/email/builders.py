@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
+from yas.alerts.outcomes import failure_detail
 from yas.db.models._types import AlertType, CrawlStatus, OfferingStatus
 from yas.db.models.alert import Alert
 from yas.db.models.crawl_run import CrawlRun
@@ -257,13 +258,13 @@ async def gather_digest_payload(
         .order_by(Alert.scheduled_for)
     )
     failure_rows = (await session.execute(failures_stmt)).scalars().all()
+    # Skipped rows include deliberate skips (digest-only, routing disabled, rate
+    # cap). Only the ones delivery marked as failures belong under "delivery
+    # issues"; failure_detail reads exactly what send_alert_group writes.
     delivery_failures: list[dict[str, Any]] = [
-        {
-            "alert_type": row.type,
-            "detail": row.payload_json.get("_last_error", "unknown error"),
-            "scheduled_for": row.scheduled_for,
-        }
+        {"alert_type": row.type, "detail": detail, "scheduled_for": row.scheduled_for}
         for row in failure_rows
+        if (detail := failure_detail(row.payload_json or {})) is not None
     ]
 
     # ------------------------------------------------------------------
@@ -286,7 +287,8 @@ async def gather_digest_payload(
         {
             "site_id": row.site_id,
             "offering_id": row.offering_id,
-            "notes": row.payload_json.get("notes", ""),
+            # enqueue_schedule_posted writes the page summary as "summary".
+            "notes": (row.payload_json or {}).get("summary") or "",
         }
         for row in post_rows
     ]

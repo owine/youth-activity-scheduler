@@ -170,13 +170,19 @@ export function useKidEnrollments(kidId: number) {
   });
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 function _serializeOutboxFilters(f: OutboxFilterState, pageSize: number): string {
   const params = new URLSearchParams();
   if (f.kidId != null) params.set('kid_id', String(f.kidId));
   if (f.type) params.set('type', f.type);
   if (f.status) params.set('status', f.status);
   if (f.since) params.set('since', f.since);
-  if (f.until) params.set('until', f.until);
+  // GET /api/alerts treats `until` as inclusive (scheduled_for <= until) and
+  // parses a bare date as midnight, which would drop the chosen day. Send the
+  // day's last instant. Like `since`, it's a UTC day: naive bounds mean UTC.
+  if (f.until)
+    params.set('until', DATE_ONLY.test(f.until) ? `${f.until}T23:59:59.999999` : f.until);
   params.set('limit', String(pageSize));
   params.set('offset', String(f.page * pageSize));
   return params.toString();

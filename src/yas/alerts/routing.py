@@ -2,16 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from yas.alerts.channels.base import Notifier, NotifierCapability
 from yas.db.models import AlertRouting
 from yas.db.models._types import AlertType
+from yas.logging import get_logger
+
+log = get_logger("yas.alerts.routing")
 
 # The channel names a notifier can be built under (alerts/notifier_builder.py).
-# Routing names anything else, such as DEFAULT_ROUTING's "push", can never be
-# delivered (#641).
 KNOWN_CHANNELS: frozenset[str] = frozenset({"email", "ntfy", "pushover"})
+
+# Routing alias for "whichever push channel is configured" (spec §3.10). It names
+# no notifier itself; resolve_channels() maps it onto one at send time, so a
+# household can add ntfy or Pushover without editing every routing row.
+PUSH_ALIAS = "push"
+
+# Every name a routing row may hold.
+ROUTABLE_CHANNELS: frozenset[str] = KNOWN_CHANNELS | {PUSH_ALIAS}
 
 DEFAULT_ROUTING: dict[str, list[str]] = {
     AlertType.watchlist_hit.value: ["push", "email"],
@@ -28,6 +40,42 @@ DEFAULT_ROUTING: dict[str, list[str]] = {
         "push"
     ],  # consolidated push that replaces over-cap pushes (spec §3.7)
 }
+
+
+def resolve_channels(
+    channels: list[str],
+    notifiers: Mapping[str, Notifier],
+    alert_type: AlertType,
+) -> list[str]:
+    """Map a routing row's channel names onto notifier names, in routing order.
+
+    ``"push"`` becomes the first configured push-capable notifier. For
+    ``reg_opens_now`` it prefers one that can push with emergency priority
+    (Pushover), falling back to plain push with a log line. When no push
+    notifier exists, ``"push"`` is kept as-is, so the caller sees a routed
+    channel with no notifier and can hold the alert until one is configured.
+
+    Each notifier appears once: ``["push", "ntfy"]`` with only ntfy configured
+    sends one ntfy message, not two.
+    """
+    resolved: list[str] = []
+    for name in channels:
+        target = _resolve_push(notifiers, alert_type) if name == PUSH_ALIAS else name
+        if target not in resolved:
+            resolved.append(target)
+    return resolved
+
+
+def _resolve_push(notifiers: Mapping[str, Notifier], alert_type: AlertType) -> str:
+    push = [n for n, x in notifiers.items() if NotifierCapability.push in x.capabilities]
+    if not push:
+        return PUSH_ALIAS
+    if alert_type == AlertType.reg_opens_now:
+        for name in push:
+            if NotifierCapability.push_emergency in notifiers[name].capabilities:
+                return name
+        log.info("routing.push_emergency_downgraded", alert_type=alert_type.value, channel=push[0])
+    return push[0]
 
 
 async def seed_default_routing(session: AsyncSession) -> None:

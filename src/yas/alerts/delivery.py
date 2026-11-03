@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.alerts.channels.base import Notifier, NotifierCapability, NotifierMessage
 from yas.alerts.enqueuer import enqueue_push_cap
+from yas.alerts.outcomes import FAILED_KEY, SKIPPED_REASON_KEY
 from yas.alerts.rate_limit import (
     AlertGroup,
     count_pushes_sent_in_last_hour,
     is_in_quiet_hours,
     should_rate_limit_push,
 )
-from yas.alerts.routing import KNOWN_CHANNELS, get_routing
+from yas.alerts.routing import ROUTABLE_CHANNELS, get_routing, resolve_channels
 from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings
 from yas.db.models._types import AlertType
@@ -35,6 +37,8 @@ _RETRY_DELAYS: dict[int, timedelta] = {
 _MAX_RETRIES = 3  # after attempt 3 → skipped
 # How long to hold a group whose routed channels are real but have no notifier.
 _NO_NOTIFIER_DEFER = timedelta(hours=1)
+# Set on an alert once a push-cap notice has counted it.
+_PUSH_CAP_COUNTED = "_push_cap_counted"
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +52,11 @@ _COUNTDOWN_TYPES: frozenset[str] = frozenset(
         AlertType.reg_opens_1h.value,
     }
 )
+# Types whose message is only true near a fixed moment. Deferring one for a
+# notifier that may never be configured would deliver it stale, and the grace
+# window can't catch that, because it measures from ``scheduled_for``, which
+# the deferral itself moves.
+_TIME_SENSITIVE_TYPES: frozenset[str] = _COUNTDOWN_TYPES | {AlertType.reg_opens_now.value}
 
 
 def _apply_grace_window(
@@ -110,19 +119,27 @@ async def send_alert_group(
     - Routing disabled         → members marked skipped with "routing disabled".
     - No routed channel has a notifier → deferred an hour if any is a known
                                   channel, else members marked skipped.
-    - Rate-capped              → members marked skipped with "rate capped",
-                                  enqueue_push_cap called.
-    - Quiet hours (push only)  → channel silently skipped (not retried).
+                                  Time-sensitive types (registration
+                                  countdowns, reg_opens_now) are skipped
+                                  rather than deferred.
+    - Rate-capped              → push channels skipped and enqueue_push_cap
+                                  called; other channels still send. Members
+                                  are marked skipped "rate capped" only when
+                                  push was all they routed to.
+    - Quiet hours              → push channels skipped (not retried); a group
+                                  that routed only to push is marked skipped
+                                  "quiet hours" (spec §3.8: not buffered).
     """
     lead = group.lead
     members: list[Alert] = group.members
 
     # 1. Routing lookup -------------------------------------------------------
-    channels, enabled = await get_routing(session, AlertType(group.alert_type))
+    routed, enabled = await get_routing(session, AlertType(group.alert_type))
     if not enabled:
         _mark_all_skipped(members, "routing disabled")
         log.info("delivery.routing_disabled", alert_type=group.alert_type)
         return
+    channels = resolve_channels(routed, notifiers, AlertType(group.alert_type))
 
     if not channels:
         # Digest-only types (site_stagnant, schedule_posted, no_matches_for_kid)
@@ -141,11 +158,13 @@ async def send_alert_group(
         # leave the rows unsent and unskipped, so the due query re-selected and
         # re-rendered them every tick. Routing setup, not a failure, so no
         # GlitchTip event either way.
-        if any(name in KNOWN_CHANNELS for name in channels):
-            # A real channel that isn't configured yet, or whose notifier failed
-            # to build this tick: hold the group and deliver once it exists.
-            # Skipping would lose it for good, since a skipped match alert
-            # counts as alerted.
+        if any(name in ROUTABLE_CHANNELS for name in channels) and (
+            group.alert_type not in _TIME_SENSITIVE_TYPES
+        ):
+            # A real channel (or the "push" alias) that isn't configured yet,
+            # or whose notifier failed to build this tick: hold the group and
+            # deliver once it exists. Skipping would lose it for good, since a
+            # skipped match alert counts as alerted.
             later = datetime.now(UTC) + _NO_NOTIFIER_DEFER
             for a in members:
                 a.scheduled_for = later
@@ -155,8 +174,19 @@ async def send_alert_group(
                 channels=list(channels),
             )
             return
-        # Only names no notifier can exist under (DEFAULT_ROUTING's "push").
-        _mark_all_skipped(members, f"no notifier for {', '.join(channels)}")
+        reason = f"no notifier for {', '.join(channels)}"
+        if group.alert_type in _TIME_SENSITIVE_TYPES and any(
+            name in ROUTABLE_CHANNELS for name in channels
+        ):
+            # A countdown with nowhere to go yet. Retire it rather than hold it:
+            # it would be stale by the time a channel appears. Setup, not a
+            # failure, so it stays out of the digest's delivery issues.
+            _mark_all_skipped(members, reason)
+            log.info("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
+            return
+        # Only names no notifier can exist under. The routing API rejects
+        # these, so this is a row written some other way.
+        _mark_all_skipped(members, reason, failed=True)
         log.warning("delivery.no_notifier", alert_type=group.alert_type, channels=list(channels))
         return
 
@@ -177,7 +207,7 @@ async def send_alert_group(
                 "delivery.digest_missing_prerender",
                 alert_id=lead.id,
             )
-            _mark_all_skipped(members, "digest missing pre-rendered subject/body")
+            _mark_all_skipped(members, "digest missing pre-rendered subject/body", failed=True)
             return
         msg = NotifierMessage(
             kid_id=group.kid_id,
@@ -198,7 +228,7 @@ async def send_alert_group(
                 alert_type=group.alert_type,
                 reason=str(exc),
             )
-            _mark_all_skipped(members, f"render failed: {exc}")
+            _mark_all_skipped(members, f"render failed: {exc}", failed=True)
             return
 
         msg = NotifierMessage(
@@ -224,7 +254,12 @@ async def send_alert_group(
     push_channels = [
         name for name, n in notifiers.items() if NotifierCapability.push in n.capabilities
     ]
-    push_cap_checked = False
+    # The push_cap notice is what the cap produces, so the cap can't hold it
+    # back: it is enqueued while the kid is over budget and would otherwise
+    # suppress itself on every attempt.
+    push_cap_checked = group.alert_type == AlertType.push_cap.value
+    push_capped = False
+    quiet_suppressed = False
 
     for channel_name in channels:
         notifier = notifiers.get(channel_name)
@@ -242,33 +277,43 @@ async def send_alert_group(
         if is_push and group.alert_type != AlertType.reg_opens_now.value:
             qstart = household.quiet_hours_start if household else None
             qend = household.quiet_hours_end if household else None
-            if is_in_quiet_hours(now, qstart, qend):
+            if qend is not None and is_in_quiet_hours(now, qstart, qend):
                 log.info(
                     "delivery.quiet_hours.suppressed",
                     channel=channel_name,
                     alert_type=group.alert_type,
                 )
+                quiet_suppressed = True
                 continue  # hard suppression — no retry advancement
 
         # Push rate cap check (run once for the whole group) ------------------
+        # The cap holds back push only. Email is uncapped (spec §3.7), so an
+        # alert routed to both still goes out by email.
         if is_push and group.kid_id is not None and not push_cap_checked:
             push_cap_checked = True
             count = await count_pushes_sent_in_last_hour(session, group.kid_id, push_channels)
             if should_rate_limit_push(count, settings.alert_max_pushes_per_hour):
-                await enqueue_push_cap(
-                    session,
-                    kid_id=group.kid_id,
-                    hour_bucket=now.strftime("%Y-%m-%dT%H"),
-                    suppressed_count=len(members),
-                )
-                _mark_all_skipped(members, "rate capped")
+                push_capped = True
+                # Count each alert once: a group whose email fails transiently
+                # comes back here on every retry while the kid is still capped.
+                uncounted = [a for a in members if not a.payload_json.get(_PUSH_CAP_COUNTED)]
+                if uncounted:
+                    await enqueue_push_cap(
+                        session,
+                        kid_id=group.kid_id,
+                        hour_bucket=now.strftime("%Y-%m-%dT%H"),
+                        suppressed_count=len(uncounted),
+                    )
+                    for a in uncounted:
+                        a.payload_json = {**a.payload_json, _PUSH_CAP_COUNTED: True}
                 log.info(
                     "delivery.rate_cap.triggered",
                     kid_id=group.kid_id,
                     count=count,
                     max=settings.alert_max_pushes_per_hour,
                 )
-                return  # rate cap terminates processing for the entire group
+        if is_push and push_capped:
+            continue
 
         # Send ----------------------------------------------------------------
         result = await notifier.send(msg)
@@ -331,7 +376,7 @@ async def send_alert_group(
             detail = f"transient failed after {_MAX_RETRIES} retries: " + "; ".join(
                 permanent_errors.values() or ["transient"]
             )
-            _mark_all_skipped(members, detail)
+            _mark_all_skipped(members, detail, failed=True)
             # This is the only path that discards an alert the user was meant to
             # receive, so it is the one that must be loud. Without it the last
             # trace is a warning-level transient_failure indistinguishable from
@@ -368,7 +413,12 @@ async def send_alert_group(
         errors_summary = "; ".join(f"{ch}: {msg}" for ch, msg in permanent_errors.items())
         for a in members:
             a.skipped = True
-            a.payload_json = {**a.payload_json, "_errors": permanent_errors}
+            a.payload_json = {
+                **a.payload_json,
+                "_errors": permanent_errors,
+                SKIPPED_REASON_KEY: errors_summary,
+                FAILED_KEY: True,
+            }
         log.error(
             "delivery.all_channels_failed",
             alert_type=group.alert_type,
@@ -381,6 +431,20 @@ async def send_alert_group(
             tags={"alert_type": group.alert_type},
             extras={"errors": permanent_errors},
         )
+        return
+
+    if push_capped:
+        # Push was all this group routed to, and the cap held it back. The
+        # push_cap notice enqueued above stands in for it.
+        _mark_all_skipped(members, "rate capped")
+        return
+
+    if quiet_suppressed:
+        # Push was all this group routed to, and it's quiet hours. Spec §3.8:
+        # push is skipped during quiet hours, not buffered. Retire the group;
+        # leaving it untouched re-selected and re-rendered it every tick until
+        # quiet hours ended, then sent it (a countdown, hours stale).
+        _mark_all_skipped(members, "quiet hours")
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +452,17 @@ async def send_alert_group(
 # ---------------------------------------------------------------------------
 
 
-def _mark_all_skipped(alerts: list[Alert], detail: str) -> None:
+def _mark_all_skipped(alerts: list[Alert], detail: str, *, failed: bool = False) -> None:
+    """Retire ``alerts`` with ``detail`` as the reason.
+
+    ``failed`` marks an alert someone was meant to receive and didn't: a render
+    error, exhausted retries, an unroutable channel. The digest lists those under
+    delivery issues. Deliberate skips (routing disabled, digest-only, rate cap,
+    past grace) leave it unset.
+    """
     for a in alerts:
         a.skipped = True
-        a.payload_json = {**a.payload_json, "_skipped_reason": detail}
+        extra: dict[str, Any] = {SKIPPED_REASON_KEY: detail}
+        if failed:
+            extra[FAILED_KEY] = True
+        a.payload_json = {**a.payload_json, **extra}

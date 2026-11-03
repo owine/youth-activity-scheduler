@@ -14,7 +14,7 @@ from yas.db.models import Alert, CrawlRun, Kid, Match, Offering
 from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.session import session_scope
 from yas.web.routes._types import UtcDatetimeIn
-from yas.web.routes.inbox_alert_summary import summarize_alert
+from yas.web.routes.inbox_alert_summary import load_alert_names, summarize_alert
 from yas.web.routes.inbox_schemas import (
     InboxAlertOut,
     InboxKidMatchCountOut,
@@ -37,6 +37,7 @@ async def inbox_summary(
     until: Annotated[UtcDatetimeIn, Query()],
     include_closed: Annotated[bool, Query()] = False,
 ) -> InboxSummaryOut:
+    # UtcDatetimeIn has already converted both bounds to UTC (a naive one is read as UTC).
     if since >= until:
         raise HTTPException(status_code=422, detail="since must be before until")
 
@@ -57,6 +58,7 @@ async def inbox_summary(
         if not include_closed:
             alerts_q = alerts_q.where(Alert.closed_at.is_(None))
         alert_rows = (await s.execute(alerts_q)).all()
+        names = await load_alert_names(s, [alert for alert, _ in alert_rows])
         inbox_alerts: list[InboxAlertOut] = []
         for alert, kid_name in alert_rows:
             try:
@@ -64,7 +66,14 @@ async def inbox_summary(
             except ValueError:
                 # Unknown type stored — defensive; summarize_alert handles str too.
                 at = alert.type
-            summary = summarize_alert(at, kid_name=kid_name, payload=alert.payload_json or {})
+            offering_name, site_name = names[alert.id]
+            summary = summarize_alert(
+                at,
+                kid_name=kid_name,
+                payload=alert.payload_json or {},
+                offering_name=offering_name,
+                site_name=site_name,
+            )
             inbox_alerts.append(
                 InboxAlertOut(
                     id=alert.id,

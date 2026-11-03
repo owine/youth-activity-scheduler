@@ -85,6 +85,14 @@ def test_coalesce_non_coalesceable_types_pass_through():
     assert len(groups) == 4
 
 
+def test_coalesce_keeps_push_cap_notices_apart():
+    """build_push_cap reports the lead's suppressed_count only, so two hours'
+    notices due together would report one hour's count and drop the other's."""
+    alerts = [_a(1, 1, AlertType.push_cap, 0), _a(2, 1, AlertType.push_cap, 0)]
+    groups = coalesce(alerts, window_s=600)
+    assert [len(g.members) for g in groups] == [1, 1]
+
+
 def test_coalesce_stable_ordering_by_scheduled_for():
     alerts = [
         _a(3, 1, AlertType.new_match, 120),

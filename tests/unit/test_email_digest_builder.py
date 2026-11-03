@@ -295,16 +295,18 @@ async def test_gather_payload_delivery_failures_since_last_digest(tmp_path: Any)
                 AlertType.new_match.value,
                 skipped=True,
                 scheduled_for=last_digest_sent + timedelta(hours=1),
-                payload_json={"_last_error": "channel timeout"},
+                # As delivery's _mark_all_skipped(..., failed=True) writes it.
+                payload_json={"_skipped_reason": "channel timeout", "_failed": True},
             )
         )
-        # Skipped alert BEFORE the last digest → should NOT be included
+        # Failed alert BEFORE the last digest → should NOT be included
         s.add(
             _alert(
                 kid.id,
                 AlertType.new_match.value,
                 skipped=True,
                 scheduled_for=last_digest_sent - timedelta(hours=1),
+                payload_json={"_skipped_reason": "older failure", "_failed": True},
             )
         )
 
