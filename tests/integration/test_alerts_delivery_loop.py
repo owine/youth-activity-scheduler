@@ -1,6 +1,6 @@
 """Integration tests for the alert delivery orchestrator.
 
-All tests use a real SQLite database (in-memory via tmp_path) and the
+All tests use a real SQLite database (a file under tmp_path) and the
 FakeNotifier from tests/fakes/notifier.py.  HouseholdSettings and routing
 rows are seeded explicitly so every test is fully self-contained.
 """
@@ -8,12 +8,13 @@ rows are seeded explicitly so every test is fully self-contained.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
 import structlog.testing
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.fakes.notifier import FakeNotifier
 from yas.alerts.channels.base import NotifierCapability
@@ -21,10 +22,9 @@ from yas.alerts.delivery import _apply_grace_window, send_alert_group
 from yas.alerts.rate_limit import coalesce
 from yas.alerts.routing import seed_default_routing
 from yas.config import Settings
-from yas.db.base import Base
 from yas.db.models import Alert, AlertRouting, HouseholdSettings, Kid, Match, Offering, Page, Site
 from yas.db.models._types import AlertType, PageKind
-from yas.db.session import create_engine_for, session_scope
+from yas.db.session import session_scope
 from yas.worker.delivery_loop import alert_delivery_loop
 
 # ---------------------------------------------------------------------------
@@ -74,21 +74,18 @@ def _email_notifier(name: str = "email") -> FakeNotifier:
     )
 
 
-async def _make_engine(tmp_path):  # type: ignore[no-untyped-def]
-    engine = create_engine_for(f"sqlite+aiosqlite:///{tmp_path}/delivery.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    # Seed a kid so FK constraints on alerts.kid_id pass.
-    async with session_scope(engine) as s:
-        from datetime import date
+@pytest.fixture
+async def engine(engine: AsyncEngine) -> AsyncEngine:
+    """The shared, disposed-after-the-test engine, plus a kid so FK
+    constraints on alerts.kid_id pass.
 
-        s.add(
-            Kid(
-                id=1,
-                name="Alice",
-                dob=date(2015, 6, 1),
-            )
-        )
+    The disposal is the point: these tests used to build their own engine and
+    never dispose it, and the aiosqlite worker threads it left behind outlived
+    the test's event loop, surfacing later as intermittent "Event loop is
+    closed" thread warnings.
+    """
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Alice", dob=date(2015, 6, 1)))
     return engine
 
 
@@ -102,8 +99,6 @@ async def _seed_offering_with_match(
 ) -> int:
     """Seed Site + Page + Offering + Match so build_new_match/watchlist_hit/reg_opens_*
     have rows to join against. Returns the new offering id."""
-    from datetime import date
-
     site = Site(name="Park", base_url="https://p.example.com", active=True)
     session.add(site)
     await session.flush()
@@ -154,9 +149,8 @@ async def _seed_household(
 
 
 @pytest.mark.asyncio
-async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-untyped-def]
+async def test_reg_opens_now_bypasses_quiet_hours(engine):  # type: ignore[no-untyped-def]
     """reg_opens_now always fires on push channels even within quiet hours."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         await seed_default_routing(s)
         # Force push routing for reg_opens_now
@@ -194,9 +188,8 @@ async def test_reg_opens_now_bypasses_quiet_hours(tmp_path):  # type: ignore[no-
 
 
 @pytest.mark.asyncio
-async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_rate_cap_coalesces_excess_to_single_message(engine):  # type: ignore[no-untyped-def]
     """After max_pushes_per_hour alerts are sent, the next group triggers push_cap."""
-    engine = await _make_engine(tmp_path)
     settings = _settings(alert_max_pushes_per_hour=5)
 
     async with session_scope(engine) as s:
@@ -258,10 +251,9 @@ async def test_push_rate_cap_coalesces_excess_to_single_message(tmp_path):  # ty
 
 
 @pytest.mark.asyncio
-async def test_coalesce_merges_within_window_but_not_across_types(tmp_path):  # type: ignore[no-untyped-def]
+async def test_coalesce_merges_within_window_but_not_across_types(engine):  # type: ignore[no-untyped-def]
     """Same-type alerts for the same kid within coalesce window → one group.
     Different-type alerts → separate groups."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -352,9 +344,8 @@ async def _run_one_delivery_tick(
 
 
 @pytest.mark.asyncio
-async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ignore[no-untyped-def]
+async def test_delivery_loop_sends_to_configured_channels(engine):  # type: ignore[no-untyped-def]
     """Happy path: one alert, routed to email channel → sent."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -387,9 +378,8 @@ async def test_delivery_loop_sends_to_configured_channels(tmp_path):  # type: ig
 
 
 @pytest.mark.asyncio
-async def test_transient_failure_retries_with_backoff(tmp_path):  # type: ignore[no-untyped-def]
+async def test_transient_failure_retries_with_backoff(engine):  # type: ignore[no-untyped-def]
     """FakeNotifier queued with transient failure → scheduled_for advances by 60s."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -428,9 +418,8 @@ async def test_transient_failure_retries_with_backoff(tmp_path):  # type: ignore
 
 
 @pytest.mark.asyncio
-async def test_non_transient_failure_marks_skipped(tmp_path):  # type: ignore[no-untyped-def]
+async def test_non_transient_failure_marks_skipped(engine):  # type: ignore[no-untyped-def]
     """FakeNotifier queued with permanent failure → alert marked skipped."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -459,9 +448,8 @@ async def test_non_transient_failure_marks_skipped(tmp_path):  # type: ignore[no
 
 
 @pytest.mark.asyncio
-async def test_quiet_hours_suppresses_push_but_not_email(tmp_path):  # type: ignore[no-untyped-def]
+async def test_quiet_hours_suppresses_push_but_not_email(engine):  # type: ignore[no-untyped-def]
     """Push channel skipped in quiet hours; email channel still sends."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -507,9 +495,8 @@ async def test_quiet_hours_suppresses_push_but_not_email(tmp_path):  # type: ign
 
 
 @pytest.mark.asyncio
-async def test_routing_disabled_skips_alert(tmp_path):  # type: ignore[no-untyped-def]
+async def test_routing_disabled_skips_alert(engine):  # type: ignore[no-untyped-def]
     """alert_routing row with enabled=False → all group members marked skipped."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -543,13 +530,12 @@ async def test_routing_disabled_skips_alert(tmp_path):  # type: ignore[no-untype
 
 
 @pytest.mark.asyncio
-async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type: ignore[no-untyped-def]
+async def test_mixed_transient_and_permanent_failures_retries(engine):  # type: ignore[no-untyped-def]
     """Transient failure on one channel + permanent failure on another → group retried.
 
     Precedence: ok > transient > permanent.  A single transient failure beats
     all-permanent and schedules a retry with incremented _attempts.
     """
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -604,7 +590,7 @@ async def test_mixed_transient_and_permanent_failures_retries(tmp_path):  # type
 
 
 @pytest.mark.asyncio
-async def test_retry_exhaustion_logs_an_error(tmp_path):  # type: ignore[no-untyped-def]
+async def test_retry_exhaustion_logs_an_error(engine):  # type: ignore[no-untyped-def]
     """Giving up after _MAX_RETRIES must emit an error-level log.
 
     Regression: production dropped a digest after 4 transient ForwardEmail
@@ -612,7 +598,6 @@ async def test_retry_exhaustion_logs_an_error(tmp_path):  # type: ignore[no-unty
     identical to the retryable ones before it. A silently discarded alert is
     the one failure mode nothing downstream can detect.
     """
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -651,7 +636,7 @@ async def test_retry_exhaustion_logs_an_error(tmp_path):  # type: ignore[no-unty
 
 
 @pytest.mark.asyncio
-async def test_digest_only_alert_is_retired_not_left_pending(tmp_path):  # type: ignore[no-untyped-def]
+async def test_digest_only_alert_is_retired_not_left_pending(engine):  # type: ignore[no-untyped-def]
     """An alert type routed to no channels must be retired, not re-selected forever.
 
     Regression: site_stagnant routes to [] (digest-only), and send_alert_group
@@ -666,7 +651,6 @@ async def test_digest_only_alert_is_retired_not_left_pending(tmp_path):  # type:
     `build_digest` re-derives stagnant sites via `detect_stagnant_sites`
     rather than reading these rows.
     """
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -699,21 +683,38 @@ async def test_digest_only_alert_is_retired_not_left_pending(tmp_path):  # type:
 
 
 @pytest.mark.asyncio
-async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[no-untyped-def]
-    """Regression: closing an alert before scheduled_for cancels its delivery."""
-    engine = await _make_engine(tmp_path)
+async def test_closed_pending_alert_is_not_delivered(engine):  # type: ignore[no-untyped-def]
+    """Regression: closing an alert before scheduled_for cancels its delivery.
+
+    Both alerts point at a real offering and kid, so either one renders and
+    sends if the due-query selects it. The closed one must be left untouched
+    (neither sent nor skipped); the open one is the positive control that
+    shows this tick does deliver.
+    """
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
         await seed_default_routing(s)
-        a = _alert(
+        closed_off = await _seed_offering_with_match(s, name="Closed Camp")
+        open_off = await _seed_offering_with_match(s, name="Open Camp")
+        closed = _alert(
             alert_type=AlertType.new_match.value,
             scheduled_for=now - timedelta(seconds=1),
+            offering_id=closed_off,
+            payload={"kid_name": "Alice"},
         )
         # Close it before the worker tick.
-        a.closed_at = now
-        s.add(a)
+        closed.closed_at = now
+        open_ = _alert(
+            alert_type=AlertType.new_match.value,
+            scheduled_for=now - timedelta(seconds=1),
+            offering_id=open_off,
+            payload={"kid_name": "Alice"},
+        )
+        closed.dedup_key, open_.dedup_key = "closed", "open"
+        s.add_all([closed, open_])
         await s.flush()
+        closed_id, open_id = closed.id, open_.id
 
     email_notifier = _email_notifier("email")
     notifiers: dict[str, FakeNotifier] = {"email": email_notifier}
@@ -722,10 +723,12 @@ async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[
     await _run_one_delivery_tick(engine, settings, notifiers)
 
     async with session_scope(engine) as s:
-        alerts = (await s.execute(select(Alert))).scalars().all()
-    assert len(alerts) == 1
-    assert alerts[0].sent_at is None  # not delivered
-    assert email_notifier.call_count == 0  # notifier never called
+        rows = {a.id: a for a in (await s.execute(select(Alert))).scalars().all()}
+    assert rows[open_id].sent_at is not None, "positive control: the open alert must send"
+    assert rows[closed_id].sent_at is None, "a closed alert must not be delivered"
+    assert rows[closed_id].skipped is False, "a closed alert must not be touched at all"
+    assert email_notifier.call_count == 1
+    assert "Open Camp" in email_notifier.records[0].body_plain
 
 
 # ---------------------------------------------------------------------------
@@ -734,9 +737,8 @@ async def test_closed_pending_alert_is_not_delivered(tmp_path):  # type: ignore[
 
 
 @pytest.mark.asyncio
-async def test_immediate_alert_body_is_branded_html(tmp_path):  # type: ignore[no-untyped-def]
+async def test_immediate_alert_body_is_branded_html(engine):  # type: ignore[no-untyped-def]
     """new_match through the delivery loop produces real HTML, not <pre>."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -766,10 +768,9 @@ async def test_immediate_alert_body_is_branded_html(tmp_path):  # type: ignore[n
 
 
 @pytest.mark.asyncio
-async def test_immediate_alert_render_failure_marks_skipped(tmp_path):  # type: ignore[no-untyped-def]
+async def test_immediate_alert_render_failure_marks_skipped(engine):  # type: ignore[no-untyped-def]
     """When render_email fails (missing offering), members are marked skipped
     with reason 'render failed: ...', no notifier is called, no retry scheduled."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -810,10 +811,9 @@ def _by_fingerprint(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
 @pytest.mark.asyncio
 async def test_permanent_failure_on_every_channel_reports_channel_and_lost_alert(  # type: ignore[no-untyped-def]
-    tmp_path, sentry_events
+    engine, sentry_events
 ):
     """A broken channel config is one issue per channel; the dropped alert is its own."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -849,8 +849,7 @@ async def test_permanent_failure_on_every_channel_reports_channel_and_lost_alert
 
 
 @pytest.mark.asyncio
-async def test_retry_exhaustion_reports_the_lost_alert(tmp_path, sentry_events):  # type: ignore[no-untyped-def]
-    engine = await _make_engine(tmp_path)
+async def test_retry_exhaustion_reports_the_lost_alert(engine, sentry_events):  # type: ignore[no-untyped-def]
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -877,8 +876,7 @@ async def test_retry_exhaustion_reports_the_lost_alert(tmp_path, sentry_events):
 
 
 @pytest.mark.asyncio
-async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentry_events):  # type: ignore[no-untyped-def]
-    engine = await _make_engine(tmp_path)
+async def test_transient_failure_that_will_retry_does_not_report(engine, sentry_events):  # type: ignore[no-untyped-def]
     now = datetime.now(UTC)
 
     async with session_scope(engine) as s:
@@ -902,11 +900,10 @@ async def test_transient_failure_that_will_retry_does_not_report(tmp_path, sentr
 
 
 @pytest.mark.asyncio
-async def test_countdown_with_no_push_notifier_is_retired_not_deferred(tmp_path):  # type: ignore[no-untyped-def]
+async def test_countdown_with_no_push_notifier_is_retired_not_deferred(engine):  # type: ignore[no-untyped-def]
     """reg_opens_1h routes only to "push". Deferred hourly for a push channel that
     may never be configured, it outran its own grace window (which measures from
     the scheduled_for the deferral moves) and went out days stale once one was."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
     async with session_scope(engine) as s:
         await seed_default_routing(s)
@@ -928,10 +925,9 @@ async def test_countdown_with_no_push_notifier_is_retired_not_deferred(tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_push_only_watchlist_hit_with_no_push_notifier_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_only_watchlist_hit_with_no_push_notifier_is_deferred(engine):  # type: ignore[no-untyped-def]
     """Not time-sensitive, so it waits for a push channel; skipping would count
     the match as alerted and lose it for good."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
     row = await _send_one(
         engine,
@@ -944,10 +940,9 @@ async def test_push_only_watchlist_hit_with_no_push_notifier_is_deferred(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_unroutable_channel_name_is_retired_as_a_failure(tmp_path):  # type: ignore[no-untyped-def]
+async def test_unroutable_channel_name_is_retired_as_a_failure(engine):  # type: ignore[no-untyped-def]
     """A name no notifier can ever exist under can't be waited out. The routing
     API rejects such names; this covers a row written some other way."""
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         s.add(AlertRouting(type=AlertType.new_match.value, channels=["pagerduty"], enabled=True))
         a = _alert(alert_type=AlertType.new_match.value)
@@ -994,9 +989,8 @@ async def _send_one(
 
 
 @pytest.mark.asyncio
-async def test_push_alias_sends_to_the_configured_push_channel(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_alias_sends_to_the_configured_push_channel(engine):  # type: ignore[no-untyped-def]
     """watchlist_hit's default ["push", "email"] reaches ntfy and email (#641)."""
-    engine = await _make_engine(tmp_path)
     email, ntfy = _email_notifier(), _push_notifier("ntfy")
     row = await _send_one(
         engine,
@@ -1009,8 +1003,7 @@ async def test_push_alias_sends_to_the_configured_push_channel(tmp_path):  # typ
 
 
 @pytest.mark.asyncio
-async def test_push_alias_and_its_target_named_together_send_once(tmp_path):  # type: ignore[no-untyped-def]
-    engine = await _make_engine(tmp_path)
+async def test_push_alias_and_its_target_named_together_send_once(engine):  # type: ignore[no-untyped-def]
     ntfy = _push_notifier("ntfy")
     await _send_one(
         engine,
@@ -1022,9 +1015,8 @@ async def test_push_alias_and_its_target_named_together_send_once(tmp_path):  # 
 
 
 @pytest.mark.asyncio
-async def test_push_alias_prefers_emergency_push_for_reg_opens_now(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_alias_prefers_emergency_push_for_reg_opens_now(engine):  # type: ignore[no-untyped-def]
     """reg_opens_now goes to Pushover (priority 2) over ntfy when both exist."""
-    engine = await _make_engine(tmp_path)
     ntfy = _push_notifier("ntfy")
     pushover = FakeNotifier(
         name="pushover",
@@ -1059,10 +1051,9 @@ async def _seed_pushes_sent(engine, *, n: int, sent_at: list[datetime] | None = 
 
 
 @pytest.mark.asyncio
-async def test_push_cap_holds_back_push_but_still_sends_email(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_cap_holds_back_push_but_still_sends_email(engine):  # type: ignore[no-untyped-def]
     """Email is uncapped (spec §3.7). A capped push used to skip the whole
     group, email included (#641)."""
-    engine = await _make_engine(tmp_path)
     await _seed_pushes_sent(engine, n=5)
     email, ntfy = _email_notifier(), _push_notifier("ntfy")
     row = await _send_one(
@@ -1083,9 +1074,8 @@ async def test_push_cap_holds_back_push_but_still_sends_email(tmp_path):  # type
 
 
 @pytest.mark.asyncio
-async def test_coalesced_send_uses_one_push_of_the_budget(tmp_path):  # type: ignore[no-untyped-def]
+async def test_coalesced_send_uses_one_push_of_the_budget(engine):  # type: ignore[no-untyped-def]
     """Three alerts coalesced into one push are one send, not three (#641)."""
-    engine = await _make_engine(tmp_path)
     one_send = datetime.now(UTC) - timedelta(minutes=10)
     await _seed_pushes_sent(engine, n=3, sent_at=[one_send] * 3)
     ntfy = _push_notifier("ntfy")
@@ -1100,11 +1090,10 @@ async def test_coalesced_send_uses_one_push_of_the_budget(tmp_path):  # type: ig
 
 
 @pytest.mark.asyncio
-async def test_push_only_group_in_quiet_hours_is_skipped_not_buffered(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_only_group_in_quiet_hours_is_skipped_not_buffered(engine):  # type: ignore[no-untyped-def]
     """Spec §3.8: push is skipped during quiet hours, not buffered. With the
     alias now resolving, a push-only group used to be left untouched, so it was
     re-rendered every tick and then sent, hours stale, when quiet hours ended."""
-    engine = await _make_engine(tmp_path)
     ntfy = _push_notifier("ntfy")
     now = datetime.now(UTC)
     end = (now + timedelta(hours=2)).strftime("%H:%M")
@@ -1124,13 +1113,12 @@ async def test_push_only_group_in_quiet_hours_is_skipped_not_buffered(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_disabled_routing_does_not_resolve_the_push_alias(tmp_path, monkeypatch):  # type: ignore[no-untyped-def]
+async def test_disabled_routing_does_not_resolve_the_push_alias(engine, monkeypatch):  # type: ignore[no-untyped-def]
     """Resolving first logged an emergency downgrade for a type that sends nothing."""
     import yas.alerts.delivery as delivery
 
     calls: list[object] = []
     monkeypatch.setattr(delivery, "resolve_channels", lambda *a: calls.append(a) or [])
-    engine = await _make_engine(tmp_path)
     async with session_scope(engine) as s:
         s.add(AlertRouting(type=AlertType.reg_opens_now.value, channels=["push"], enabled=False))
         a = _alert(alert_type=AlertType.reg_opens_now.value)
@@ -1143,10 +1131,9 @@ async def test_disabled_routing_does_not_resolve_the_push_alias(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_capped_alert_is_counted_once_across_email_retries(tmp_path):  # type: ignore[no-untyped-def]
+async def test_capped_alert_is_counted_once_across_email_retries(engine):  # type: ignore[no-untyped-def]
     """Over the cap with email failing transiently: each retry re-checks the cap,
     and used to add the same alert to the push_cap notice again."""
-    engine = await _make_engine(tmp_path)
     await _seed_pushes_sent(engine, n=5)
     email, ntfy = _email_notifier(), _push_notifier("ntfy")
     email.queue_transient_failure()
@@ -1175,10 +1162,9 @@ async def test_capped_alert_is_counted_once_across_email_retries(tmp_path):  # t
 
 
 @pytest.mark.asyncio
-async def test_push_cap_notice_is_not_held_back_by_the_cap(tmp_path):  # type: ignore[no-untyped-def]
+async def test_push_cap_notice_is_not_held_back_by_the_cap(engine):  # type: ignore[no-untyped-def]
     """The notice is enqueued while the kid is over budget. Checked against the
     cap, it suppressed itself on every attempt and never went out."""
-    engine = await _make_engine(tmp_path)
     await _seed_pushes_sent(engine, n=5)
     ntfy = _push_notifier("ntfy")
     row = await _send_one(
@@ -1194,11 +1180,10 @@ async def test_push_cap_notice_is_not_held_back_by_the_cap(tmp_path):  # type: i
 
 
 @pytest.mark.asyncio
-async def test_group_whose_known_channel_is_unconfigured_is_deferred(tmp_path):  # type: ignore[no-untyped-def]
+async def test_group_whose_known_channel_is_unconfigured_is_deferred(engine):  # type: ignore[no-untyped-def]
     """new_match routes to email. With no email notifier (not configured yet, or
     it failed to build this tick) the group is held, not skipped: a skipped
     match alert counts as alerted, so skipping would lose it for good."""
-    engine = await _make_engine(tmp_path)
     now = datetime.now(UTC)
     async with session_scope(engine) as s:
         await seed_default_routing(s)

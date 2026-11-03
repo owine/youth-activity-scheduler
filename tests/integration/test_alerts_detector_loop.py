@@ -12,8 +12,10 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+import structlog.testing
 from sqlalchemy import select
 
+from tests.fakes.clock import StopLoop, scripted_clock
 from yas.config import Settings
 from yas.db.models import Alert, Kid, Offering, Site
 from yas.db.models._types import AlertType
@@ -151,6 +153,40 @@ async def test_detector_loop_only_fires_once_per_day(engine):  # type: ignore[no
         )
     # Dedup upsert merges duplicate unsent rows into one.
     assert len(alerts) == 1, "Duplicate detector runs must collapse to one Alert row"
+
+
+@pytest.mark.asyncio
+async def test_detector_loop_last_run_guard_skips_a_second_tick_the_same_day(  # type: ignore[no-untyped-def]
+    engine, monkeypatch
+):
+    """Two ticks on one day run once; a tick the next day runs again.
+
+    The once-per-day test above starts a fresh coroutine per tick, so
+    ``last_run`` is always None there and only the enqueuer's dedup is
+    exercised. This drives several ticks through one invocation.
+    """
+    import yas.worker.detector_loop as detector_mod
+
+    async with session_scope(engine) as s:
+        site, page, offering = _stagnant_site(site_id=1, days_stale=60)
+        s.add(site)
+        await s.flush()
+        s.add(page)
+        await s.flush()
+        s.add(offering)
+
+    day1 = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
+    day2 = day1 + timedelta(days=1)
+    sleep = scripted_clock(monkeypatch, detector_mod, [day1, day1 + timedelta(minutes=1), day2])
+
+    with structlog.testing.capture_logs() as logs, pytest.raises(StopLoop):
+        await asyncio.wait_for(
+            daily_detector_loop(engine, _settings(alert_stagnant_site_days=30), sleep=sleep),
+            timeout=10.0,
+        )
+
+    runs = [e["for_date"] for e in logs if e.get("event") == "detector.ran"]
+    assert runs == [day1.date().isoformat(), day2.date().isoformat()]
 
 
 # ---------------------------------------------------------------------------

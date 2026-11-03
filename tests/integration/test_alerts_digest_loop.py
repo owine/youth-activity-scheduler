@@ -15,6 +15,7 @@ import pytest
 import structlog.testing
 from sqlalchemy import select
 
+from tests.fakes.clock import StopLoop, scripted_clock
 from tests.fakes.llm import FakeLLMClient
 from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings, Kid
@@ -207,6 +208,42 @@ async def test_digest_loop_only_fires_once_per_day(engine):  # type: ignore[no-u
             .all()
         )
     assert len(alerts) == 1, "Duplicate digest runs must be collapsed to one row"
+
+
+@pytest.mark.asyncio
+async def test_digest_loop_last_run_guard_skips_a_second_tick_the_same_day(  # type: ignore[no-untyped-def]
+    engine, monkeypatch
+):
+    """Two ticks on one day run once; a tick the next day runs again.
+
+    The once-per-day test above starts a fresh coroutine per tick, so
+    ``last_run`` is always None there and only the already-enqueued check is
+    exercised. This drives several ticks through one invocation.
+    """
+    import yas.worker.digest_loop as digest_mod
+
+    async with session_scope(engine) as s:
+        s.add(_active_kid(kid_id=1, days_old=1))
+        s.add(HouseholdSettings(id=1))
+
+    day1 = datetime.now(UTC).replace(hour=12, minute=0, second=0, microsecond=0)
+    day2 = day1 + timedelta(days=1)
+    sleep = scripted_clock(monkeypatch, digest_mod, [day1, day1 + timedelta(minutes=1), day2])
+
+    with structlog.testing.capture_logs() as logs, pytest.raises(StopLoop):
+        await asyncio.wait_for(
+            daily_digest_loop(engine, _settings(), FakeLLMClient(), sleep=sleep), timeout=10.0
+        )
+
+    runs = [e["for_date"] for e in logs if e.get("event") == "digest.ran"]
+    assert runs == [day1.date().isoformat(), day2.date().isoformat()]
+    async with session_scope(engine) as s:
+        alerts = (
+            (await s.execute(select(Alert).where(Alert.type == AlertType.digest.value)))
+            .scalars()
+            .all()
+        )
+    assert len(alerts) == 2, "one digest per day"
 
 
 @pytest.mark.asyncio

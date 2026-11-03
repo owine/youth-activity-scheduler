@@ -141,7 +141,13 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
     settings = Settings(_env_file=None, crawl_scheduler_batch_size=5)  # type: ignore[call-arg]
     engine = await _init(tmp_path)
 
-    async with fixture_site(pages={"/p": PAGE}) as fx:
+    # Each site gets its own page with its own content. The extraction cache is
+    # keyed by content hash and the pages crawl concurrently, so with identical
+    # content one LLM call could serve every page, and which site made it would
+    # be a race.
+    names = ("Inactive", "Muted", "Active")
+    pages = {f"/{n.lower()}": f"<html><body><main><h1>{n}</h1></main></body></html>" for n in names}
+    async with fixture_site(pages=pages) as fx:
         due = datetime.now(UTC) - timedelta(seconds=1)
         async with session_scope(engine) as s:
             inactive = Site(
@@ -159,7 +165,7 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
             s.add_all([inactive, muted, active])
             await s.flush()
             for site in (inactive, muted, active):
-                s.add(Page(site_id=site.id, url=fx.url("/p"), next_check_at=due))
+                s.add(Page(site_id=site.id, url=fx.url(f"/{site.name.lower()}"), next_check_at=due))
 
         crawled: list[str] = []
         fetcher = DefaultFetcher()
@@ -172,7 +178,14 @@ async def test_scheduler_skips_inactive_and_muted_sites(tmp_path, monkeypatch):
     # Only the active, unmuted site is crawled. Muted sites DO still have pages
     # crawled in the alert-mute case of spec §3, but the scheduler is gated by
     # the site.muted_until row condition per spec §3.6.
-    assert crawled == ["Active"]
+    assert sorted(crawled) == ["Active"]
+    # Page state is the cache-independent record of what the tick fetched.
+    async with session_scope(engine) as s:
+        fetched = {
+            site.name: page.last_fetched is not None
+            for page, site in (await s.execute(select(Page, Site).join(Site))).all()
+        }
+    assert fetched == {"Inactive": False, "Muted": False, "Active": True}
     await engine.dispose()
 
 
