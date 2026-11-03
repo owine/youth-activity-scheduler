@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Any
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Time
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Time, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from yas.db.base import Base
@@ -27,6 +27,12 @@ class Offering(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     days_of_week: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # True when a family picks which of days_of_week to attend ("choose a day;
+    # classes meet one day per week", "once or twice a week") rather than
+    # attending all of them (#636). The enrollment records the pick.
+    attends_one_day: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     time_start: Mapped[time | None] = mapped_column(Time, nullable=True)
     time_end: Mapped[time | None] = mapped_column(Time, nullable=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)

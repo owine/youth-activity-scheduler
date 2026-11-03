@@ -169,35 +169,61 @@ def no_conflict_with_unavailability(
     if not active_blocks:
         return GateResult(True, "no_blocks", "no active unavailability blocks")
 
+    # A pick-one offering ("choose a day; classes meet one day per week") is
+    # attendable when ANY listed weekday is free all season. Otherwise the kid
+    # attends every listed day, so any conflict rules it out (#636).
+    one_day = bool(getattr(offering, "attends_one_day", False))
+    blocked: dict[str, str] = {}  # weekday -> first conflict on it
+    seen: set[str] = set()
+
     # Iterate each date in the offering's date range.
     cur = offering.start_date
     end = offering.end_date
     while cur <= end:
         weekday = _weekday_name(cur)
         if weekday in offering_days:
-            for block in active_blocks:
-                source = getattr(block.source, "value", block.source)
-                if source == "school" and cur in school_holidays:
-                    continue
-                if block.date_start is not None and cur < block.date_start:
-                    continue
-                if block.date_end is not None and cur > block.date_end:
-                    continue
-                block_days = {
-                    d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))
-                }
-                if block_days and weekday not in block_days:
-                    continue
-                if block.time_start is None or block.time_end is None:
-                    # Whole-day block on this date → conflict.
-                    return GateResult(
-                        False, "conflict", f"all-day block on {cur.isoformat()} ({source})"
-                    )
-                if _time_overlaps(
-                    offering.time_start, offering.time_end, block.time_start, block.time_end
-                ):
-                    return GateResult(
-                        False, "conflict", f"conflict on {cur.isoformat()} ({source})"
-                    )
+            seen.add(weekday)
+            if weekday not in blocked:
+                reason = _conflict_on(offering, active_blocks, school_holidays, cur, weekday)
+                if reason is not None:
+                    if not one_day:
+                        return GateResult(False, "conflict", reason)
+                    blocked[weekday] = reason
         cur += timedelta(days=1)
+
+    if one_day and blocked:
+        free = [d for d in _DAY_NAMES if d in seen and d not in blocked]
+        if not free:
+            first = next(blocked[d] for d in _DAY_NAMES if d in blocked)
+            return GateResult(False, "conflict", f"every listed day conflicts; {first}")
+        return GateResult(True, "one_day_free", f"free on {', '.join(free)}")
     return GateResult(True, "no_conflict", f"no overlap with {len(active_blocks)} active block(s)")
+
+
+def _conflict_on(
+    offering: Any,
+    active_blocks: list[Any],
+    school_holidays: set[date],
+    cur: date,
+    weekday: str,
+) -> str | None:
+    """Describe the first block that conflicts with the offering on ``cur``, if any."""
+    for block in active_blocks:
+        source = getattr(block.source, "value", block.source)
+        if source == "school" and cur in school_holidays:
+            continue
+        if block.date_start is not None and cur < block.date_start:
+            continue
+        if block.date_end is not None and cur > block.date_end:
+            continue
+        block_days = {
+            d.lower() for d in (getattr(d, "value", d) for d in (block.days_of_week or []))
+        }
+        if block_days and weekday not in block_days:
+            continue
+        if block.time_start is None or block.time_end is None:
+            # Whole-day block on this date → conflict.
+            return f"all-day block on {cur.isoformat()} ({source})"
+        if _time_overlaps(offering.time_start, offering.time_end, block.time_start, block.time_end):
+            return f"conflict on {cur.isoformat()} ({source})"
+    return None

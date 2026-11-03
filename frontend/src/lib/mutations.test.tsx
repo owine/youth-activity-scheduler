@@ -999,6 +999,7 @@ describe('useUpdateEnrollment', () => {
           status: 'interested',
           enrolled_at: null,
           notes: null,
+          days_of_week: null,
           created_at: '2026-05-01T00:00:00Z',
           offering: {
             id: 1,
@@ -1009,6 +1010,7 @@ describe('useUpdateEnrollment', () => {
             start_date: null,
             end_date: null,
             days_of_week: [],
+            attends_one_day: false,
             time_start: null,
             time_end: null,
             price_cents: null,
@@ -1052,6 +1054,7 @@ describe('useUpdateEnrollment', () => {
           status: 'interested',
           enrolled_at: null,
           notes: null,
+          days_of_week: null,
           created_at: '2026-05-01T00:00:00Z',
           offering: {
             id: 1,
@@ -1062,6 +1065,7 @@ describe('useUpdateEnrollment', () => {
             start_date: null,
             end_date: null,
             days_of_week: [],
+            attends_one_day: false,
             time_start: null,
             time_end: null,
             price_cents: null,

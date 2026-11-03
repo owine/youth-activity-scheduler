@@ -49,3 +49,20 @@ def test_upgrade_to_head_uses_fallback_ini(tmp_path, monkeypatch) -> None:
     finally:
         conn.close()
     assert rows == [("sites",)]
+
+
+def test_pick_one_day_columns_exist_after_upgrade(tmp_path) -> None:
+    """0009 adds offerings.attends_one_day (NOT NULL, default false) and the
+    nullable enrollments.days_of_week (#636)."""
+    db_path = tmp_path / "test.db"
+    upgrade_to_head(f"sqlite+aiosqlite:///{db_path}")
+    conn = sqlite3.connect(db_path)
+    try:
+        offerings = {r[1]: r for r in conn.execute("pragma table_info(offerings)")}
+        enrollments = {r[1]: r for r in conn.execute("pragma table_info(enrollments)")}
+    finally:
+        conn.close()
+    # pragma table_info rows: (cid, name, type, notnull, dflt_value, pk)
+    assert offerings["attends_one_day"][3] == 1
+    assert offerings["attends_one_day"][4] in ("0", "false", "FALSE")
+    assert enrollments["days_of_week"][3] == 0

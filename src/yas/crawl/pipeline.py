@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import sentry_sdk
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from yas.alerts.enqueuer import (
     enqueue_crawl_failed,
@@ -16,12 +16,13 @@ from yas.alerts.enqueuer import (
 from yas.crawl.extractor import extract
 from yas.crawl.fetcher import Fetcher, FetchError
 from yas.crawl.reconciler import reconcile
-from yas.db.models import CrawlRun, Match, Offering, Page, Site
-from yas.db.models._types import CrawlStatus
+from yas.db.models import CrawlRun, Enrollment, Match, Offering, Page, Site
+from yas.db.models._types import CrawlStatus, EnrollmentStatus
 from yas.db.session import session_scope
 from yas.llm.client import ExtractionError, ExtractionRefused, LLMClient
 from yas.logging import get_logger, traceback_tail
 from yas.observability import crawl_scope
+from yas.unavailability.enrollment_materializer import apply_enrollment_block
 
 log = get_logger("yas.crawl.pipeline")
 
@@ -217,6 +218,11 @@ async def _do_crawl(
         # readers don't filter on offering status and the sweep skips them.
         for oid in reconcile_result.new + reconcile_result.updated:
             await rematch_offering(s, oid)
+        # An update can move an enrolled slot, and the enrollment's
+        # unavailability block copies its schedule. Rebuild those blocks, then
+        # rematch the kids they belong to, since a block affects every other
+        # offering those kids could match.
+        await _refresh_enrollment_blocks(s, reconcile_result.updated)
 
         # --- Alert hooks ---
         # new_match and watchlist_hit alerts are enqueued by the rematch above
@@ -338,6 +344,25 @@ async def _apply_next_check(engine: AsyncEngine, page: Page, site: Site) -> None
         row = (await s.execute(select(Page).where(Page.id == page.id))).scalar_one()
         row.last_fetched = datetime.now(UTC)
         row.next_check_at = _schedule_next(site)
+
+
+async def _refresh_enrollment_blocks(session: AsyncSession, offering_ids: list[int]) -> None:
+    if not offering_ids:
+        return
+    from yas.matching.matcher import rematch_kid
+
+    rows = (
+        await session.execute(
+            select(Enrollment.id, Enrollment.kid_id).where(
+                Enrollment.offering_id.in_(offering_ids),
+                Enrollment.status == EnrollmentStatus.enrolled.value,
+            )
+        )
+    ).all()
+    for enrollment_id, _ in rows:
+        await apply_enrollment_block(session, enrollment_id)
+    for kid_id in sorted({kid_id for _, kid_id in rows}):
+        await rematch_kid(session, kid_id)
 
 
 def _schedule_next(site: Site) -> datetime:

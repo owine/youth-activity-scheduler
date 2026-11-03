@@ -16,6 +16,7 @@ const makeOffering = (over: Partial<OfferingSummary> = {}): OfferingSummary => (
   start_date: '2026-06-15',
   end_date: '2026-08-31',
   days_of_week: ['mon', 'wed', 'fri'],
+  attends_one_day: false,
   time_start: '17:00:00',
   time_end: '18:00:00',
   price_cents: 15000,
@@ -36,6 +37,7 @@ const makeEnrollment = (over: Partial<Enrollment> = {}): Enrollment => ({
   status: 'interested',
   enrolled_at: null,
   notes: null,
+  days_of_week: null,
   created_at: '2026-05-01T00:00:00Z',
   offering: makeOffering(),
   ...over,
@@ -128,6 +130,55 @@ describe('EnrollmentEditSheet', () => {
 
     // Verify onClose was called
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('pick-one-day offering: choosing a day PATCHes days_of_week (#636)', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/enrollments/:id', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...enrollment, days_of_week: capturedBody.days_of_week });
+      }),
+    );
+    const enrollment = makeEnrollment({
+      status: 'enrolled',
+      offering: makeOffering({ attends_one_day: true }),
+    });
+    const qc = new QueryClient();
+    qc.setQueryData(['kids', 1, 'enrollments'], [enrollment]);
+    renderWithQueryClient(
+      <EnrollmentEditSheet enrollment={enrollment} kidId={1} onClose={vi.fn()} />,
+      qc,
+    );
+
+    const days = screen.getByRole('group', { name: /Which day/i });
+    expect(days).toBeInTheDocument();
+    // Picking Fri then Mon keeps the offering's day order.
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Fri' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Mon' }));
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => {
+      expect(capturedBody).toMatchObject({ days_of_week: ['mon', 'fri'] });
+    });
+  });
+
+  it('every-day offering shows no day picker and sends no days_of_week', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/enrollments/:id', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(enrollment);
+      }),
+    );
+    const enrollment = makeEnrollment();
+    renderWithQueryClient(
+      <EnrollmentEditSheet enrollment={enrollment} kidId={1} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole('group', { name: /Which day/i })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+    await waitFor(() => expect(capturedBody).not.toBeNull());
+    expect(capturedBody).not.toHaveProperty('days_of_week');
   });
 
   it('Cancel button closes sheet without firing PATCH', async () => {

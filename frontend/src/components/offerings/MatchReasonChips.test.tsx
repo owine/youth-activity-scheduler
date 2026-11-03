@@ -12,6 +12,7 @@ const makeOffering = (over: Partial<OfferingSummary> = {}): OfferingSummary => (
   start_date: null,
   end_date: null,
   days_of_week: [],
+  attends_one_day: false,
   time_start: null,
   time_end: null,
   price_cents: null,

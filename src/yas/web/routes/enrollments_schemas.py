@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from yas.db.models._types import EnrollmentStatus
+from yas.db.models._types import DayOfWeek, EnrollmentStatus
 from yas.web.routes.matches_schemas import OfferingSummary
 
 
@@ -17,6 +17,9 @@ class EnrollmentCreate(BaseModel):
     status: EnrollmentStatus = EnrollmentStatus.interested
     enrolled_at: datetime | None = None
     notes: str | None = None
+    # The day(s) attended, for a pick-one-day offering. Must be days the
+    # offering lists; None means all of them.
+    days_of_week: list[DayOfWeek] | None = None
 
 
 class EnrollmentPatch(BaseModel):
@@ -24,6 +27,7 @@ class EnrollmentPatch(BaseModel):
     status: EnrollmentStatus | None = None
     enrolled_at: datetime | None = None
     notes: str | None = None
+    days_of_week: list[DayOfWeek] | None = None
 
 
 class EnrollmentOut(BaseModel):
@@ -34,5 +38,6 @@ class EnrollmentOut(BaseModel):
     status: EnrollmentStatus
     enrolled_at: datetime | None
     notes: str | None
+    days_of_week: list[str] | None = None
     created_at: datetime
     offering: OfferingSummary

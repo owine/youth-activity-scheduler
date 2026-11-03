@@ -28,6 +28,12 @@ For each offering, fill these fields where the page makes them clear:
   specific one fits, and "unknown" only when truly unclassifiable.
 - start_date / end_date (YYYY-MM-DD)
 - days_of_week: subset of ["mon","tue","wed","thu","fri","sat","sun"]
+- attends_one_day: true only when the page says a family picks ONE of the
+  listed days ("choose a day of the week", "classes meet one day per week",
+  "pick your day"). Pages often say this once, in a sign-up note for the whole
+  page; it then applies to every item on that page that lists several days.
+  False when everyone attends every listed day, as at a Mon-Fri camp, and false
+  when the page doesn't say.
 - time_start / time_end (HH:MM, 24-hour)
 - location_name, location_address (if a specific venue is named)
 - price_cents (integer, e.g. $85.00 → 8500)

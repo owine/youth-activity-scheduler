@@ -18,6 +18,7 @@ from yas.calendar.occurrences import expand_recurring
 from yas.db.models import Enrollment, Kid, Match, Offering, Site, UnavailabilityBlock
 from yas.db.models._types import EnrollmentStatus
 from yas.db.session import session_scope
+from yas.unavailability.enrollment_materializer import attended_days
 from yas.web.routes.kid_calendar_schemas import CalendarEventOut, KidCalendarOut
 
 router = APIRouter(prefix="/api/kids", tags=["kids"])
@@ -82,7 +83,7 @@ async def gather_kid_calendar_events(
     ).all()
     for enrollment, offering in enrollment_rows:
         for occ in expand_recurring(
-            days_of_week=list(offering.days_of_week or []),
+            days_of_week=attended_days(enrollment, offering),
             time_start=offering.time_start,
             time_end=offering.time_end,
             date_start=offering.start_date,

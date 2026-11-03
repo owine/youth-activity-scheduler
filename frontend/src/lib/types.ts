@@ -28,6 +28,8 @@ export interface OfferingSummary {
   start_date: string | null;
   end_date: string | null;
   days_of_week: string[];
+  // True when a family picks which of days_of_week to attend (#636).
+  attends_one_day: boolean;
   time_start: string | null;
   time_end: string | null;
   price_cents: number | null;
@@ -364,6 +366,8 @@ export interface Enrollment {
   status: EnrollmentStatus;
   enrolled_at: string | null;
   notes: string | null;
+  // The day(s) attended, for a pick-one-day offering; null means every listed day.
+  days_of_week: string[] | null;
   created_at: string;
   offering: OfferingSummary;
 }

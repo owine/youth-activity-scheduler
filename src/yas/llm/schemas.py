@@ -28,6 +28,7 @@ class ExtractedOffering(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     days_of_week: list[DayOfWeek] = []
+    attends_one_day: bool = False
     time_start: time | None = None
     time_end: time | None = None
     location_name: str | None = None
