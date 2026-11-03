@@ -80,31 +80,47 @@ _SECRET_KEYS = {
 }
 
 
-_CHANNEL_CONFIG_KEYS = ("smtp_config_json", "ntfy_config_json", "pushover_config_json")
+# Per channel, the fields that say which server a stored secret was issued for.
+# Pushover and the forwardemail transport talk to fixed hosts, so they have none
+# beyond the email transport itself.
+_ENDPOINT_KEYS: dict[str, tuple[str, ...]] = {
+    "smtp_config_json": ("transport", "host", "username"),
+    "ntfy_config_json": ("base_url",),
+    "pushover_config_json": (),
+}
+
+
+def _endpoint_value(value: Any) -> Any:
+    # NtfyChannel strips a trailing slash, so "https://ntfy.sh/" is the same server.
+    return value.strip().rstrip("/") if isinstance(value, str) else value
 
 
 def _merge_secrets(
-    incoming: dict[str, Any] | None, stored: dict[str, Any] | None
+    channel: str, incoming: dict[str, Any] | None, stored: dict[str, Any] | None
 ) -> dict[str, Any] | None:
     """Carry stored secrets the incoming channel config omits.
 
     GET redacts secrets, so the settings form never has them to send back: it
     leaves a saved secret blank and omits it. Replacing the whole blob would
     wipe the secret on every unrelated save. An omitted key keeps the stored
-    value; an explicit null or "" clears it; a value replaces it. Switching
-    email transport drops the old one's secret, since it belongs to that
-    transport alone.
+    value; an explicit null or "" clears it; a value replaces it. Changing
+    where the secret goes (email transport, SMTP host or username, ntfy
+    base_url) drops it, since it belongs to the old endpoint alone: carrying it
+    over would send the old server's password or token to the new one.
     """
     if incoming is None:
         return None
     stored = stored or {}
     merged = dict(incoming)
-    same_transport = incoming.get("transport") == stored.get("transport")
+    same_endpoint = all(
+        _endpoint_value(incoming.get(k)) == _endpoint_value(stored.get(k))
+        for k in _ENDPOINT_KEYS[channel]
+    )
     for key in _SECRET_KEYS:
         if key in merged:
             if merged[key] is None or merged[key] == "":
                 del merged[key]
-        elif same_transport and key in stored:
+        elif same_endpoint and key in stored:
             merged[key] = stored[key]
     return merged
 
@@ -289,17 +305,23 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                     s, prior, addr_norm, outcome, now=datetime.now(UTC), detail=detail
                 )
 
-        for key in _CHANNEL_CONFIG_KEYS:
+        for key in _ENDPOINT_KEYS:
             if key in data:
-                data[key] = _merge_secrets(data[key], getattr(hh, key))
+                data[key] = _merge_secrets(key, data[key], getattr(hh, key))
 
         for key, value in data.items():
             setattr(hh, key, value)
 
         await s.flush()
         # The distance gate reads home coords and the default radius, so a change
-        # to either must not wait for the daily sweep to take effect.
-        if await _distance_inputs(s, hh) != distance_before:
+        # to either must not wait for the daily sweep to take effect. Only when
+        # the home is known, though: without coords the gate passes every
+        # offering as distance_unknown, and rematching would insert matches and
+        # alert on offerings far outside the radius. Unknown coords (cleared
+        # address, geocode miss or outage) leave matches for the daily sweep.
+        distance_after = await _distance_inputs(s, hh)
+        _, home_lat, home_lon, _ = distance_after
+        if distance_after != distance_before and home_lat is not None and home_lon is not None:
             await rematch_all_active_kids(s)
             await s.flush()
         return await _to_out(s, hh, _settings(request))

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from tests.fakes.geocoder import FakeGeocoder
 from yas.db.base import Base
 from yas.db.models import (
+    Alert,
     GeocodeAttempt,
     HouseholdSettings,
     Kid,
@@ -16,7 +17,7 @@ from yas.db.models import (
     Page,
     Site,
 )
-from yas.db.models._types import OfferingStatus, ProgramType
+from yas.db.models._types import AlertType, OfferingStatus, ProgramType
 from yas.db.session import create_engine_for, session_scope
 from yas.geo.client import GeocodeResult
 from yas.web.app import create_app
@@ -306,7 +307,7 @@ async def test_resaving_channel_without_secret_keeps_stored_secret(client):
     r = await c.patch(
         "/api/household",
         json={
-            "smtp_config_json": {**_SMTP, "host": "smtp2.example.com"},
+            "smtp_config_json": {**_SMTP, "to_addrs": ["you@example.com"]},
             "ntfy_config_json": {"base_url": "https://ntfy.sh", "topic": "t2"},
             "pushover_config_json": {"devices": ["phone"]},
         },
@@ -319,7 +320,7 @@ async def test_resaving_channel_without_secret_keeps_stored_secret(client):
     hh = await _hh(engine)
     assert hh.smtp_config_json == {
         **_SMTP,
-        "host": "smtp2.example.com",
+        "to_addrs": ["you@example.com"],
         "password_value": "kept",
     }
     assert hh.ntfy_config_json == {
@@ -367,6 +368,64 @@ async def test_switching_email_transport_drops_the_other_transports_secret(clien
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "change",
+    [{"host": "smtp.other.com"}, {"username": "other"}],
+    ids=["host", "username"],
+)
+async def test_resaving_smtp_for_another_server_drops_stored_password(client, change):
+    """The saved password belongs to that server and account; sending it to
+    another host (or as another user) would leak it."""
+    c, engine, _ = client
+    smtp = {**_SMTP, "username": "me"}
+    await c.patch("/api/household", json={"smtp_config_json": {**smtp, "password_value": "pw"}})
+
+    r = await c.patch("/api/household", json={"smtp_config_json": {**smtp, **change}})
+
+    assert r.json()["credential_status"]["smtp_password"]["via"] is None
+    assert (await _hh(engine)).smtp_config_json == {**smtp, **change}
+
+
+@pytest.mark.asyncio
+async def test_resaving_ntfy_for_another_server_drops_stored_token(client):
+    c, engine, _ = client
+    ntfy = {"base_url": "https://ntfy.internal", "topic": "t"}
+    await c.patch("/api/household", json={"ntfy_config_json": {**ntfy, "auth_token_value": "tk"}})
+
+    moved = {**ntfy, "base_url": "https://ntfy.sh"}
+    await c.patch("/api/household", json={"ntfy_config_json": moved})
+
+    assert (await _hh(engine)).ntfy_config_json == moved
+
+
+@pytest.mark.asyncio
+async def test_resaving_ntfy_with_trailing_slash_keeps_stored_token(client):
+    """NtfyChannel strips a trailing slash, so it's the same server."""
+    c, engine, _ = client
+    ntfy = {"base_url": "https://ntfy.internal", "topic": "t"}
+    await c.patch("/api/household", json={"ntfy_config_json": {**ntfy, "auth_token_value": "tk"}})
+
+    await c.patch(
+        "/api/household",
+        json={"ntfy_config_json": {**ntfy, "base_url": "https://ntfy.internal/"}},
+    )
+
+    assert (await _hh(engine)).ntfy_config_json["auth_token_value"] == "tk"
+
+
+@pytest.mark.asyncio
+async def test_resaving_ntfy_for_another_server_with_new_token_keeps_it(client):
+    c, engine, _ = client
+    ntfy = {"base_url": "https://ntfy.internal", "topic": "t", "auth_token_value": "old"}
+    await c.patch("/api/household", json={"ntfy_config_json": ntfy})
+
+    moved = {**ntfy, "base_url": "https://ntfy.sh", "auth_token_value": "new"}
+    await c.patch("/api/household", json={"ntfy_config_json": moved})
+
+    assert (await _hh(engine)).ntfy_config_json == moved
+
+
+@pytest.mark.asyncio
 async def test_nulling_a_channel_still_removes_it(client):
     c, engine, _ = client
     await c.patch("/api/household", json={"smtp_config_json": {**_SMTP, "password_value": "pw"}})
@@ -396,6 +455,32 @@ async def test_explicit_null_home_address_clears_it(client, cleared):
     async with session_scope(engine) as s:
         # No offering points at it, so the orphaned row goes too.
         assert (await s.execute(select(Location))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cleared", [None, ""])
+async def test_clearing_home_address_with_a_home_location_id_is_422(client, cleared):
+    """Clearing deletes the home Location, so setting home_location_id in the
+    same patch would point at the deleted row (an FK violation, 500)."""
+    c, engine, _ = client
+    first = await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+    loc_id = first.json()["home_location_id"]
+
+    r = await c.patch("/api/household", json={"home_address": cleared, "home_location_id": loc_id})
+
+    assert r.status_code == 422
+    assert (await _hh(engine)).home_location_id == loc_id  # nothing changed
+
+
+@pytest.mark.asyncio
+async def test_clearing_home_address_with_null_home_location_id_clears_it(client):
+    c, engine, _ = client
+    await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
+
+    r = await c.patch("/api/household", json={"home_address": None, "home_location_id": None})
+
+    assert r.status_code == 200
+    assert (await _hh(engine)).home_location_id is None
 
 
 @pytest.mark.asyncio
@@ -446,20 +531,52 @@ async def _match_ids(engine) -> list[tuple[int, int]]:
 async def test_household_distance_changes_rematch_active_kids(client):
     c, engine, _ = client
     await _seed_far_offering(engine)
-    # No home yet: distance is unknown, so the gate passes.
     await c.patch("/api/household", json={"default_max_distance_mi": 5.0})
-    assert await _match_ids(engine) == [(1, 1)]
 
-    # A home ~11 mi away drops the match without waiting for the daily sweep.
+    # A home ~11 mi away rematches; the far offering fails the distance gate.
     await c.patch("/api/household", json={"home_address": "123 Main St, Chicago, IL"})
     assert await _match_ids(engine) == []
 
-    # Widening the radius brings it back.
+    # Widening the radius brings it in without waiting for the daily sweep.
     await c.patch("/api/household", json={"default_max_distance_mi": 20.0})
     assert await _match_ids(engine) == [(1, 1)]
 
-    # Clearing the home makes distance unknown again.
+    # Narrowing it drops the match again.
     await c.patch("/api/household", json={"default_max_distance_mi": 5.0})
     assert await _match_ids(engine) == []
-    await c.patch("/api/household", json={"home_address": None})
-    assert await _match_ids(engine) == [(1, 1)]
+
+
+async def _new_match_alerts(engine) -> list[Alert]:
+    async with session_scope(engine) as s:
+        return list(
+            (await s.execute(select(Alert).where(Alert.type == AlertType.new_match.value)))
+            .scalars()
+            .all()
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["miss", "unavailable", "cleared"])
+async def test_home_becoming_unknown_does_not_rematch(client, outcome):
+    """Without home coords the distance gate passes everything as
+    distance_unknown, so rematching would match and alert on offerings far
+    outside the radius. Existing matches are left for the daily sweep."""
+    c, engine, geocoder = client
+    await _seed_far_offering(engine)
+    await c.patch(
+        "/api/household",
+        json={"home_address": "123 Main St, Chicago, IL", "default_max_distance_mi": 5.0},
+    )
+    assert await _match_ids(engine) == []
+
+    if outcome == "cleared":
+        patch: dict[str, object] = {"home_address": None}
+    else:
+        getattr(geocoder, "misses" if outcome == "miss" else "unavailable").add("1 nowhere rd")
+        patch = {"home_address": "1 Nowhere Rd"}
+    r = await c.patch("/api/household", json=patch)
+
+    assert r.status_code == 200
+    assert r.json()["home_lat"] is None
+    assert await _new_match_alerts(engine) == []
+    assert await _match_ids(engine) == []
