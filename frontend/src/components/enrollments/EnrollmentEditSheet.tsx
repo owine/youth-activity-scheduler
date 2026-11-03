@@ -14,7 +14,18 @@ import type { Enrollment } from '@/lib/types';
 const schema = z.object({
   notes: z.string().max(500).nullable(),
   enrolled_at: z.string().nullable(), // 'YYYY-MM-DD' or null
+  days_of_week: z.array(z.string()),
 });
+
+const DAY_LABELS: Record<string, string> = {
+  mon: 'Mon',
+  tue: 'Tue',
+  wed: 'Wed',
+  thu: 'Thu',
+  fri: 'Fri',
+  sat: 'Sat',
+  sun: 'Sun',
+};
 
 interface Props {
   enrollment: Enrollment | null;
@@ -24,6 +35,17 @@ interface Props {
 
 export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
   const update = useUpdateEnrollment();
+  // A pick-one-day program ("choose a day of the week") lists several days but
+  // the kid attends only the chosen one(s), which drive the calendar and the
+  // unavailability block (#636). The picker also shows when the enrollment
+  // already has a choice, even if a re-extraction cleared attends_one_day: the
+  // backend keeps using a stored choice, so the user must be able to see and
+  // clear it.
+  const storedDays = enrollment?.days_of_week ?? [];
+  const pickDays =
+    enrollment !== null &&
+    (enrollment.offering.attends_one_day || storedDays.length > 0) &&
+    enrollment.offering.days_of_week.length > 1;
 
   const form = useForm({
     defaultValues: {
@@ -32,6 +54,10 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
       // The date part, not the local date of the instant: the sheet saves the
       // day as UTC midnight, which is the day before in US time zones.
       enrolled_at: enrollment?.enrolled_at ? enrollment.enrolled_at.slice(0, 10) : null,
+      // Only days the offering still lists: a stale chosen day would have no
+      // checkbox to untick, and every save would be rejected with a 422. An
+      // empty result saves as "no choice".
+      days_of_week: storedDays.filter((d) => enrollment?.offering.days_of_week.includes(d)),
     },
     validators: { onChange: schema },
     onSubmit: async ({ value }) => {
@@ -40,7 +66,13 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
       await update.mutateAsync({
         enrollmentId: enrollment.id,
         kidId,
-        patch: { notes: value.notes, enrolled_at },
+        patch: {
+          notes: value.notes,
+          enrolled_at,
+          ...(pickDays
+            ? { days_of_week: value.days_of_week.length ? value.days_of_week : null }
+            : {}),
+        },
       });
       onClose();
     },
@@ -54,7 +86,8 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
         <SheetHeader>
           <SheetTitle>Edit enrollment</SheetTitle>
           <SheetDescription>
-            Edit notes and enrolled-at date for {enrollment.offering.name}.
+            Edit {pickDays ? 'the day attended, ' : ''}notes and enrolled-at date for{' '}
+            {enrollment.offering.name}.
           </SheetDescription>
         </SheetHeader>
         <form
@@ -98,6 +131,40 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
               </div>
             )}
           />
+          {pickDays && (
+            <form.Field
+              name="days_of_week"
+              children={(field) => (
+                <fieldset>
+                  <legend className="block text-sm font-medium">Which day(s)?</legend>
+                  <p className="text-xs text-muted-foreground">
+                    This program lets you pick a day. Leave all unchecked if you haven&apos;t chosen
+                    yet; until then every listed day counts as busy.
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-3">
+                    {enrollment.offering.days_of_week.map((day) => (
+                      <label key={day} className="flex items-center gap-1 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={field.state.value.includes(day)}
+                          onChange={(e) =>
+                            field.handleChange(
+                              e.target.checked
+                                ? enrollment.offering.days_of_week.filter(
+                                    (d) => d === day || field.state.value.includes(d),
+                                  )
+                                : field.state.value.filter((d) => d !== day),
+                            )
+                          }
+                        />
+                        {DAY_LABELS[day] ?? day}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+            />
+          )}
           <div className="flex gap-2">
             <Button type="submit" disabled={update.isPending}>
               {update.isPending ? 'Saving…' : 'Save'}

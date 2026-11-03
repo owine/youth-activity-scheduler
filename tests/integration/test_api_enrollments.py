@@ -268,3 +268,99 @@ async def test_enrollment_includes_offering_summary(client):
     assert pop_offering["days_of_week"] == ["sun"]
     assert pop_offering["location_lat"] == 40.71
     assert pop_offering["location_lon"] == -74.01
+
+
+# --- pick-one-day offerings (#636) -----------------------------------------
+
+
+async def _add_weekday_slot(engine) -> int:
+    """Lil Sluggers shape: "Mon-Fri 4:00 pm", one class a week on a day you pick."""
+    async with session_scope(engine) as s:
+        s.add(
+            Offering(
+                id=2,
+                site_id=1,
+                page_id=1,
+                name="Weekday T-Ball 4pm",
+                normalized_name="weekday t-ball 4pm",
+                program_type=ProgramType.baseball.value,
+                start_date=date(2026, 5, 4),
+                end_date=date(2026, 6, 26),
+                days_of_week=["mon", "tue", "wed", "thu", "fri"],
+                attends_one_day=True,
+                time_start=time(16, 0),
+                time_end=time(17, 0),
+            )
+        )
+    return 2
+
+
+async def _block_days(engine) -> list[list[str]]:
+    async with session_scope(engine) as s:
+        blocks = (await s.execute(select(UnavailabilityBlock))).scalars().all()
+        return [list(b.days_of_week) for b in blocks]
+
+
+@pytest.mark.asyncio
+async def test_enrolling_on_a_chosen_day_blocks_only_that_day(client):
+    """Enrolling in a Mon-Fri pick-one slot blocked the kid Mon-Fri at 4pm,
+    which knocked every other weekday-afternoon offering out of matching."""
+    c, engine = client
+    oid = await _add_weekday_slot(engine)
+    r = await c.post(
+        "/api/enrollments",
+        json={"kid_id": 1, "offering_id": oid, "status": "enrolled", "days_of_week": ["wed"]},
+    )
+    assert r.status_code == 201
+    assert r.json()["days_of_week"] == ["wed"]
+    assert r.json()["offering"]["attends_one_day"] is True
+    assert await _block_days(engine) == [["wed"]]
+
+
+@pytest.mark.asyncio
+async def test_enrollment_without_a_choice_blocks_every_listed_day(client):
+    c, engine = client
+    oid = await _add_weekday_slot(engine)
+    r = await c.post(
+        "/api/enrollments", json={"kid_id": 1, "offering_id": oid, "status": "enrolled"}
+    )
+    assert r.status_code == 201
+    assert r.json()["days_of_week"] is None
+    assert await _block_days(engine) == [["mon", "tue", "wed", "thu", "fri"]]
+
+
+@pytest.mark.asyncio
+async def test_chosen_day_must_be_one_the_offering_lists(client):
+    c, engine = client
+    oid = await _add_weekday_slot(engine)
+    r = await c.post(
+        "/api/enrollments",
+        json={"kid_id": 1, "offering_id": oid, "status": "enrolled", "days_of_week": ["sat"]},
+    )
+    assert r.status_code == 422
+    assert "sat" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_patching_the_chosen_day_moves_the_block_and_calendar(client):
+    c, engine = client
+    oid = await _add_weekday_slot(engine)
+    created = await c.post(
+        "/api/enrollments",
+        json={"kid_id": 1, "offering_id": oid, "status": "enrolled", "days_of_week": ["mon"]},
+    )
+    eid = created.json()["id"]
+    r = await c.patch(f"/api/enrollments/{eid}", json={"days_of_week": ["thu"]})
+    assert r.status_code == 200
+    assert await _block_days(engine) == [["thu"]]
+
+    # The calendar draws the class on the chosen day only (week of May 4).
+    cal = await c.get("/api/kids/1/calendar?from=2026-05-04&to=2026-05-11")
+    assert cal.status_code == 200
+    dates = sorted(e["date"] for e in cal.json()["events"] if e["kind"] == "enrollment")
+    assert dates == ["2026-05-07"]
+
+    # An empty list clears the choice.
+    r = await c.patch(f"/api/enrollments/{eid}", json={"days_of_week": []})
+    assert r.json()["days_of_week"] is None
+    assert await _block_days(engine) == [["mon", "tue", "wed", "thu", "fri"]]

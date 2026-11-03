@@ -44,6 +44,7 @@ class _Offering:
     time_end: time | None = None
     status: str = OfferingStatus.active.value
     location_id: int | None = None
+    attends_one_day: bool = False
 
     def __post_init__(self):
         if self.days_of_week is None:
@@ -386,5 +387,109 @@ def test_enrollment_block_blocks_overlapping_offering():
     )
     r = no_conflict_with_unavailability(
         offering, [block], school_holidays=set(), today=date(2026, 4, 22)
+    )
+    assert not r.passed
+
+
+# --- pick-one-day offerings (#636) ---------------------------------------------
+
+
+def _weekday_slot(**kw):
+    """Lil Sluggers shape: "Mon-Fri 4:00 pm", one class a week on a day you pick."""
+    return _Offering(
+        start_date=date(2026, 10, 5),
+        end_date=date(2026, 11, 27),
+        days_of_week=["mon", "tue", "wed", "thu", "fri"],
+        time_start=time(16, 0),
+        time_end=time(17, 0),
+        **kw,
+    )
+
+
+def _busy_tuesday_afternoons():
+    return _Block(
+        source=UnavailabilitySource.manual.value,
+        days_of_week=["tue"],
+        time_start=time(15, 30),
+        time_end=time(18, 0),
+    )
+
+
+def test_attend_every_day_offering_fails_on_one_busy_day():
+    r = no_conflict_with_unavailability(
+        _weekday_slot(), [_busy_tuesday_afternoons()], school_holidays=set(), today=date(2026, 9, 1)
+    )
+    assert not r.passed and r.code == "conflict"
+
+
+def test_pick_one_day_offering_passes_when_another_day_is_free():
+    r = no_conflict_with_unavailability(
+        _weekday_slot(attends_one_day=True),
+        [_busy_tuesday_afternoons()],
+        school_holidays=set(),
+        today=date(2026, 9, 1),
+    )
+    assert r.passed
+    assert r.code == "one_day_free"
+    assert r.detail == "free on mon, wed, thu, fri"
+
+
+def test_pick_one_day_offering_fails_when_every_listed_day_conflicts():
+    every_afternoon = _Block(
+        source=UnavailabilitySource.manual.value,
+        days_of_week=[],  # every day
+        time_start=time(15, 0),
+        time_end=time(18, 0),
+    )
+    r = no_conflict_with_unavailability(
+        _weekday_slot(attends_one_day=True),
+        [every_afternoon],
+        school_holidays=set(),
+        today=date(2026, 9, 1),
+    )
+    assert not r.passed
+    assert r.detail.startswith("every listed day conflicts; conflict on 2026-10-05")
+
+
+def test_pick_one_day_needs_the_day_free_all_season_not_just_once():
+    """A day blocked on even one date of the season isn't a day the kid can pick."""
+    one_monday = _Block(
+        source=UnavailabilitySource.manual.value,
+        days_of_week=["mon"],
+        time_start=time(16, 0),
+        time_end=time(17, 0),
+        date_start=date(2026, 11, 2),
+        date_end=date(2026, 11, 2),
+    )
+    offering = _Offering(
+        start_date=date(2026, 10, 5),
+        end_date=date(2026, 11, 27),
+        days_of_week=["mon", "tue"],
+        time_start=time(16, 0),
+        time_end=time(17, 0),
+        attends_one_day=True,
+    )
+    r = no_conflict_with_unavailability(
+        offering,
+        [one_monday, _busy_tuesday_afternoons()],
+        school_holidays=set(),
+        today=date(2026, 9, 1),
+    )
+    assert not r.passed
+
+
+def test_pick_one_day_ignores_listed_days_the_season_never_reaches():
+    """A one-week season Mon-Tue can't be "free on fri" just because Friday is listed
+    but never occurs between its dates."""
+    offering = _Offering(
+        start_date=date(2026, 10, 5),  # Mon
+        end_date=date(2026, 10, 6),  # Tue
+        days_of_week=["tue", "fri"],
+        time_start=time(16, 0),
+        time_end=time(17, 0),
+        attends_one_day=True,
+    )
+    r = no_conflict_with_unavailability(
+        offering, [_busy_tuesday_afternoons()], school_holidays=set(), today=date(2026, 9, 1)
     )
     assert not r.passed

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, time, timedelta
+
 import pytest
 from sqlalchemy import select
 
@@ -8,10 +10,27 @@ from tests.fixtures.server import fixture_site
 from yas.crawl.fetcher import DefaultFetcher
 from yas.crawl.pipeline import crawl_page
 from yas.db.base import Base
-from yas.db.models import CrawlRun, Offering, Page, Site
-from yas.db.models._types import CrawlStatus, ProgramType
+from yas.db.models import (
+    Alert,
+    CrawlRun,
+    Enrollment,
+    Kid,
+    Match,
+    Offering,
+    Page,
+    Site,
+    UnavailabilityBlock,
+)
+from yas.db.models._types import (
+    AlertType,
+    CrawlStatus,
+    DayOfWeek,
+    EnrollmentStatus,
+    ProgramType,
+)
 from yas.db.session import create_engine_for, session_scope
 from yas.llm.schemas import ExtractedOffering
+from yas.unavailability.enrollment_materializer import apply_enrollment_block
 
 PAGE = """<!doctype html><html><body><main>
 <h1>Tots Baseball</h1><p>Ages 2-3. Sat 9am.</p>
@@ -472,4 +491,147 @@ async def test_failing_backoff_write_reports_its_own_error(tmp_path, sentry_even
 
     assert sorted(_exception_type(e) for e in sentry_events) == ["OSError", "RuntimeError"]
     assert all(e["tags"]["site_id"] == str(site_id) for e in sentry_events)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_crawl_that_moves_an_enrolled_slot_moves_its_block(tmp_path):
+    """The reconciler keeps a moved slot as the same row, so the enrollment
+    survives, but its unavailability block copied the old schedule and kept
+    blocking the old day and time. The pipeline now rebuilds it."""
+
+    def slot(day: DayOfWeek, start: time) -> ExtractedOffering:
+        return ExtractedOffering(
+            name="Tots Baseball",
+            program_type=ProgramType.baseball,
+            start_date=date(2026, 5, 4),
+            end_date=date(2026, 6, 26),
+            days_of_week=[day],
+            time_start=start,
+            time_end=time(start.hour + 1, 0),
+        )
+
+    engine = await _init_db(tmp_path)
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(default=[slot(DayOfWeek.tue, time(16, 0))])
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+
+        async def crawl() -> None:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+
+        try:
+            await crawl()
+            async with session_scope(engine) as s:
+                offering = (await s.execute(select(Offering))).scalar_one()
+                s.add(Kid(id=1, name="Sam", dob=date(2022, 5, 1)))
+                await s.flush()
+                e = Enrollment(
+                    kid_id=1, offering_id=offering.id, status=EnrollmentStatus.enrolled.value
+                )
+                s.add(e)
+                await s.flush()
+                await apply_enrollment_block(s, e.id)
+
+            # The site moves the class to Thursday 5pm.
+            fx.set_page("/p", PAGE.replace("Sat 9am", "Thu 5pm"))
+            llm.default = [slot(DayOfWeek.thu, time(17, 0))]
+            await crawl()
+        finally:
+            await fetcher.aclose()
+
+    async with session_scope(engine) as s:
+        assert len((await s.execute(select(Offering))).scalars().all()) == 1
+        block = (await s.execute(select(UnavailabilityBlock))).scalar_one()
+        assert block.days_of_week == ["thu"]
+        assert block.time_start == time(17, 0)
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_new_offering_is_matched_against_the_moved_enrollment_block(tmp_path):
+    """One crawl moves enrolled slot A from Tue 4pm to Thu 5pm and adds B at
+    Thu 5pm. The enrollment block must move before B is matched: matched
+    against the stale Tue block, B got a match and a new_match alert, then the
+    kid rematch deleted the match and orphaned the alert, which delivery
+    skipped, and a skipped alert counts as alerted forever."""
+    today = date.today()
+
+    def slot(name: str, day: DayOfWeek, start: time) -> ExtractedOffering:
+        return ExtractedOffering(
+            name=name,
+            program_type=ProgramType.baseball,
+            start_date=today - timedelta(days=7),
+            end_date=today + timedelta(days=60),
+            days_of_week=[day],
+            time_start=start,
+            time_end=time(start.hour + 1, 0),
+        )
+
+    engine = await _init_db(tmp_path)
+    async with fixture_site(pages={"/p": PAGE}) as fx:
+        fetcher = DefaultFetcher()
+        llm = FakeLLMClient(default=[slot("Tots Baseball", DayOfWeek.tue, time(16, 0))])
+        site_id, page_id = await _register(engine, fx.base_url, fx.url("/p"))
+
+        async def crawl() -> None:
+            async with session_scope(engine) as s:
+                site = (await s.execute(select(Site).where(Site.id == site_id))).scalar_one()
+                page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+            await crawl_page(engine=engine, fetcher=fetcher, llm=llm, page=page, site=site)
+
+        try:
+            await crawl()
+            async with session_scope(engine) as s:
+                a = (await s.execute(select(Offering))).scalar_one()
+                s.add(
+                    Kid(
+                        id=1,
+                        name="Sam",
+                        dob=today.replace(year=today.year - 7),
+                        interests=["baseball"],
+                        alert_score_threshold=0.0,
+                    )
+                )
+                await s.flush()
+                e = Enrollment(kid_id=1, offering_id=a.id, status=EnrollmentStatus.enrolled.value)
+                s.add(e)
+                await s.flush()
+                await apply_enrollment_block(s, e.id)
+                a_id = a.id
+
+            fx.set_page("/p", PAGE.replace("Sat 9am", "Thu 5pm, plus a Thu 5pm clinic"))
+            llm.default = [
+                slot("Tots Baseball", DayOfWeek.thu, time(17, 0)),
+                slot("Tots Baseball Clinic", DayOfWeek.thu, time(17, 0)),
+            ]
+            await crawl()
+        finally:
+            await fetcher.aclose()
+
+    async with session_scope(engine) as s:
+        b = (await s.execute(select(Offering).where(Offering.id != a_id))).scalar_one()
+        block = (await s.execute(select(UnavailabilityBlock))).scalar_one()
+        assert block.days_of_week == ["thu"]
+        match = (
+            await s.execute(select(Match).where(Match.kid_id == 1, Match.offering_id == b.id))
+        ).scalar_one_or_none()
+        assert match is None
+        alerts = (
+            (
+                await s.execute(
+                    select(Alert).where(
+                        Alert.type == AlertType.new_match.value,
+                        Alert.offering_id == b.id,
+                        Alert.sent_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert alerts == []
     await engine.dispose()

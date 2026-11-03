@@ -28,6 +28,7 @@ class ExtractedOffering(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     days_of_week: list[DayOfWeek] = []
+    attends_one_day: bool = False
     time_start: time | None = None
     time_end: time | None = None
     location_name: str | None = None
@@ -70,6 +71,16 @@ class ExtractedOffering(BaseModel):
                         continue
             return valid
         return v
+
+    @field_validator("attends_one_day", mode="before")
+    @classmethod
+    def _null_attends_one_day_is_false(cls, v: object) -> object:
+        """Treat an explicit null as False rather than failing the page.
+
+        The model sometimes emits null for a flag it has no evidence for, and
+        one invalid row fails the whole page's extraction.
+        """
+        return False if v is None else v
 
 
 class ExtractionResponse(BaseModel):

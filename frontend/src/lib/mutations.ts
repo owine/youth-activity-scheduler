@@ -666,6 +666,7 @@ interface UpdateEnrollmentInput {
     status?: EnrollmentStatus;
     notes?: string | null;
     enrolled_at?: string | null;
+    days_of_week?: string[] | null;
   };
 }
 

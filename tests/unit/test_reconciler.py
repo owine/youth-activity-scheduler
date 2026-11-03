@@ -387,3 +387,21 @@ async def test_a_dropped_slot_among_shifting_slots_withdraws_its_own_row(tmp_pat
         }
     assert starts == {ten: time(10, 15), eleven: time(11, 15)}
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_attends_one_day_is_stored_and_a_change_is_an_update(tmp_path):
+    """The pick-one-day flag (#636) is stored, and a re-extraction that sets it on
+    an existing row updates that row rather than leaving it stale."""
+    engine, _, page_id = await _setup(tmp_path)
+    key_args = dict(name="T-Ball", start_date=date(2026, 5, 1), days_of_week=["mon", "tue"])
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        await reconcile(s, page, [_offering(**key_args)])
+    async with session_scope(engine) as s:
+        page = (await s.execute(select(Page).where(Page.id == page_id))).scalar_one()
+        result = await reconcile(s, page, [_offering(attends_one_day=True, **key_args)])
+    assert len(result.updated) == 1
+    async with session_scope(engine) as s:
+        assert (await s.execute(select(Offering))).scalars().one().attends_one_day is True
+    await engine.dispose()

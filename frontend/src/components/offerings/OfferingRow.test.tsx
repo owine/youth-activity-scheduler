@@ -16,6 +16,7 @@ const makeOffering = (over: Partial<OfferingSummary> = {}): OfferingSummary => (
   start_date: '2026-06-15',
   end_date: '2026-08-31',
   days_of_week: ['mon', 'wed', 'fri'],
+  attends_one_day: false,
   time_start: '17:00:00',
   time_end: '18:00:00',
   price_cents: 15000,

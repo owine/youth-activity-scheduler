@@ -182,7 +182,10 @@ is the only async part, and it hoists per-kid queries (blocks, watchlist, enroll
 the per-offering loop.
 
 Five hard gates must all pass for a match: age, distance, interests, offering active/not-ended,
-no unavailability conflict. **Watchlist hits bypass every gate** — they represent manually
+no unavailability conflict. An offering's `days_of_week` normally means "attends all of these";
+when `attends_one_day` is set (the page says "choose a day"), the conflict gate passes if **any**
+listed day is free all season, and the enrollment's own `days_of_week` records the pick, which
+the enrollment block and the calendar use (`enrollment_materializer.attended_days`). **Watchlist hits bypass every gate** — they represent manually
 verified programs. Score is a weighted blend (availability .4, distance .2, registration .2,
 price .1, freshness .1) stored alongside a `reasons` JSON blob the UI renders as chips.
 

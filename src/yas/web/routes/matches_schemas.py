@@ -20,6 +20,7 @@ class OfferingSummary(BaseModel):
     start_date: date | None
     end_date: date | None
     days_of_week: list[str]
+    attends_one_day: bool = False
     time_start: time | None
     time_end: time | None
     price_cents: int | None

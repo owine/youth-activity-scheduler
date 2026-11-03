@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from yas.db.models import Enrollment, Kid, Location, Offering, Site
-from yas.db.models._types import EnrollmentStatus
+from yas.db.models._types import DayOfWeek, EnrollmentStatus
 from yas.db.session import session_scope
 from yas.matching.matcher import rematch_kid
 from yas.unavailability.enrollment_materializer import apply_enrollment_block
@@ -46,6 +46,25 @@ async def _require_offering(session: AsyncSession, offering_id: int) -> Offering
     return offering
 
 
+def _chosen_days(days: list[DayOfWeek] | None, offering: Offering) -> list[str] | None:
+    """Validate an enrollment's chosen days against the offering (#636).
+
+    An empty list means "no choice", the same as None. A day the offering
+    doesn't list is a 422: it would block a time the kid has no class.
+    """
+    if not days:
+        return None
+    chosen = [d.value for d in days]
+    listed = set(offering.days_of_week or [])
+    if listed and not set(chosen) <= listed:
+        extra = sorted(set(chosen) - listed)
+        raise HTTPException(
+            status_code=422,
+            detail=f"days_of_week {extra} not among the offering's days {sorted(listed)}",
+        )
+    return chosen
+
+
 def _build_offering_summary(
     offering: Offering, site_name: str, loc_lat: float | None, loc_lon: float | None
 ) -> OfferingSummary:
@@ -66,13 +85,14 @@ def _build_offering_summary(
 async def create_enrollment(payload: EnrollmentCreate, request: Request) -> EnrollmentOut:
     async with session_scope(_engine(request)) as s:
         await _require_kid(s, payload.kid_id)
-        await _require_offering(s, payload.offering_id)
+        offering = await _require_offering(s, payload.offering_id)
         enrollment = Enrollment(
             kid_id=payload.kid_id,
             offering_id=payload.offering_id,
             status=payload.status.value,
             enrolled_at=payload.enrolled_at,
             notes=payload.notes,
+            days_of_week=_chosen_days(payload.days_of_week, offering),
         )
         s.add(enrollment)
         await s.flush()
@@ -96,6 +116,7 @@ async def create_enrollment(payload: EnrollmentCreate, request: Request) -> Enro
             status=EnrollmentStatus(enrollment.status),
             enrolled_at=enrollment.enrolled_at,
             notes=enrollment.notes,
+            days_of_week=enrollment.days_of_week,
             created_at=enrollment.created_at,
             offering=_build_offering_summary(offering, site_name, loc_lat, loc_lon),
         )
@@ -131,6 +152,7 @@ async def list_enrollments(
                 status=EnrollmentStatus(e.status),
                 enrolled_at=e.enrolled_at,
                 notes=e.notes,
+                days_of_week=e.days_of_week,
                 created_at=e.created_at,
                 offering=_build_offering_summary(o, site_name, loc_lat, loc_lon),
             )
@@ -164,6 +186,7 @@ async def get_enrollment(enrollment_id: int, request: Request) -> EnrollmentOut:
             status=EnrollmentStatus(enrollment.status),
             enrolled_at=enrollment.enrolled_at,
             notes=enrollment.notes,
+            days_of_week=enrollment.days_of_week,
             created_at=enrollment.created_at,
             offering=_build_offering_summary(offering, site_name, loc_lat, loc_lon),
         )
@@ -182,6 +205,9 @@ async def patch_enrollment(
         for key, value in payload.model_dump(exclude_unset=True).items():
             if key == "status" and value is not None:
                 setattr(enrollment, key, value.value)
+            elif key == "days_of_week":
+                offering = await _require_offering(s, enrollment.offering_id)
+                enrollment.days_of_week = _chosen_days(payload.days_of_week, offering)
             else:
                 setattr(enrollment, key, value)
         await s.flush()
@@ -205,6 +231,7 @@ async def patch_enrollment(
             status=EnrollmentStatus(enrollment.status),
             enrolled_at=enrollment.enrolled_at,
             notes=enrollment.notes,
+            days_of_week=enrollment.days_of_week,
             created_at=enrollment.created_at,
             offering=_build_offering_summary(offering, site_name, loc_lat, loc_lon),
         )

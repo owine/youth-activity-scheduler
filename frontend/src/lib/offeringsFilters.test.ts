@@ -17,6 +17,7 @@ const baseOffering = (over: Partial<OfferingSummary> = {}): OfferingSummary => (
   start_date: '2026-06-01',
   end_date: '2026-08-31',
   days_of_week: ['mon', 'wed'],
+  attends_one_day: false,
   time_start: '17:00:00',
   time_end: '18:00:00',
   price_cents: 12000,
