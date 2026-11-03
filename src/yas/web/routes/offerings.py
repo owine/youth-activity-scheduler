@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
@@ -11,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from yas.db.models import Offering
 from yas.db.session import session_scope
-from yas.web.routes._types import UtcDatetime
+from yas.web.routes._types import UtcDatetime, UtcDatetimeIn
 
 router = APIRouter(prefix="/api/offerings", tags=["offerings"])
 
@@ -23,7 +21,7 @@ def _engine(req: Request) -> AsyncEngine:
 
 class OfferingPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    muted_until: datetime | None = None
+    muted_until: UtcDatetimeIn | None = None
 
 
 class OfferingMuteOut(BaseModel):

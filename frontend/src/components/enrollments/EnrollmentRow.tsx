@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { parseISO } from 'date-fns';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { OfferingScheduleLine } from '@/components/common/OfferingScheduleLine';
@@ -58,7 +59,12 @@ export function EnrollmentRow({ enrollment, kidId, isPending, onEdit }: Props) {
       </div>
       <OfferingScheduleLine offering={enrollment.offering} />
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {enrollment.enrolled_at && <span>Enrolled {relDate(enrollment.enrolled_at)}</span>}
+        {enrollment.enrolled_at && (
+          // enrolled_at is a date the edit sheet stores as UTC midnight. Read its
+          // date part as a local day: parsed as an instant it is the previous
+          // evening anywhere west of UTC.
+          <span>Enrolled {relDate(parseISO(enrollment.enrolled_at.slice(0, 10)))}</span>
+        )}
         {enrollment.enrolled_at && enrollment.notes && <span>·</span>}
         {enrollment.notes && <span className="italic">"{enrollment.notes}"</span>}
         <Button

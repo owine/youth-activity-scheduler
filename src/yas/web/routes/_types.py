@@ -1,4 +1,4 @@
-"""Field types shared by the API's response schemas."""
+"""Datetime field types shared by the API's request and response schemas."""
 
 from __future__ import annotations
 
@@ -24,6 +24,15 @@ def _as_utc(value: datetime) -> datetime:
 UtcDatetime = Annotated[datetime, AfterValidator(_as_utc)]
 """A response timestamp, always serialized in UTC with a "Z" suffix.
 
-Use it on response (`*Out`) schemas only. Request bodies keep plain `datetime`,
-so a naive value a client sends is not silently reinterpreted.
+Use it on response (`*Out`) schemas. Request fields use `UtcDatetimeIn`.
+"""
+
+UtcDatetimeIn = Annotated[datetime, AfterValidator(_as_utc)]
+"""A client-supplied timestamp, converted to UTC before it reaches the database.
+
+SQLite's `DateTime(timezone=True)` drops a value's offset without converting
+it, so "2026-11-09T00:00:00-05:00" would be stored, and later served, as
+00:00 UTC, five hours early. Converting on the way in stores the instant the
+client meant. A naive value is read as UTC, the zone every column is kept in.
+Use it on request bodies and query parameters that take a datetime.
 """

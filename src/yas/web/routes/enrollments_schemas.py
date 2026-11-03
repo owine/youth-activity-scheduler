@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict
 
 from yas.db.models._types import EnrollmentStatus
-from yas.web.routes._types import UtcDatetime
+from yas.web.routes._types import UtcDatetime, UtcDatetimeIn
 from yas.web.routes.matches_schemas import OfferingSummary
 
 
@@ -16,14 +14,14 @@ class EnrollmentCreate(BaseModel):
     kid_id: int
     offering_id: int
     status: EnrollmentStatus = EnrollmentStatus.interested
-    enrolled_at: datetime | None = None
+    enrolled_at: UtcDatetimeIn | None = None
     notes: str | None = None
 
 
 class EnrollmentPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: EnrollmentStatus | None = None
-    enrolled_at: datetime | None = None
+    enrolled_at: UtcDatetimeIn | None = None
     notes: str | None = None
 
 

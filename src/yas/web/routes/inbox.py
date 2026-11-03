@@ -13,6 +13,7 @@ from yas.alerts.detectors.site_stagnant import detect_stagnant_sites
 from yas.db.models import Alert, CrawlRun, Kid, Match, Offering
 from yas.db.models._types import AlertType, CrawlStatus
 from yas.db.session import session_scope
+from yas.web.routes._types import UtcDatetimeIn
 from yas.web.routes.inbox_alert_summary import summarize_alert
 from yas.web.routes.inbox_schemas import (
     InboxAlertOut,
@@ -32,8 +33,8 @@ def _engine(req: Request) -> AsyncEngine:
 @router.get("/summary", response_model=InboxSummaryOut)
 async def inbox_summary(
     request: Request,
-    since: Annotated[datetime, Query()],
-    until: Annotated[datetime, Query()],
+    since: Annotated[UtcDatetimeIn, Query()],
+    until: Annotated[UtcDatetimeIn, Query()],
     include_closed: Annotated[bool, Query()] = False,
 ) -> InboxSummaryOut:
     if since >= until:

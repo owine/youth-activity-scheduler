@@ -106,6 +106,20 @@ describe('EnrollmentRow', () => {
     expect(statusSelect).toHaveValue('interested');
   });
 
+  it('shows enrolled_at as the stored calendar day, not the previous evening', () => {
+    // The edit sheet stores the picked day as UTC midnight. Parsed as an
+    // instant it is the evening before in New York (vitest's default TZ).
+    renderWithQueryClient(
+      <EnrollmentRow
+        enrollment={makeEnrollment({ enrolled_at: '2026-04-29T00:00:00Z' })}
+        kidId={1}
+        isPending={false}
+        onEdit={() => {}}
+      />,
+    );
+    expect(screen.getByText('Enrolled Wed Apr 29')).toBeInTheDocument();
+  });
+
   it('status dropdown change fires useUpdateEnrollment PATCH', async () => {
     let capturedBody: Record<string, unknown> | null = null;
     server.use(

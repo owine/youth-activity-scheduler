@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
 import {
   useCloseAlert,
@@ -35,6 +35,15 @@ import type {
   WatchlistEntry,
   Site,
 } from './types';
+
+/** A promise the test settles by hand, to hold an MSW response open. */
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 function makeWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -448,7 +457,14 @@ describe('useUpdateOfferingMute', () => {
 });
 
 describe('useDeleteUnavailability', () => {
-  it('removes the matching unavailability event from cache', async () => {
+  it('DELETEs the block under its kid and removes the event from cache', async () => {
+    let deleted: { kidId: string; blockId: string } | null = null;
+    server.use(
+      http.delete('/api/kids/:kidId/unavailability/:blockId', ({ params }) => {
+        deleted = { kidId: String(params.kidId), blockId: String(params.blockId) };
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
     const qc = new QueryClient();
     qc.setQueryData<KidCalendarResponse>(
       ['kids', 1, 'calendar', '2026-04-27', '2026-05-04'],
@@ -460,9 +476,9 @@ describe('useDeleteUnavailability', () => {
           time_start: '08:30:00',
           time_end: '15:00:00',
           all_day: false,
-          title: 'School',
+          title: 'Dentist',
           block_id: 20,
-          source: 'school',
+          source: 'manual',
           from_enrollment_id: null,
         },
       ]),
@@ -483,11 +499,12 @@ describe('useDeleteUnavailability', () => {
       '2026-05-04',
     ]);
     expect(after?.events).toEqual([]);
+    expect(deleted).toEqual({ kidId: '1', blockId: '20' });
   });
 
   it('rolls back on server error', async () => {
     server.use(
-      http.delete('/api/unavailability/:id', () =>
+      http.delete('/api/kids/:kidId/unavailability/:blockId', () =>
         HttpResponse.json({ detail: 'boom' }, { status: 500 }),
       ),
     );
@@ -500,9 +517,9 @@ describe('useDeleteUnavailability', () => {
         time_start: '08:30:00',
         time_end: '15:00:00',
         all_day: false,
-        title: 'School',
+        title: 'Dentist',
         block_id: 20,
-        source: 'school',
+        source: 'manual',
         from_enrollment_id: null,
       },
     ]);
@@ -666,9 +683,12 @@ describe('useUpdateWatchlistEntry', () => {
   });
 
   it('rolls back the kid cache on server error', async () => {
+    // Hold the response until the optimistic state has been asserted, so the
+    // rollback can't land first and race waitFor's poll.
+    const response = deferred();
     server.use(
       http.patch('/api/watchlist/:id', async () => {
-        await delay(50); // long enough to observe the optimistic state
+        await response.promise;
         return HttpResponse.json({ detail: 'boom' }, { status: 500 });
       }),
     );
@@ -681,6 +701,7 @@ describe('useUpdateWatchlistEntry', () => {
     });
     result.current.mutate({ kidId: 1, entryId: 10, patch: { pattern: 'soccer' } });
     await waitFor(() => expect(kidWatchlist(qc)?.[0]?.pattern).toBe('soccer'));
+    response.resolve();
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(kidWatchlist(qc)?.[0]?.pattern).toBe('t-ball');
@@ -704,9 +725,12 @@ describe('useDeleteWatchlistEntry', () => {
   });
 
   it('rolls back the kid cache on server error', async () => {
+    // Hold the response until the optimistic state has been asserted, so the
+    // rollback can't land first and race waitFor's poll.
+    const response = deferred();
     server.use(
       http.delete('/api/watchlist/:id', async () => {
-        await delay(50); // long enough to observe the optimistic state
+        await response.promise;
         return HttpResponse.json({ detail: 'boom' }, { status: 500 });
       }),
     );
@@ -719,6 +743,7 @@ describe('useDeleteWatchlistEntry', () => {
     });
     result.current.mutate({ kidId: 1, entryId: 10 });
     await waitFor(() => expect(kidWatchlist(qc)).toHaveLength(0));
+    response.resolve();
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(kidWatchlist(qc)).toHaveLength(1);

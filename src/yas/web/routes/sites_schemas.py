@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from yas.web.routes._types import UtcDatetime
+from yas.web.routes._types import UtcDatetime, UtcDatetimeIn
 
 
 class PageIn(BaseModel):
@@ -42,7 +41,7 @@ class SiteCreate(BaseModel):
 class SiteUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     active: bool | None = None
-    muted_until: datetime | None = None
+    muted_until: UtcDatetimeIn | None = None
     default_cadence_s: int | None = None
     needs_browser: bool | None = None
     crawl_hints: dict[str, Any] | None = None

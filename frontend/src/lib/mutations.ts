@@ -283,7 +283,7 @@ export function useDeleteUnavailability() {
     snapshots: ReadonlyArray<readonly [QueryKey, KidCalendarResponse | undefined]>;
   };
   return useMutation<unknown, Error, DeleteUnavailabilityInput, Ctx>({
-    mutationFn: ({ blockId }) => api.delete(`/api/unavailability/${blockId}`),
+    mutationFn: ({ kidId, blockId }) => api.delete(`/api/kids/${kidId}/unavailability/${blockId}`),
 
     onMutate: async ({ kidId, blockId }) => {
       await qc.cancelQueries({ queryKey: ['kids', kidId, 'calendar'] });

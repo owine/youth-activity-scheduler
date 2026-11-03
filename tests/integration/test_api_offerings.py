@@ -101,3 +101,28 @@ async def test_patch_offering_empty_body_does_not_clear_muted_until(client):
     async with session_scope(engine) as s:
         o = (await s.execute(select(Offering).where(Offering.id == 1))).scalar_one()
     assert o.muted_until is not None
+
+
+@pytest.mark.asyncio
+async def test_patch_offering_converts_offset_muted_until_to_utc(client):
+    """SQLite drops an offset without converting, so the API must convert first.
+
+    Midnight in New York is 05:00 UTC; storing the wall time as-is would unmute
+    the offering five hours early.
+    """
+    c, engine = client
+    r = await c.patch("/api/offerings/1", json={"muted_until": "2026-11-09T00:00:00-05:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["muted_until"] == "2026-11-09T05:00:00Z"
+    async with session_scope(engine) as s:
+        o = (await s.execute(select(Offering).where(Offering.id == 1))).scalar_one()
+    assert o.muted_until is not None
+    assert o.muted_until.replace(tzinfo=UTC) == datetime(2026, 11, 9, 5, 0, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_patch_offering_reads_naive_muted_until_as_utc(client):
+    c, _ = client
+    r = await c.patch("/api/offerings/1", json={"muted_until": "2026-11-09T00:00:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["muted_until"] == "2026-11-09T00:00:00Z"
