@@ -239,3 +239,104 @@ async def test_create_kid_rejects_unknown_fields(client):
         json={"name": "Sam", "dob": "2019-05-01", "bogus": "nope"},
     )
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field",
+    ["name", "dob", "active", "alert_score_threshold"],
+)
+async def test_patch_kid_null_for_non_nullable_field_is_422(client, field):
+    """These columns are NOT NULL; an explicit null used to reach the DB and 500."""
+    c, engine = client
+    r = await c.post("/api/kids", json={"name": "Sam", "dob": "2019-05-01"})
+    kid_id = r.json()["id"]
+
+    r = await c.patch(f"/api/kids/{kid_id}", json={field: None})
+
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"][-1] == field
+    async with session_scope(engine) as s:
+        kid = (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one()
+        assert kid.name == "Sam"
+
+
+@pytest.mark.asyncio
+async def test_patch_kid_null_for_nullable_field_still_clears_it(client):
+    c, _ = client
+    r = await c.post(
+        "/api/kids", json={"name": "Sam", "dob": "2019-05-01", "max_distance_mi": 5, "notes": "n"}
+    )
+    kid_id = r.json()["id"]
+
+    r = await c.patch(f"/api/kids/{kid_id}", json={"max_distance_mi": None, "notes": None})
+
+    assert r.status_code == 200
+    assert r.json()["max_distance_mi"] is None
+    assert r.json()["notes"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ranges",
+    [
+        [{"start": "2026-09-01"}],
+        [{"end": "2027-06-15"}],
+        [{"start": "09/01/2026", "end": "06/15/2027"}],
+        [{"start": "2027-06-15", "end": "2026-09-01"}],
+        ["2026-09-01..2027-06-15"],
+    ],
+)
+@pytest.mark.parametrize("method", ["post", "patch"])
+async def test_bad_school_year_ranges_are_422(client, ranges, method):
+    """Malformed ranges used to reach the materializer and 500 on KeyError/ValueError."""
+    c, _ = client
+    school = {"school_time_start": "08:00", "school_time_end": "15:00"}
+    if method == "post":
+        r = await c.post(
+            "/api/kids",
+            json={"name": "Sam", "dob": "2019-05-01", **school, "school_year_ranges": ranges},
+        )
+    else:
+        r = await c.post("/api/kids", json={"name": "Sam", "dob": "2019-05-01", **school})
+        r = await c.patch(f"/api/kids/{r.json()['id']}", json={"school_year_ranges": ranges})
+
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_school_year_ranges_keep_their_stored_shape(client):
+    c, engine = client
+    r = await c.post(
+        "/api/kids",
+        json={
+            "name": "Sam",
+            "dob": "2019-05-01",
+            "school_time_start": "08:00",
+            "school_time_end": "15:00",
+            "school_year_ranges": [{"start": "2026-09-01", "end": "2027-06-15"}],
+        },
+    )
+    kid_id = r.json()["id"]
+    r = await c.patch(
+        f"/api/kids/{kid_id}",
+        json={"school_year_ranges": [{"start": "2027-09-01", "end": "2027-09-01"}]},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["school_year_ranges"] == [{"start": "2027-09-01", "end": "2027-09-01"}]
+    async with session_scope(engine) as s:
+        kid = (await s.execute(select(Kid).where(Kid.id == kid_id))).scalar_one()
+        assert kid.school_year_ranges == [{"start": "2027-09-01", "end": "2027-09-01"}]
+        blocks = (
+            (
+                await s.execute(
+                    select(UnavailabilityBlock).where(UnavailabilityBlock.kid_id == kid_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [(b.date_start, b.date_end) for b in blocks] == [
+            (date(2027, 9, 1), date(2027, 9, 1))
+        ]

@@ -355,3 +355,56 @@ async def test_closing_schedule_posted_alert_does_not_reduce_site_activity_count
     assert body["alerts"] == []
     # …but the site-distinct analytics count still sees it.
     assert body["site_activity"]["posted_new_count"] == 1
+
+
+async def _seed_alert_at(engine, when: datetime) -> None:
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name="Sam", dob=date(2019, 5, 1)))
+        await s.flush()
+        s.add(
+            Alert(
+                type=AlertType.new_match.value,
+                kid_id=1,
+                channels=["email"],
+                scheduled_for=when,
+                dedup_key="k1",
+                payload_json={},
+            )
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("since", "until"),
+    [
+        ("2026-11-01T00:00:00", "2026-11-03T00:00:00Z"),
+        ("2026-11-01T00:00:00Z", "2026-11-03T00:00:00"),
+    ],
+)
+async def test_inbox_mixed_naive_and_aware_bounds(client, since, until):
+    """Comparing a naive bound with an aware one used to raise TypeError (500).
+    A naive bound means UTC."""
+    c, engine = client
+    await _seed_alert_at(engine, datetime(2026, 11, 2, 12, 0, tzinfo=UTC))
+
+    r = await c.get("/api/inbox/summary", params={"since": since, "until": until})
+
+    assert r.status_code == 200
+    assert len(r.json()["alerts"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_inbox_offset_bounds_are_converted_to_utc(client):
+    """SQLite stores UTC wall-clock with no offset, so a -05:00 bound must be
+    converted, not have its offset dropped."""
+    c, engine = client
+    await _seed_alert_at(engine, datetime(2026, 11, 2, 12, 0, tzinfo=UTC))
+
+    # 07:30-05:00 is 12:30Z, after the alert; dropping the offset would read 07:30 and include it.
+    r = await c.get(
+        "/api/inbox/summary",
+        params={"since": "2026-11-02T07:30:00-05:00", "until": "2026-11-03T00:00:00-05:00"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["alerts"] == []

@@ -6,8 +6,10 @@ Also serves an iCalendar (RFC 5545) export at the same path with a
 
 from __future__ import annotations
 
+import unicodedata
 from datetime import UTC, date, datetime, time
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import or_, select
@@ -33,6 +35,23 @@ _ICS_DEFAULT_FUTURE_DAYS = 90
 def _engine(req: Request) -> AsyncEngine:
     engine: AsyncEngine = req.app.state.yas.engine
     return engine
+
+
+def _content_disposition(filename: str) -> str:
+    """An RFC 6266 header that survives any kid name.
+
+    Header values must be Latin-1, so a raw "Mei 李" can't go in. filename= gets
+    an ASCII fallback (accents stripped; other non-ASCII characters, quotes and
+    backslashes become "_") and filename*= the exact name as percent-encoded
+    UTF-8 (RFC 5987).
+    """
+    decomposed = unicodedata.normalize("NFKD", filename)
+    ascii_name = "".join(
+        ch if " " <= ch <= "~" and ch not in '"\\' else "_"
+        for ch in decomposed
+        if not unicodedata.combining(ch)
+    )
+    return f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 async def gather_kid_calendar_events(
@@ -284,5 +303,5 @@ async def get_kid_calendar_ics(
         return Response(
             content=body,
             media_type="text/calendar; charset=utf-8",
-            headers={"Content-Disposition": f'inline; filename="{kid.name}-yas.ics"'},
+            headers={"Content-Disposition": _content_disposition(f"{kid.name}-yas.ics")},
         )

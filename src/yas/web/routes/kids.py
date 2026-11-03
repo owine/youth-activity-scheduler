@@ -27,6 +27,7 @@ from yas.web.routes.kids_schemas import (
     MatchOut,
     UnavailabilityOut,
     WatchlistOut,
+    school_year_ranges_json,
 )
 
 router = APIRouter(prefix="/api/kids", tags=["kids"])
@@ -129,7 +130,7 @@ async def create_kid(payload: KidCreate, request: Request) -> KidDetailOut:
             school_weekdays=payload.school_weekdays,
             school_time_start=payload.school_time_start,
             school_time_end=payload.school_time_end,
-            school_year_ranges=payload.school_year_ranges,
+            school_year_ranges=school_year_ranges_json(payload.school_year_ranges),
             school_holidays=payload.school_holidays,
             notes=payload.notes,
             active=payload.active,
@@ -193,6 +194,8 @@ async def update_kid(kid_id: int, patch: KidUpdate, request: Request) -> KidDeta
         if kid is None:
             raise HTTPException(status_code=404, detail=f"kid {kid_id} not found")
         data = patch.model_dump(exclude_unset=True)
+        if "school_year_ranges" in data:
+            data["school_year_ranges"] = school_year_ranges_json(patch.school_year_ranges)
         changed_keys = set(data.keys())
         for key, value in data.items():
             setattr(kid, key, value)

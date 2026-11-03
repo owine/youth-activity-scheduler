@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class CredentialStatus(BaseModel):
@@ -64,3 +64,12 @@ class HouseholdPatch(BaseModel):
     ha_config_json: dict[str, Any] | None = None
     ntfy_config_json: dict[str, Any] | None = None
     pushover_config_json: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _no_home_id_while_clearing_address(self) -> Self:
+        # Clearing the address deletes the home Location, so an id in the same
+        # patch would point at a deleted row (or contradict the clear).
+        clearing = "home_address" in self.model_fields_set and not (self.home_address or "").strip()
+        if clearing and self.home_location_id is not None:
+            raise ValueError("home_location_id cannot be set while clearing home_address")
+        return self
