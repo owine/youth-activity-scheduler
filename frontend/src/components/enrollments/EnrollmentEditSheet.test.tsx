@@ -181,6 +181,61 @@ describe('EnrollmentEditSheet', () => {
     expect(capturedBody).not.toHaveProperty('days_of_week');
   });
 
+  it('drops a chosen day the offering no longer lists, saving as no choice (#636)', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/enrollments/:id', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...enrollment, days_of_week: capturedBody.days_of_week });
+      }),
+    );
+    // The kid picked Wed, then a crawl dropped Wed from the offering.
+    const enrollment = makeEnrollment({
+      status: 'enrolled',
+      days_of_week: ['wed'],
+      offering: makeOffering({ attends_one_day: true, days_of_week: ['mon', 'fri'] }),
+    });
+    renderWithQueryClient(
+      <EnrollmentEditSheet enrollment={enrollment} kidId={1} onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'Mon' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Fri' })).not.toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => expect(capturedBody).not.toBeNull());
+    expect(capturedBody).toMatchObject({ days_of_week: null });
+  });
+
+  it('shows and clears a stored day after the offering stops being pick-one-day (#636)', async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.patch('/api/enrollments/:id', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...enrollment, days_of_week: capturedBody.days_of_week });
+      }),
+    );
+    // A re-extraction cleared attends_one_day, but the stored Wed still drives
+    // the block and the calendar.
+    const enrollment = makeEnrollment({
+      status: 'enrolled',
+      days_of_week: ['wed'],
+      offering: makeOffering({ attends_one_day: false }),
+    });
+    renderWithQueryClient(
+      <EnrollmentEditSheet enrollment={enrollment} kidId={1} onClose={vi.fn()} />,
+    );
+
+    expect(screen.getByRole('group', { name: /Which day/i })).toBeInTheDocument();
+    const wed = screen.getByRole('checkbox', { name: 'Wed' });
+    expect(wed).toBeChecked();
+    await userEvent.click(wed);
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+
+    await waitFor(() => expect(capturedBody).not.toBeNull());
+    expect(capturedBody).toMatchObject({ days_of_week: null });
+  });
+
   it('Cancel button closes sheet without firing PATCH', async () => {
     let patchCalled = false;
     server.use(

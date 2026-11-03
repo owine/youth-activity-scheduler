@@ -212,17 +212,20 @@ async def _do_crawl(
         page_row.last_changed = datetime.now(UTC)
         page_row.consecutive_failures = 0
         page_row.next_check_at = _schedule_next(site)
+        # An update can move an enrolled slot, and the enrollment's
+        # unavailability block copies its schedule. Rebuild those blocks, then
+        # rematch the kids they belong to, since a block affects every other
+        # offering those kids could match. This runs before the per-offering
+        # rematch below: otherwise a new offering is matched against the old
+        # block, its new_match alert is enqueued, and the kid rematch then
+        # deletes the match, orphaning the alert.
+        await _refresh_enrollment_blocks(s, reconcile_result.updated)
         # Rematch each new/updated offering in the same session so matches land
         # atomically with the reconcile. Withdrawn offerings don't need a
         # rematch call: reconcile() deletes their match rows, because match
         # readers don't filter on offering status and the sweep skips them.
         for oid in reconcile_result.new + reconcile_result.updated:
             await rematch_offering(s, oid)
-        # An update can move an enrolled slot, and the enrollment's
-        # unavailability block copies its schedule. Rebuild those blocks, then
-        # rematch the kids they belong to, since a block affects every other
-        # offering those kids could match.
-        await _refresh_enrollment_blocks(s, reconcile_result.updated)
 
         # --- Alert hooks ---
         # new_match and watchlist_hit alerts are enqueued by the rematch above

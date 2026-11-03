@@ -37,10 +37,14 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
   const update = useUpdateEnrollment();
   // A pick-one-day program ("choose a day of the week") lists several days but
   // the kid attends only the chosen one(s), which drive the calendar and the
-  // unavailability block (#636).
+  // unavailability block (#636). The picker also shows when the enrollment
+  // already has a choice, even if a re-extraction cleared attends_one_day: the
+  // backend keeps using a stored choice, so the user must be able to see and
+  // clear it.
+  const storedDays = enrollment?.days_of_week ?? [];
   const pickDays =
     enrollment !== null &&
-    enrollment.offering.attends_one_day &&
+    (enrollment.offering.attends_one_day || storedDays.length > 0) &&
     enrollment.offering.days_of_week.length > 1;
 
   const form = useForm({
@@ -48,7 +52,10 @@ export function EnrollmentEditSheet({ enrollment, kidId, onClose }: Props) {
       notes: enrollment?.notes ?? null,
       // Slice ISO datetime to YYYY-MM-DD for <input type="date">.
       enrolled_at: enrollment?.enrolled_at ? enrollment.enrolled_at.slice(0, 10) : null,
-      days_of_week: enrollment?.days_of_week ?? [],
+      // Only days the offering still lists: a stale chosen day would have no
+      // checkbox to untick, and every save would be rejected with a 422. An
+      // empty result saves as "no choice".
+      days_of_week: storedDays.filter((d) => enrollment?.offering.days_of_week.includes(d)),
     },
     validators: { onChange: schema },
     onSubmit: async ({ value }) => {

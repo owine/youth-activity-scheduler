@@ -72,6 +72,16 @@ class ExtractedOffering(BaseModel):
             return valid
         return v
 
+    @field_validator("attends_one_day", mode="before")
+    @classmethod
+    def _null_attends_one_day_is_false(cls, v: object) -> object:
+        """Treat an explicit null as False rather than failing the page.
+
+        The model sometimes emits null for a flag it has no evidence for, and
+        one invalid row fails the whole page's extraction.
+        """
+        return False if v is None else v
+
 
 class ExtractionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")

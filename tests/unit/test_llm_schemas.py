@@ -74,3 +74,9 @@ def test_extraction_response_collects_offerings():
 def test_extraction_response_rejects_unknown_top_level():
     with pytest.raises(ValidationError):
         ExtractionResponse(offerings=[], model="oops")
+
+
+def test_offering_treats_null_attends_one_day_as_false():
+    o = ExtractedOffering(**_minimal(attends_one_day=None))
+    assert o.attends_one_day is False
+    assert ExtractedOffering(**_minimal(attends_one_day=True)).attends_one_day is True
