@@ -134,6 +134,15 @@ async def test_patch_alert_routing_unknown_channel(client):
 
 
 @pytest.mark.asyncio
+async def test_patch_alert_routing_accepts_the_push_alias(client):
+    """The defaults route watchlist_hit to ["push", "email"]; unchecking email
+    sent ["push"], which used to 422 because "push" names no notifier (#641)."""
+    r = await client.patch("/api/alert_routing/watchlist_hit", json={"channels": ["push"]})
+    assert r.status_code == 200
+    assert r.json()["channels"] == ["push"]
+
+
+@pytest.mark.asyncio
 async def test_patch_alert_routing_unconfigured_channel(client, caplog):
     """PATCH with known but unconfigured channel → 200 (warning logged)."""
     # ntfy is not configured in the fixture (only email is)

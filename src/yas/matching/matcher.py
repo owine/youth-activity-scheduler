@@ -475,6 +475,20 @@ async def _delete_match_if_exists(
     return True
 
 
+async def rematch_all_active_kids(
+    session: AsyncSession, *, today: date | None = None
+) -> list[MatchResult]:
+    """Rematch every active kid in one session.
+
+    For a household-wide input change (home coords, default radius) made in a
+    request. The daily sweep guards each kid in its own session instead.
+    """
+    results: list[MatchResult] = []
+    for kid in await _active_kids(session):
+        results.append(await rematch_kid(session, kid.id, today=today))
+    return results
+
+
 async def rematch_kid(
     session: AsyncSession, kid_id: int, *, today: date | None = None
 ) -> MatchResult:
