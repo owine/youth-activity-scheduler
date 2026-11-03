@@ -402,6 +402,22 @@ async def enqueue_push_cap(
     hit. Kept in the enqueuer (not an inline Alert insert in delivery.py) so
     all alert inserts share the same dedup/upsert path."""
     dk = f"push_cap:{kid_id}:{hour_bucket}"
+    # One notice per kid per hour, sent when the hour ends and counting every
+    # alert held back during it (spec §3.7). Upserting the bare count, as this
+    # once did, kept only the last group's.
+    pending = (
+        await session.execute(
+            select(Alert.payload_json).where(
+                Alert.dedup_key == dk,
+                Alert.sent_at.is_(None),
+                Alert.skipped.is_(False),
+            )
+        )
+    ).scalar_one_or_none()
+    total = suppressed_count + int((pending or {}).get("suppressed_count", 0) or 0)
+    hour_end = datetime.strptime(hour_bucket, "%Y-%m-%dT%H").replace(tzinfo=UTC) + timedelta(
+        hours=1
+    )
     return await _upsert_alert(
         session,
         alert_type=AlertType.push_cap,
@@ -409,6 +425,6 @@ async def enqueue_push_cap(
         kid_id=kid_id,
         offering_id=None,
         site_id=None,
-        scheduled_for=datetime.now(UTC),
-        payload={"suppressed_count": suppressed_count, "hour_bucket": hour_bucket},
+        scheduled_for=hour_end,
+        payload={"suppressed_count": total, "hour_bucket": hour_bucket},
     )
