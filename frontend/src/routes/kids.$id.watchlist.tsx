@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { RowTitleButton } from '@/components/common/RowTitleButton';
 import { useKid } from '@/lib/queries';
 import { useDeleteWatchlistEntry } from '@/lib/mutations';
 import { KidTabs } from '@/components/layout/KidTabs';
@@ -59,7 +60,9 @@ export function KidWatchlistPage() {
             <li key={w.id} onClick={() => setEditing(w)} className="cursor-pointer">
               <Card className="p-3 flex items-start gap-3 hover:bg-accent/50 transition-colors">
                 <div className="flex-1">
-                  <div className="font-semibold">{w.pattern}</div>
+                  <RowTitleButton onClick={() => setEditing(w)} className="font-semibold">
+                    {w.pattern}
+                  </RowTitleButton>
                   <div className="text-sm text-muted-foreground">
                     {w.site_id ? `Site #${w.site_id}` : 'any site'} · priority {w.priority}
                     {w.notes && ` · ${w.notes}`}

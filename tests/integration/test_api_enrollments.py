@@ -84,6 +84,28 @@ async def test_post_enrollment_enrolled_creates_block(client):
 
 
 @pytest.mark.asyncio
+async def test_enrolled_at_with_offset_is_stored_as_utc(client):
+    c, _ = client
+    r = await c.post(
+        "/api/enrollments",
+        json={
+            "kid_id": 1,
+            "offering_id": 1,
+            "status": "interested",
+            "enrolled_at": "2026-04-29T09:00:00+09:00",
+        },
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["enrolled_at"] == "2026-04-29T00:00:00Z"
+    eid = r.json()["id"]
+    r = await c.patch(f"/api/enrollments/{eid}", json={"enrolled_at": "2026-05-09T19:00:00-05:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["enrolled_at"] == "2026-05-10T00:00:00Z"
+    r = await c.get(f"/api/enrollments/{eid}")
+    assert r.json()["enrolled_at"] == "2026-05-10T00:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_patch_interested_to_enrolled_creates_block(client):
     c, engine = client
     created = await c.post(

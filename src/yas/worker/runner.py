@@ -48,6 +48,9 @@ def _build_notifiers(
 
 
 async def _heartbeat_loop(engine: AsyncEngine, settings: Settings) -> None:
+    """Deliberately not wrapped in a LoopGuard: a failed beat means the database
+    can't take even a one-row write, so it propagates, the process exits, and
+    the container restarts. /healthz doesn't check the worker; this does."""
     log.info("heartbeat.start", interval_s=settings.worker_heartbeat_interval_s)
     try:
         while True:

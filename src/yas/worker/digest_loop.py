@@ -12,7 +12,7 @@ with ``watchlist_hits`` and update this check accordingly."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
@@ -29,6 +29,7 @@ from yas.email.builders import gather_digest_payload
 from yas.email.llm_summary import generate_top_line
 from yas.llm.client import LLMClient
 from yas.logging import get_logger
+from yas.worker.loop_guard import LoopGuard
 from yas.worker.sweep import _parse_hhmm
 
 log = get_logger("yas.worker.digest")
@@ -50,7 +51,7 @@ async def daily_digest_loop(
     settings: Settings,
     llm: LLMClient | None,
     *,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> None:
     """Every 60 s check whether it is time to send the daily digest.
 
@@ -61,120 +62,154 @@ async def daily_digest_loop(
     """
     target = _parse_hhmm(settings.alert_digest_time_utc)
     last_run: date | None = None
+    guard = LoopGuard("digest")
     log.info("digest.start", time_utc=settings.alert_digest_time_utc)
+    # Resolved per call, not at definition, so a patched asyncio.sleep applies.
+    sleep = sleep or asyncio.sleep
     try:
         while True:
             now = datetime.now(UTC)
             today = now.date()
             if now.time() >= target and last_run != today:
-                async with session_scope(engine) as session:
-                    kids = (
-                        (await session.execute(select(Kid).where(Kid.active.is_(True))))
-                        .scalars()
-                        .all()
-                    )
-
-                    # Load cost cap from household settings (falls back to default).
-                    household = (
-                        await session.execute(select(HouseholdSettings).limit(1))
-                    ).scalar_one_or_none()
-                    cost_cap = (
-                        household.daily_llm_cost_cap_usd
-                        if household is not None
-                        else _DEFAULT_COST_CAP_USD
-                    )
-
-                    for kid in kids:
-                        # last_run is in-memory, so a restart after the target
-                        # time re-enters this block. The enqueuer only dedups
-                        # against *unsent* rows, so skip on ANY existing row:
-                        # a pending one may be delivered during the LLM call
-                        # below, leaving enqueue nothing to merge into.
-                        if await _already_enqueued(session, kid_id=kid.id, for_date=today):
-                            log.debug(
-                                "digest.skipped.already_enqueued",
-                                kid_id=kid.id,
-                                kid_name=kid.name,
-                                for_date=today.isoformat(),
-                            )
-                            continue
-
-                        window_start = now - timedelta(hours=24)
-                        window_end = now
-
-                        payload = await gather_digest_payload(
-                            session,
-                            kid,
-                            window_start=window_start,
-                            window_end=window_end,
-                            alert_no_matches_kid_days=settings.alert_no_matches_kid_days,
-                            now=now,
-                        )
-
-                        # Empty-day skip: omit the digest entirely when there is
-                        # nothing to report and the kid is not under the
-                        # no-matches threshold.
-                        # Checked: new_matches, starting_soon,
-                        # registration_calendar, delivery_failures,
-                        # silent_schedule_posts (digest-only surface per
-                        # routing spec), under_no_matches_threshold.
-                        # NOT checked: watchlist_hits (not surfaced by
-                        # DigestPayload); site_stagnant_ids (delivered
-                        # separately by the detector loop — their absence on
-                        # an otherwise-empty day is acceptable).
-                        if settings.alert_digest_empty_skip:
-                            has_content = (
-                                bool(payload.new_matches)
-                                or bool(payload.starting_soon)
-                                or bool(payload.registration_calendar)
-                                or bool(payload.delivery_failures)
-                                or bool(payload.silent_schedule_posts)
-                                or payload.under_no_matches_threshold
-                            )
-                            if not has_content:
-                                log.debug(
-                                    "digest.skipped.empty",
-                                    kid_id=kid.id,
-                                    kid_name=kid.name,
-                                    for_date=today.isoformat(),
-                                )
-                                continue
-
-                        top_line = await generate_top_line(
-                            payload,
-                            llm,
-                            cost_cap_remaining_usd=cost_cap,
-                        )
-                        rendered = render_digest_payload(payload, top_line)
-                        # Delivery reads subject from payload_json directly. We keep
-                        # the previous "Daily digest — {kid} — {date}" format here
-                        # rather than using rendered.subject (which is just top_line)
-                        # so the migration off render_digest is behavior-preserving;
-                        # changing the digest subject is a separate, deliberate call.
-                        subject = f"Daily digest — {kid.name} — {today.isoformat()}"
-
-                        await enqueue_digest(
-                            session,
-                            kid_id=kid.id,
-                            for_date=today,
-                            payload={
-                                "subject": subject,
-                                "body_plain": rendered.body_plain,
-                                "body_html": rendered.body_html,
-                                "top_line": top_line,
-                            },
-                        )
-                        log.info(
-                            "digest.enqueued",
-                            kid_id=kid.id,
-                            kid_name=kid.name,
-                            for_date=today.isoformat(),
-                        )
-
+                # Marked before the run, so a failure is reported once and retried
+                # tomorrow (or on restart) rather than every 60s; see daily_sweep_loop.
+                # A restart's re-run skips kids already enqueued for the day.
                 last_run = today
+                kids: Sequence[Kid] = ()
+                cost_cap = _DEFAULT_COST_CAP_USD
+                with guard.iteration():
+                    async with session_scope(engine) as session:
+                        kids = (
+                            (await session.execute(select(Kid).where(Kid.active.is_(True))))
+                            .scalars()
+                            .all()
+                        )
+
+                        # Load cost cap from household settings (falls back to default).
+                        household = (
+                            await session.execute(select(HouseholdSettings).limit(1))
+                        ).scalar_one_or_none()
+                        if household is not None:
+                            cost_cap = household.daily_llm_cost_cap_usd
+
+                for kid in kids:
+                    # Each kid is its own guarded iteration, so one kid's failure
+                    # (a lock timeout, a kid deleted mid-run) is reported and the
+                    # kids after it still get today's digest.
+                    with guard.iteration(kid_id=kid.id):
+                        await _digest_kid(
+                            engine,
+                            settings,
+                            llm,
+                            kid,
+                            now=now,
+                            today=today,
+                            cost_cap=cost_cap,
+                        )
+
                 log.info("digest.ran", kids=len(kids), for_date=today.isoformat())
 
             await sleep(60)
     except asyncio.CancelledError:
         log.info("digest.stop")
         raise
+
+
+async def _digest_kid(
+    engine: AsyncEngine,
+    settings: Settings,
+    llm: LLMClient | None,
+    kid: Kid,
+    *,
+    now: datetime,
+    today: date,
+    cost_cap: float,
+) -> None:
+    """Build and enqueue one kid's digest for ``today``, in its own transaction.
+
+    enqueue_digest's insert holds SQLite's only write lock until commit, and in a
+    transaction shared across kids every later kid's LLM call ran under it,
+    starving the heartbeat and API writes past the busy timeout."""
+    async with session_scope(engine) as session:
+        session.add(kid)
+        # last_run is in-memory, so a restart after the target time re-enters
+        # the run. The enqueuer only dedups against *unsent* rows, so skip on ANY
+        # existing row: a pending one may be delivered during the LLM call below,
+        # leaving enqueue nothing to merge into.
+        if await _already_enqueued(session, kid_id=kid.id, for_date=today):
+            log.debug(
+                "digest.skipped.already_enqueued",
+                kid_id=kid.id,
+                kid_name=kid.name,
+                for_date=today.isoformat(),
+            )
+            return
+
+        window_start = now - timedelta(hours=24)
+        window_end = now
+
+        payload = await gather_digest_payload(
+            session,
+            kid,
+            window_start=window_start,
+            window_end=window_end,
+            alert_no_matches_kid_days=settings.alert_no_matches_kid_days,
+            now=now,
+        )
+
+        # Empty-day skip: omit the digest entirely when there is nothing to
+        # report and the kid is not under the no-matches threshold.
+        # Checked: new_matches, starting_soon, registration_calendar,
+        # delivery_failures, silent_schedule_posts (digest-only surface per
+        # routing spec), under_no_matches_threshold.
+        # NOT checked: watchlist_hits (not surfaced by DigestPayload);
+        # site_stagnant_ids (delivered separately by the detector loop — their
+        # absence on an otherwise-empty day is acceptable).
+        if settings.alert_digest_empty_skip:
+            has_content = (
+                bool(payload.new_matches)
+                or bool(payload.starting_soon)
+                or bool(payload.registration_calendar)
+                or bool(payload.delivery_failures)
+                or bool(payload.silent_schedule_posts)
+                or payload.under_no_matches_threshold
+            )
+            if not has_content:
+                log.debug(
+                    "digest.skipped.empty",
+                    kid_id=kid.id,
+                    kid_name=kid.name,
+                    for_date=today.isoformat(),
+                )
+                return
+
+        top_line = await generate_top_line(
+            payload,
+            llm,
+            cost_cap_remaining_usd=cost_cap,
+        )
+        rendered = render_digest_payload(payload, top_line)
+        # Delivery reads subject from payload_json directly. We keep the previous
+        # "Daily digest — {kid} — {date}" format here rather than using
+        # rendered.subject (which is just top_line) so the migration off
+        # render_digest is behavior-preserving; changing the digest subject is a
+        # separate, deliberate call.
+        subject = f"Daily digest — {kid.name} — {today.isoformat()}"
+
+        await enqueue_digest(
+            session,
+            kid_id=kid.id,
+            for_date=today,
+            payload={
+                "subject": subject,
+                "body_plain": rendered.body_plain,
+                "body_html": rendered.body_html,
+                "top_line": top_line,
+            },
+        )
+        log.info(
+            "digest.enqueued",
+            kid_id=kid.id,
+            kid_name=kid.name,
+            for_date=today.isoformat(),
+        )

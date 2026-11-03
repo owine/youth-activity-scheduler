@@ -74,6 +74,9 @@ so each broken site becomes its own issue.
 | `/readyz` returning 503 | no | | Probes poll constantly; the 503 is the signal. A readiness check that *raises* is still reported. |
 | `/discover` seed fetch or classifier failed (`DiscoveryError`, 502) | no | | User-triggered, and the error is shown in the UI. Covers the LLM not calling its tool, truncation and refusals |
 | Unhandled API exception (500) | yes | error | FastAPI integration |
+| Worker loop iteration failed (`LoopGuard`; the loop carries on) | yes | error | stack trace, tagged `loop` (and `kid_id` for a digest/sweep kid). Only the first failure of a streak; a success resets it |
+| Worker loop failed `MAX_CONSECUTIVE_FAILURES` times in a row, or the heartbeat failed | yes | error | Re-raised, so it is a worker loop crash (below) |
+| Geocode enricher: rematch after a successful geocode failed | yes | error | stack trace, tagged `location_id`. The coordinates are kept, so it reports once per location; the daily sweep rematches |
 | Worker loop crash (exits the process) | yes | error | uncaught-exception hook, flushed at exit |
 | Browser: route render error | yes | error | router `defaultOnCatch` |
 | Browser: error outside routes | yes | error | app-level `ErrorBoundary`, which also renders a reload fallback |

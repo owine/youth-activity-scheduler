@@ -77,6 +77,18 @@ async def test_patch_site(client):
 
 
 @pytest.mark.asyncio
+async def test_patch_site_converts_offset_muted_until_to_utc(client):
+    c, _ = client
+    created = await c.post("/api/sites", json={"name": "X", "base_url": "https://x/"})
+    sid = created.json()["id"]
+    r = await c.patch(f"/api/sites/{sid}", json={"muted_until": "2026-11-09T00:00:00-05:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["muted_until"] == "2026-11-09T05:00:00Z"
+    r = await c.get(f"/api/sites/{sid}")
+    assert r.json()["muted_until"] == "2026-11-09T05:00:00Z"
+
+
+@pytest.mark.asyncio
 async def test_delete_site_cascades(client):
     c, engine = client
     created = await c.post(

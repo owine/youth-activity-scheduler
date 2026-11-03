@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from yas.config import Settings
 from yas.crawl.normalize import normalize_name
-from yas.db.models import GeocodeAttempt, HouseholdSettings, Location
+from yas.db.models import GeocodeAttempt, HouseholdSettings, Location, Offering
 from yas.db.session import session_scope
 from yas.geo.client import Geocoder, GeocoderUnavailable
 from yas.geo.enricher import record_geocode_attempt
 from yas.logging import get_logger
+from yas.matching.matcher import rematch_all_active_kids
 from yas.web.routes.household_schemas import CredentialStatus, HouseholdOut, HouseholdPatch
 
 log = get_logger("yas.web.household")
@@ -41,6 +42,35 @@ async def _load_or_create(session: AsyncSession) -> HouseholdSettings:
     return hh
 
 
+async def _distance_inputs(
+    session: AsyncSession, hh: HouseholdSettings
+) -> tuple[int | None, float | None, float | None, float | None]:
+    """What the matcher's distance gate reads from the household."""
+    lat = lon = None
+    if hh.home_location_id is not None:
+        loc = await session.get(Location, hh.home_location_id)
+        if loc is not None:
+            lat, lon = loc.lat, loc.lon
+    return (hh.home_location_id, lat, lon, hh.default_max_distance_mi)
+
+
+async def _clear_home(session: AsyncSession, hh: HouseholdSettings) -> None:
+    """Unset the home location, deleting its row unless an offering shares it."""
+    loc_id = hh.home_location_id
+    if loc_id is None:
+        return
+    hh.home_location_id = None
+    await session.flush()
+    shared = (
+        await session.execute(select(Offering.id).where(Offering.location_id == loc_id).limit(1))
+    ).first()
+    if shared is None:
+        loc = await session.get(Location, loc_id)
+        if loc is not None:
+            # Otherwise an ungeocoded orphan keeps the enricher retrying it.
+            await session.delete(loc)
+
+
 _SECRET_KEYS = {
     "password_value",
     "api_token_value",
@@ -48,6 +78,51 @@ _SECRET_KEYS = {
     "user_key_value",
     "app_token_value",
 }
+
+
+# Per channel, the fields that say which server a stored secret was issued for.
+# Pushover and the forwardemail transport talk to fixed hosts, so they have none
+# beyond the email transport itself.
+_ENDPOINT_KEYS: dict[str, tuple[str, ...]] = {
+    "smtp_config_json": ("transport", "host", "username"),
+    "ntfy_config_json": ("base_url",),
+    "pushover_config_json": (),
+}
+
+
+def _endpoint_value(value: Any) -> Any:
+    # NtfyChannel strips a trailing slash, so "https://ntfy.sh/" is the same server.
+    return value.strip().rstrip("/") if isinstance(value, str) else value
+
+
+def _merge_secrets(
+    channel: str, incoming: dict[str, Any] | None, stored: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Carry stored secrets the incoming channel config omits.
+
+    GET redacts secrets, so the settings form never has them to send back: it
+    leaves a saved secret blank and omits it. Replacing the whole blob would
+    wipe the secret on every unrelated save. An omitted key keeps the stored
+    value; an explicit null or "" clears it; a value replaces it. Changing
+    where the secret goes (email transport, SMTP host or username, ntfy
+    base_url) drops it, since it belongs to the old endpoint alone: carrying it
+    over would send the old server's password or token to the new one.
+    """
+    if incoming is None:
+        return None
+    stored = stored or {}
+    merged = dict(incoming)
+    same_endpoint = all(
+        _endpoint_value(incoming.get(k)) == _endpoint_value(stored.get(k))
+        for k in _ENDPOINT_KEYS[channel]
+    )
+    for key in _SECRET_KEYS:
+        if key in merged:
+            if merged[key] is None or merged[key] == "":
+                del merged[key]
+        elif same_endpoint and key in stored:
+            merged[key] = stored[key]
+    return merged
 
 
 def _redact_config(cfg: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -165,11 +240,16 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
     async with session_scope(_engine(request)) as s:
         hh = await _load_or_create(s)
         data = patch.model_dump(exclude_unset=True)
+        distance_before = await _distance_inputs(s, hh)
 
         # Handle home_address ergonomics: create/update a Location row.
+        # Omitted means unchanged; an explicit null (or blank) clears it.
+        address_sent = "home_address" in data
         address = data.pop("home_address", None)
         loc_name = data.pop("home_location_name", None) or "Home"
-        if address is not None:
+        if address_sent and (address is None or not address.strip()):
+            await _clear_home(s, hh)
+        elif address is not None:
             existing_id = hh.home_location_id
             needs_geocode = True
             if existing_id is not None:
@@ -225,8 +305,23 @@ async def patch_household(patch: HouseholdPatch, request: Request) -> HouseholdO
                     s, prior, addr_norm, outcome, now=datetime.now(UTC), detail=detail
                 )
 
+        for key in _ENDPOINT_KEYS:
+            if key in data:
+                data[key] = _merge_secrets(key, data[key], getattr(hh, key))
+
         for key, value in data.items():
             setattr(hh, key, value)
 
         await s.flush()
+        # The distance gate reads home coords and the default radius, so a change
+        # to either must not wait for the daily sweep to take effect. Only when
+        # the home is known, though: without coords the gate passes every
+        # offering as distance_unknown, and rematching would insert matches and
+        # alert on offerings far outside the radius. Unknown coords (cleared
+        # address, geocode miss or outage) leave matches for the daily sweep.
+        distance_after = await _distance_inputs(s, hh)
+        _, home_lat, home_lon, _ = distance_after
+        if distance_after != distance_before and home_lat is not None and home_lon is not None:
+            await rematch_all_active_kids(s)
+            await s.flush()
         return await _to_out(s, hh, _settings(request))

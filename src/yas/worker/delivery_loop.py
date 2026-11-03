@@ -17,6 +17,7 @@ from yas.config import Settings
 from yas.db.models import Alert, HouseholdSettings
 from yas.db.session import session_scope
 from yas.logging import get_logger
+from yas.worker.loop_guard import LoopGuard
 
 
 async def alert_delivery_loop(
@@ -24,7 +25,7 @@ async def alert_delivery_loop(
     settings: Settings,
     notifiers_override: dict[str, Any] | None = None,
     *,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] | None = None,
 ) -> None:
     """Polling delivery loop. Runs until cancelled.
 
@@ -40,56 +41,75 @@ async def alert_delivery_loop(
     """
     log = get_logger("yas.alerts.delivery")
     log.info("delivery.start", tick_s=settings.alert_delivery_tick_s)
+    guard = LoopGuard("alert_delivery")
+    # Resolved per call, not at definition, so a patched asyncio.sleep applies.
+    sleep = sleep or asyncio.sleep
     try:
         while True:
-            async with session_scope(engine) as s:
-                household = (
-                    await s.execute(select(HouseholdSettings).limit(1))
-                ).scalar_one_or_none()
-
-                if notifiers_override is not None:
-                    notifiers = notifiers_override
-                    own_notifiers = False
-                else:
-                    notifiers = build_notifiers(household, settings)
-                    log_constructed(notifiers)
-                    own_notifiers = True
-
-                try:
-                    now = datetime.now(UTC)
-                    due_rows = (
-                        (
-                            await s.execute(
-                                select(Alert)
-                                .where(
-                                    Alert.sent_at.is_(None),
-                                    Alert.skipped.is_(False),
-                                    Alert.scheduled_for <= now,
-                                    Alert.closed_at.is_(None),
-                                )
-                                .order_by(Alert.scheduled_for)
-                                .limit(100)
-                            )
-                        )
-                        .scalars()
-                        .all()
-                    )
-
-                    due = _apply_grace_window(
-                        list(due_rows),
-                        now,
-                        settings.alert_countdown_past_due_grace_s,
-                    )
-
-                    groups = coalesce(due, window_s=settings.alert_coalesce_normal_s)
-                    for g in groups:
-                        await send_alert_group(s, g, notifiers, settings, household)
-                finally:
-                    if own_notifiers:
-                        for n in notifiers.values():
-                            await n.aclose()
-
+            with guard.iteration():
+                await _deliver_due(engine, settings, notifiers_override)
             await sleep(settings.alert_delivery_tick_s)
     except asyncio.CancelledError:
         log.info("delivery.stop")
         raise
+
+
+async def _deliver_due(
+    engine: AsyncEngine,
+    settings: Settings,
+    notifiers_override: dict[str, Any] | None,
+) -> None:
+    """One tick: select due alerts, then deliver each coalesced group."""
+    # Selecting gets a transaction of its own. Its only writes are the grace
+    # window's skips, which commit here, before anything is sent.
+    async with session_scope(engine) as s:
+        household = (await s.execute(select(HouseholdSettings).limit(1))).scalar_one_or_none()
+        now = datetime.now(UTC)
+        due_rows = (
+            (
+                await s.execute(
+                    select(Alert)
+                    .where(
+                        Alert.sent_at.is_(None),
+                        Alert.skipped.is_(False),
+                        Alert.scheduled_for <= now,
+                        Alert.closed_at.is_(None),
+                    )
+                    .order_by(Alert.scheduled_for)
+                    .limit(100)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        due = _apply_grace_window(
+            list(due_rows),
+            now,
+            settings.alert_countdown_past_due_grace_s,
+        )
+
+    if notifiers_override is not None:
+        notifiers = notifiers_override
+        own_notifiers = False
+    else:
+        notifiers = build_notifiers(household, settings)
+        log_constructed(notifiers)
+        own_notifiers = True
+
+    try:
+        groups = coalesce(due, window_s=settings.alert_coalesce_normal_s)
+        for g in groups:
+            # One transaction per group. send_alert_group writes a group's
+            # outcome after sending it, and flushed writes hold SQLite's only
+            # write lock until commit; in one shared transaction, group 1's lock
+            # was held through every later group's network sends, starving the
+            # heartbeat and API writes past the busy timeout. It also means a
+            # failure in a later group no longer rolls back (and so re-sends)
+            # the groups already delivered.
+            async with session_scope(engine) as s:
+                s.add_all(g.members)
+                await send_alert_group(s, g, notifiers, settings, household)
+    finally:
+        if own_notifiers:
+            for n in notifiers.values():
+                await n.aclose()

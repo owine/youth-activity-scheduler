@@ -180,4 +180,24 @@ describe('WatchlistEntrySheet', () => {
     // Sheet should still be open (mockOnClose not called)
     expect(mockOnClose).not.toHaveBeenCalled();
   });
+
+  it('opens empty again after an entry was saved in add mode', async () => {
+    const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <WatchlistEntrySheet kidId={99} mode="create" open={true} onClose={onClose} />,
+      { wrapper: makeWrapper(qc) },
+    );
+    await userEvent.type(screen.getByLabelText(/pattern/i), 'basketball');
+    await userEvent.selectOptions(screen.getByLabelText(/priority/i), 'high');
+    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+
+    // The route keeps the create sheet mounted and only toggles `open`.
+    rerender(<WatchlistEntrySheet kidId={99} mode="create" open={false} onClose={onClose} />);
+    rerender(<WatchlistEntrySheet kidId={99} mode="create" open={true} onClose={onClose} />);
+
+    expect(screen.getByLabelText(/pattern/i)).toHaveValue('');
+    expect(screen.getByLabelText(/priority/i)).toHaveValue('normal');
+  });
 });

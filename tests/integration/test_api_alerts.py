@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -229,6 +229,21 @@ async def test_get_alerts_filter_by_since(client):
     alert_ids = {item["id"] for item in body["items"]}
     assert 1 not in alert_ids
     assert {2, 3, 4} == alert_ids
+
+
+@pytest.mark.asyncio
+async def test_get_alerts_since_with_offset_compares_in_utc(client):
+    """A non-UTC `since` must compare as the instant it names, not its wall time.
+
+    Two hours ago written in +09:00 has a wall time nine hours later; compared
+    as-is against UTC columns it would drop alerts 2 and 3.
+    """
+    c, _ = client
+    tokyo = timezone(timedelta(hours=9))
+    since = (datetime.now(UTC) - timedelta(hours=2)).astimezone(tokyo).isoformat()
+    r = await c.get("/api/alerts", params={"since": since})
+    assert r.status_code == 200, r.text
+    assert {item["id"] for item in r.json()["items"]} == {2, 3, 4}
 
 
 @pytest.mark.asyncio

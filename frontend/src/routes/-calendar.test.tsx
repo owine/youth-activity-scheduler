@@ -1,7 +1,10 @@
 import { vi } from 'vitest';
 
+const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
+
 interface MockCalendarViewProps {
   events: Array<{ title: string }>;
+  onNavigate: (d: Date) => void;
 }
 interface MockFiltersProps {
   filters: { kidIds: number[] | null };
@@ -10,11 +13,14 @@ interface MockFiltersProps {
 }
 
 vi.mock('@/components/calendar/CalendarView', () => ({
-  CalendarView: ({ events }: MockCalendarViewProps) => (
+  CalendarView: ({ events, onNavigate }: MockCalendarViewProps) => (
     <div data-testid="calendar-view">
       {events.map((e, i) => (
         <div key={i}>{e.title}</div>
       ))}
+      {/* react-big-calendar keeps the cursor's time of day when it navigates,
+          so an evening "Today" cursor arrives as a late-evening local Date. */}
+      <button onClick={() => onNavigate(new Date(2026, 10, 2, 21, 30))}>NavigateEvening</button>
     </div>
   ),
 }));
@@ -49,12 +55,13 @@ vi.mock('@tanstack/react-router', async () => {
         {children}
       </a>
     ),
-    useNavigate: () => vi.fn(),
+    useNavigate: () => navigateMock,
   };
 });
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
 import { server } from '@/test/server';
@@ -107,8 +114,10 @@ const calendarHandlers = [
 // reset after each test, so the overrides are re-applied per test.
 beforeEach(() => server.use(...calendarHandlers));
 
-function renderPage(searchParams: Record<string, string> = {}) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(
+  searchParams: Record<string, string> = {},
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={qc}>
       <CalendarPage searchParams={searchParams} />
@@ -127,5 +136,31 @@ describe('CalendarPage', () => {
     server.use(http.get('/api/kids', () => HttpResponse.json([])));
     renderPage();
     expect(await screen.findByText(/Add a kid/i)).toBeInTheDocument();
+  });
+
+  it('stores the local calendar date when navigating in the evening', async () => {
+    navigateMock.mockClear();
+    renderPage();
+    await screen.findByText(/Sam: T-Ball/);
+    await userEvent.click(screen.getByRole('button', { name: 'NavigateEvening' }));
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ search: expect.objectContaining({ date: '2026-11-02' }) }),
+    );
+  });
+
+  it('refetches a kid when the per-kid calendar key is invalidated', async () => {
+    // Enroll / cancel / mute / delete-block invalidate ['kids', kidId, 'calendar'],
+    // so the combined view must share that key shape to see their effects.
+    let samFetches = 0;
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname === '/api/kids/1/calendar') samFetches += 1;
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPage({}, qc);
+    await screen.findByText(/Sam: T-Ball/);
+    const before = samFetches;
+    await qc.invalidateQueries({ queryKey: ['kids', 1, 'calendar'] });
+    await waitFor(() => expect(samFetches).toBeGreaterThan(before));
+    server.events.removeAllListeners();
   });
 });

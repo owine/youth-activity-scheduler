@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from yas.db.models import Alert, Kid
 from yas.db.models._types import AlertType
 from yas.db.session import session_scope
+from yas.web.routes._types import UtcDatetimeIn
 from yas.web.routes.alerts_schemas import (
     AlertBulkCloseIn,
     AlertBulkCloseOut,
@@ -84,8 +85,8 @@ async def list_alerts(
     kid_id: Annotated[int | None, Query()] = None,
     type: Annotated[AlertType | None, Query()] = None,
     status: Annotated[Literal["pending", "sent", "skipped"] | None, Query()] = None,
-    since: Annotated[datetime | None, Query()] = None,
-    until: Annotated[datetime | None, Query()] = None,
+    since: Annotated[UtcDatetimeIn | None, Query()] = None,
+    until: Annotated[UtcDatetimeIn | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 25,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AlertListResponse:

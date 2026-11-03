@@ -124,9 +124,11 @@ ENV YAS_GIT_SHA=$GIT_SHA
 # Note this probes /healthz, which is shallow (status/git_sha/version). It
 # deliberately does NOT check the worker — a stalled worker leaves the
 # container healthy. That's covered by the process exiting instead: see
-# yas.__main__._supervise. Docker's HEALTHCHECK only sets a status label, it
-# never restarts anything; recovery comes from `restart: unless-stopped`
-# reacting to the exit.
+# yas.__main__._supervise. A worker loop absorbs an occasional failed tick but
+# exits after MAX_CONSECUTIVE_FAILURES in a row (yas.worker.loop_guard), and a
+# failed heartbeat exits at once. Docker's HEALTHCHECK only sets a status
+# label, it never restarts anything; recovery comes from
+# `restart: unless-stopped` reacting to the exit.
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=30s \
   CMD curl -fsS http://localhost:8080/healthz || exit 1
 
