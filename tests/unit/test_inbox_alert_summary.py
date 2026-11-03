@@ -52,12 +52,15 @@ def test_crawl_failed():
 
 
 def test_schedule_posted():
+    # enqueue_schedule_posted writes only {"summary": ...}; the site comes from
+    # the alert's site_id via load_alert_names.
     s = summarize_alert(
         AlertType.schedule_posted,
         kid_name=None,
-        payload={"site_name": "Chi Park Dist", "n_offerings": 6},
+        payload={"summary": "Fall schedule"},
+        site_name="Chi Park Dist",
     )
-    assert "Chi Park Dist" in s and "6" in s
+    assert "Chi Park Dist" in s and "schedule" in s.lower()
 
 
 def test_site_stagnant():
@@ -82,9 +85,21 @@ def test_push_cap():
     s = summarize_alert(
         AlertType.push_cap,
         kid_name="Sam",
-        payload={"cap": 5},
+        payload={"suppressed_count": 5, "hour_bucket": "2026-04-22T15"},
     )
     assert "Sam" in s and "5" in s
+
+
+def test_names_passed_in_win_over_generic_fallbacks():
+    # new_match / watchlist_hit payloads carry no names (#641).
+    s = summarize_alert(
+        AlertType.new_match,
+        kid_name="Sam",
+        payload={"score": 0.8, "reasons": {}},
+        offering_name="Beginner Swim",
+        site_name="YMCA",
+    )
+    assert s == "New match for Sam — Beginner Swim · YMCA"
 
 
 def test_digest():
