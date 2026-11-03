@@ -833,3 +833,29 @@ async def test_ics_export_400_day_cap_enforced(client):
     r = await c.get("/api/kids/1/calendar.ics?from=2024-01-01&to=2026-01-01")
     assert r.status_code == 422
     assert "400-day" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "fallback", "encoded"),
+    [
+        ("Sam", "Sam-yas.ics", "Sam-yas.ics"),
+        ("Zoë", "Zoe-yas.ics", "Zo%C3%AB-yas.ics"),
+        ("Łukasz", "_ukasz-yas.ics", "%C5%81ukasz-yas.ics"),
+        ("Mei 李", "Mei _-yas.ics", "Mei%20%E6%9D%8E-yas.ics"),
+        ('Al "Bo"', "Al _Bo_-yas.ics", "Al%20%22Bo%22-yas.ics"),
+    ],
+)
+async def test_ics_export_filename_survives_non_latin1_names(client, name, fallback, encoded):
+    """Header values must be Latin-1; a non-Latin-1 kid name used to 500. RFC 6266:
+    an ASCII filename= fallback plus a UTF-8 filename*= for clients that read it."""
+    c, engine = client
+    async with session_scope(engine) as s:
+        s.add(Kid(id=1, name=name, dob=date(2019, 5, 1)))
+
+    r = await c.get("/api/kids/1/calendar.ics")
+
+    assert r.status_code == 200
+    assert r.headers["content-disposition"] == (
+        f"inline; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
+    )

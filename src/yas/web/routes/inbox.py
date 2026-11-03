@@ -36,6 +36,12 @@ async def inbox_summary(
     until: Annotated[datetime, Query()],
     include_closed: Annotated[bool, Query()] = False,
 ) -> InboxSummaryOut:
+    # A naive bound means UTC. Converting aware ones matters too: SQLite stores
+    # UTC wall-clock without an offset, and a bind drops the offset rather than
+    # converting, so a -05:00 bound would be read five hours off.
+    since, until = (
+        d.replace(tzinfo=UTC) if d.tzinfo is None else d.astimezone(UTC) for d in (since, until)
+    )
     if since >= until:
         raise HTTPException(status_code=422, detail="since must be before until")
 
