@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/common/ErrorBanner';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { ApiError } from '@/lib/api';
+import { apiErrorDetail } from '@/lib/api';
 import { useCreateSite, useDiscoverPages, useAddPage, useCrawlNow } from '@/lib/mutations';
 import type { Candidate, PageKind } from '@/lib/types';
 import { CandidateList } from './CandidateList';
@@ -63,7 +63,7 @@ export function SiteWizard() {
         ),
       );
     } catch (err) {
-      const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+      const detail = apiErrorDetail(err);
       const msg = detail ?? (err as Error).message;
       setErrorMsg(msg ? `Discovery failed: ${msg}` : 'Discovery failed');
     }
@@ -104,7 +104,7 @@ export function SiteWizard() {
         });
         setManualEntries((prev) => prev.filter((e) => e.url !== p.url));
       } catch (err) {
-        const detail = err instanceof ApiError ? (err.body as { detail?: string })?.detail : null;
+        const detail = apiErrorDetail(err);
         setErrorMsg(
           `Added ${saved} of ${pending.length} pages — ${detail ?? (err as Error).message}`,
         );
