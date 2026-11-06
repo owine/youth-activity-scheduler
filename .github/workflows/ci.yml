@@ -123,9 +123,21 @@ jobs:
           uv run python -m yas migrate
       - name: Seed e2e fixtures
         run: uv run python scripts/seed_e2e.py "$YAS_DATABASE_URL"
+      # No `--with-deps`. Playwright always adds a `tools` group to it (xvfb +
+      # fonts; `targets.add("tools")` is unconditional), and on ubuntu-26.04 the
+      # only packages that group actually downloads are nine CJK/Thai/xfonts
+      # fallback fonts (21.9 MB) -- every Chromium runtime lib is already on the
+      # runner image. Those fonts come from azure.archive.ubuntu.com, which has
+      # served this exact set at 33-38 kB/s: 6+ min stalls in house-manager's
+      # a11y and 9 min in claude-terminal, on a step that took 35s here in run
+      # 41584067770. If a future image drops a Chromium lib, launch fails loudly
+      # with Playwright's missing-libraries list; add that package explicitly
+      # rather than reinstating `--with-deps`. The timeout is a backstop for the
+      # CDN download itself, which normally takes ~10s.
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
         working-directory: frontend
+        timeout-minutes: 5
       - name: Start API
         env:
           YAS_STATIC_DIR: ${{ github.workspace }}/frontend/dist
