@@ -191,8 +191,8 @@ importers:
         specifier: 4.4.0
         version: 4.4.0
       lucide-react:
-        specifier: 1.65.0
-        version: 1.65.0(@types/react@19.3.0)(react@19.3.1)
+        specifier: 1.69.0
+        version: 1.69.0(@types/react@19.3.0)(react@19.3.1)
       radix-ui:
         specifier: 1.8.1
         version: 1.8.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -285,14 +285,14 @@ importers:
         specifier: 0.5.7
         version: 0.5.7(eslint@10.14.0(jiti@2.7.0)(supports-color@8.1.1))
       globals:
-        specifier: 17.13.0
-        version: 17.13.0
+        specifier: 17.14.0
+        version: 17.14.0
       happy-dom:
         specifier: 21.0.4
         version: 21.0.4
       msw:
-        specifier: 3.0.3
-        version: 3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+        specifier: 3.0.4
+        version: 3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
       prettier:
         specifier: 3.9.10
         version: 3.9.10
@@ -310,7 +310,7 @@ importers:
         version: 8.3.5(@types/node@26.6.6)(jiti@2.7.0)
       vitest:
         specifier: 5.0.5
-        version: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+        version: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
 
 packages:
 
@@ -2515,8 +2515,8 @@ packages:
   globalize@1.7.1:
     resolution: {integrity: sha512-PFymRL0PtitFOlSniuwwwNfkooi3cLQJo9Uke1+j1DsGfUkkHkwneImqVtGcqKI0TuzhAlHt7hAcgK324902HA==}
 
-  globals@17.13.0:
-    resolution: {integrity: sha512-RwMTC61u7hrG3ZJMkZQOK4JLJrKS8QtoTii63EmWvFXHqycY9FObBJQCbsLxSO8kjKhWE5kV1GC+Vb1g3RI0Zg==}
+  globals@17.14.0:
+    resolution: {integrity: sha512-UtdkTVyAJePQv0J2M9Xe4L0ruNSDV314XiIJsADI2Zf40bcdAonE/D/OhAU8AT99oij9mhLByb+NvA3QWZYgCg==}
     engines: {node: '>=18'}
 
   goober@2.1.19:
@@ -2790,8 +2790,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-react@1.65.0:
-    resolution: {integrity: sha512-roSdtzudEY39i2hn5LLjA8toYfhF2z4S10WSqZF4ubXpHlOmNTvaxMxZLdJfQDi6pEifQWX+cRmYihKSsvAxfA==}
+  lucide-react@1.69.0:
+    resolution: {integrity: sha512-UTFECm4yEgkgMN0kfLuxWcmlk+4u02Jrqehgk3ZXRx/Ud68OpP7hjkp67bvkBHmIpMaZCIveF1QDYeupO7XmYQ==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -2841,8 +2841,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  msw@3.0.3:
-    resolution: {integrity: sha512-hsXUCt2gK12q1IUBY9VmMun+yC60eEpVzegAFN5aGZbXhrGqtgPARVWn2ew4mezYvk1G8yhFha9myGSyRyRGWg==}
+  msw@3.0.4:
+    resolution: {integrity: sha512-lrILj+WEoJ4pp3SZHdEDnnZvP6jfWrNua+v2jgXz82RAaATAVqOqMNMxj2n2TUMNR9JP/eWG5tBry3mKnxPNbA==}
     engines: {node: '>=22.12.0'}
     hasBin: true
     peerDependencies:
@@ -5048,7 +5048,7 @@ snapshots:
       picocolors: 1.1.1
       redent: 3.0.0
     optionalDependencies:
-      vitest: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+      vitest: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
@@ -5279,14 +5279,14 @@ snapshots:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.5(@types/node@26.6.6)(jiti@2.7.0)
 
-  '@vitest/mocker@5.0.5(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))':
+  '@vitest/mocker@5.0.5(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.5
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      msw: 3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+      msw: 3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
       vite: 8.3.5(@types/node@26.6.6)(jiti@2.7.0)
 
   '@vitest/pretty-format@5.0.5':
@@ -5303,7 +5303,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+      vitest: 5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
 
   '@vitest/utils@5.0.5':
     dependencies:
@@ -5635,7 +5635,7 @@ snapshots:
     dependencies:
       cldrjs: 0.5.5
 
-  globals@17.13.0: {}
+  globals@17.14.0: {}
 
   goober@2.1.19(csstype@3.2.3):
     dependencies:
@@ -5838,7 +5838,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-react@1.65.0(@types/react@19.3.0)(react@19.3.1):
+  lucide-react@1.69.0(@types/react@19.3.0)(react@19.3.1):
     dependencies:
       react: 19.3.1
     optionalDependencies:
@@ -5876,7 +5876,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)):
+  msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)):
     dependencies:
       '@inquirer/confirm': 6.3.5(@types/node@26.6.6)
       '@msw/url': 0.1.2
@@ -6413,10 +6413,10 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)):
+  vitest@5.0.5(@types/node@26.6.6)(@vitest/ui@5.0.5)(happy-dom@21.0.4)(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.5(msw@3.0.3(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
+      '@vitest/mocker': 5.0.5(msw@3.0.4(@types/node@26.6.6)(@typescript/typescript6@6.0.2)(supports-color@8.1.1)(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0)))(vite@8.3.5(@types/node@26.6.6)(jiti@2.7.0))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
