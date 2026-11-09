@@ -262,6 +262,11 @@ jobs:
       # through. Name + version only: the raw `Inst` line also carries
       # repository labels like `Debian:13.7/stable`, which would change the
       # key at every Debian point release without any package changing.
+      # An upgrade of a package the base already has reads
+      # `Inst zlib1g [<installed>] (<candidate> …)`; the optional `[…]` group
+      # keeps those in the key, with the candidate version. A requested
+      # package already in the base (ca-certificates) gets upgraded whenever
+      # Debian has a newer build, so it must not drop out of the key.
       - name: Compute apt closure cache key
         id: apt
         run: |
@@ -285,7 +290,7 @@ jobs:
           # PKGS is word-split inside the container on purpose.
           closure=$(docker run --rm -e PKGS="$pkgs" "$base" sh -c \
               'apt-get update -qq >/dev/null && apt-get install -s --no-install-recommends $PKGS' \
-            | sed -nE 's/^Inst ([^ ]+) \(([^ ]+) .*/\1 \2/p' | sort)
+            | sed -nE 's/^Inst ([^ ]+) (\[[^]]*\] )?\(([^ ]+) .*/\1 \3/p' | sort)
           if [ -z "$closure" ]; then
             echo "::error::apt-get install -s resolved no packages to install"
             exit 1
