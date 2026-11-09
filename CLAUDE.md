@@ -303,4 +303,12 @@ specs live in `e2e/` and run against a real API.
 - CI's `ci-pass` job is a stable-named aggregator over all other jobs (except `tag-main`, see
   Releases) and treats `skipped` as success — docs-only PRs skip `docker-build` via the `changes`
   paths-filter and must still merge.
+- **The runtime `apt-get install` layer is keyed by `APT_CLOSURE`**, a build arg CI's
+  docker-build job computes as a hash of the `name version` set that install resolves to today
+  (`apt-get install -s` in the base image). Its packages are unpinned and the `RUN` line never
+  changes, so without the key the `type=gha,mode=max` cache would keep serving old builds,
+  `stable-security` fixes included, until the `python:*-slim` digest moved; `GIT_SHA` sits below
+  that RUN, so it can't bust it. The step parses the last `FROM` and the arguments after
+  `apt-get install` up to `&&`: keep one `apt-get install` in the runtime stage, and don't move
+  the ARG below the RUN. Local builds leave it empty.
 - The HTTP API is unauthenticated by design and intended for trusted networks only.

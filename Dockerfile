@@ -63,6 +63,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PYTHON_PREFERENCE=only-system \
     PATH="/app/.venv/bin:${PATH}"
 
+# APT_CLOSURE is a cache key, not a setting: CI passes a hash of the package
+# set (name + version) the install below resolves to today, so this layer
+# rebuilds when Debian ships a new build of any of them, a stable-security fix
+# included. The RUN line itself never changes, so without the key the gha
+# cache would serve the old builds until the base digest moves. Empty for
+# local builds.
+ARG APT_CLOSURE=
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl sqlite3 \
     && rm -rf /var/lib/apt/lists/*

@@ -254,6 +254,47 @@ jobs:
             org.opencontainers.image.description=Self-hosted youth-activity scheduler with crawl, matching, and alerting.
             org.opencontainers.image.licenses=MIT
 
+      # Cache key for the runtime `apt-get install` layer (see APT_CLOSURE in
+      # the Dockerfile): a hash of the package set that install resolves to
+      # today on this leg's arch, so the layer rebuilds when any package in it,
+      # transitive ones included, gets a new build. Base image and package
+      # list are read from the Dockerfile, so Renovate digest bumps carry
+      # through. Name + version only: the raw `Inst` line also carries
+      # repository labels like `Debian:13.7/stable`, which would change the
+      # key at every Debian point release without any package changing.
+      - name: Compute apt closure cache key
+        id: apt
+        run: |
+          base=$(awk '/^FROM /{img=$2} END{print img}' Dockerfile)
+          # Arguments after `apt-get install` in the last stage, up to `&&`,
+          # minus flags and line continuations.
+          pkgs=$(awk '/^FROM /{on=0; n=0}
+                      /^[[:space:]]*#/{next}
+                      {for(i=1;i<=NF;i++){
+                         if(!on){if($i=="install" && i>1 && $(i-1)=="apt-get") on=1; continue}
+                         if($i=="&&"){on=0; break}
+                         if($i=="\\" || $i ~ /^-/) continue
+                         p[++n]=$i}}
+                      END{for(i=1;i<=n;i++) print p[i]}' Dockerfile)
+          if [ -z "$base" ] || [ -z "$pkgs" ]; then
+            echo "::error::Could not read the runtime base image or apt-get install packages from Dockerfile"
+            exit 1
+          fi
+          echo "base: $base"
+          echo "packages: $(printf '%s\n' "$pkgs" | tr '\n' ' ')"
+          # PKGS is word-split inside the container on purpose.
+          closure=$(docker run --rm -e PKGS="$pkgs" "$base" sh -c \
+              'apt-get update -qq >/dev/null && apt-get install -s --no-install-recommends $PKGS' \
+            | sed -nE 's/^Inst ([^ ]+) \(([^ ]+) .*/\1 \2/p' | sort)
+          if [ -z "$closure" ]; then
+            echo "::error::apt-get install -s resolved no packages to install"
+            exit 1
+          fi
+          echo "$closure"
+          key=$(printf '%s\n' "$closure" | sha256sum | cut -d' ' -f1)
+          echo "key: $key"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
       - name: Build (push by digest on main)
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -272,8 +313,10 @@ jobs:
           # the running container can report its commit at /healthz. Placed
           # last in the Dockerfile so this only invalidates the trailing
           # layer (which busts every commit anyway via the source COPY).
+          # APT_CLOSURE keys the runtime apt layer; see the step above.
           build-args: |
             GIT_SHA=${{ github.sha }}
+            APT_CLOSURE=${{ steps.apt.outputs.key }}
             SENTRY_URL=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_URL || '' }}
             SENTRY_ORG=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_ORG || '' }}
             SENTRY_PROJECT=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_PROJECT || '' }}
