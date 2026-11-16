@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
+# syntax=docker/dockerfile:1.29.0@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # --- Stage 1: build the React SPA ---
 FROM node:26.13.1-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS frontend-build
@@ -44,7 +44,7 @@ RUN --mount=type=secret,id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
 # included). An ARG would also deduplicate but `RUN --mount=from=${VAR}` is not
 # a documented Renovate case, and a silently stale pin is worse than a repeat.
 # Nothing COPYs from this stage, so it never reaches the final image.
-FROM ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.8@sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85 AS uv
 
 # --- Stage 3: Python backend ---
 FROM python:3.15.2-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS base
