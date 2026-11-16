@@ -69,9 +69,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # included. The RUN line itself never changes, so without the key the gha
 # cache would serve the old builds until the base digest moves. Empty for
 # local builds.
+#
+# libatomic1 is for Playwright, not for us: from playwright 1.65 its bundled
+# Node driver links libatomic.so.1, which the slim image lacks. It has to be
+# here rather than left to `playwright install --with-deps`, because that
+# command runs the driver itself and so exits 127 before installing anything.
+# The driver also runs at every browser launch, so it is a runtime dependency.
 ARG APT_CLOSURE=
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl sqlite3 \
+      ca-certificates curl libatomic1 sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
