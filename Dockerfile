@@ -71,10 +71,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # local builds.
 #
 # libatomic1 is for Playwright, not for us: from playwright 1.65 its bundled
-# Node driver links libatomic.so.1, which the slim image lacks. It has to be
-# here rather than left to `playwright install --with-deps`, because that
-# command runs the driver itself and so exits 127 before installing anything.
-# The driver also runs at every browser launch, so it is a runtime dependency.
+# Node driver links libatomic.so.1, which the slim image lacks. The image ships
+# no browser (needs_browser sites drive a remote Browserless Chromium over CDP),
+# but the Python client still starts that local driver to connect, so it is a
+# runtime dependency.
 ARG APT_CLOSURE=
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl libatomic1 sqlite3 \
@@ -91,21 +91,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
     uv sync --frozen --no-dev --no-install-project
-
-# Playwright browser + OS deps. Two things matter here:
-#
-# 1. `--only-shell` installs just the Chromium headless shell, skipping the
-#    641 MB headed build. crawl/fetcher.py launches with headless=True and no
-#    channel=, which is exactly the case the headless shell serves.
-# 2. Bare `playwright`, NOT `uv run playwright`. `uv run` re-syncs the project
-#    environment first, and without --no-dev that reinstates the whole dev
-#    group (pytest, ruff, mypy, pre-commit — ~90 MB), silently undoing the
-#    --no-dev on the syncs around it. PATH already prefers /app/.venv/bin.
-#
-# Placed above `COPY src` on purpose: this layer depends only on the playwright
-# version in uv.lock, so source-only commits reuse it instead of rebuilding
-# ~1.1 GB on both matrix legs.
-RUN playwright install --with-deps --only-shell chromium
 
 # Layer 2: copy source and install the project itself.
 COPY alembic.ini ./
@@ -124,7 +109,7 @@ COPY --from=frontend-build /build/dist /app/static
 
 # Bake the git commit SHA into the image so /healthz can report it.
 # Placed at the very end so cache invalidation per-commit only rebuilds
-# this trivial layer, not the heavy frontend/backend/playwright layers
+# this trivial layer, not the heavy frontend/backend layers
 # above. Default is "unknown" so non-CI builds still succeed.
 ARG GIT_SHA=unknown
 ENV YAS_GIT_SHA=$GIT_SHA

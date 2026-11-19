@@ -1,10 +1,14 @@
 """Playwright fetcher integration test.
 
-Skipped if Chromium binaries aren't installed (CI + Docker install them)."""
+Production drives a remote Browserless Chromium over CDP. This stands in a
+local Chromium listening on a CDP port, so the real connect_over_cdp path runs
+without the cloud (and file:// URLs still resolve). Skipped if Chromium
+binaries aren't installed locally."""
 
 from __future__ import annotations
 
 import pathlib
+import socket
 import sys
 
 import pytest
@@ -64,10 +68,21 @@ async def test_playwright_fetches_post_script_dom(tmp_path):
     html_path.write_text(JS_PAGE, encoding="utf-8")
     url = html_path.as_uri()
 
-    fetcher = DefaultFetcher()
-    try:
-        result = await fetcher.fetch(_Page(url), _Site(id=1, needs_browser=True))
-        assert result.used_browser is True
-        assert "hello-from-js" in result.html
-    finally:
-        await fetcher.aclose()
+    from playwright.async_api import async_playwright
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    async with async_playwright() as pw:
+        cdp_server = await pw.chromium.launch(
+            headless=True, args=[f"--remote-debugging-port={port}"]
+        )
+        fetcher = DefaultFetcher(browser_ws_url=f"http://127.0.0.1:{port}")
+        try:
+            result = await fetcher.fetch(_Page(url), _Site(id=1, needs_browser=True))
+            assert result.used_browser is True
+            assert "hello-from-js" in result.html
+        finally:
+            await fetcher.aclose()
+            await cdp_server.close()

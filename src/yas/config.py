@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     crawl_scheduler_enabled: bool = True
     crawl_scheduler_tick_s: int = 30
     crawl_scheduler_batch_size: int = 10
+
+    # Remote browser for needs_browser sites. The image ships no Chromium, so
+    # with no token those sites fail their fetch; httpx-only sites are unaffected.
+    browserless_url: str = "wss://production-sfo.browserless.io"
+    browserless_token: SecretStr | None = None
+    # Concurrent remote sessions; match the plan's limit. Excess fetches wait.
+    browserless_max_concurrency: int = Field(1, ge=1)
 
     # LLM extraction
     llm_extraction_model: str = "claude-haiku-5-5"
