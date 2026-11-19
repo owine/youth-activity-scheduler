@@ -51,11 +51,11 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
     """Run worker in a task alongside uvicorn in-process. One fetcher, one LLM
     client, and one geocoder are constructed at startup and shared across the
     api and worker."""
-    from yas.crawl.fetcher import DefaultFetcher
+    from yas.crawl.fetcher import DefaultFetcher, browserless_endpoint
     from yas.geo.client import NominatimClient
     from yas.llm.client import AnthropicClient
 
-    fetcher = DefaultFetcher()
+    fetcher = DefaultFetcher(browser_ws_url=browserless_endpoint(settings))
     llm = AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_extraction_model)
     geocoder = NominatimClient(min_interval_s=settings.geocode_nominatim_min_interval_s)
     try:

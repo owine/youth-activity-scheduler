@@ -65,7 +65,7 @@ so each broken site becomes its own issue.
 | Crawl: `ExtractionError` (fetched fine, couldn't be read into offerings) | yes | warning | one issue per site |
 | Crawl: `ExtractionRefused` (the model's safety classifiers declined the page, `stop_reason: "refusal"`) | yes | warning | one issue per site, tagged `refusal_category`. Like `ExtractionError`, it doesn't count toward `consecutive_failures`, so there is no backoff and no `crawl_failed` alert |
 | Crawl: page that listed offerings now extracts none (all withdrawn) | yes | warning | one issue per site |
-| Crawl: `FetchError` (404, 5xx, transport) | no | | Expected per-site; backs off, and the third in a row sends the in-app `crawl_failed` alert |
+| Crawl: `FetchError` (404, 5xx, transport, Browserless connect) | no | | Expected per-site; backs off, and the third in a row sends the in-app `crawl_failed` alert. A rejected or missing `YAS_BROWSERLESS_TOKEN` surfaces this way on every `needs_browser` site, with the token redacted from the error |
 | Delivery: a channel fails permanently (bad token, SMTP auth) | yes | warning | one issue per channel |
 | Delivery: alert dropped after retries, or every channel failed | yes | error | one issue per alert type |
 | Geocoder raised (enricher or household save) | yes | error | stack trace, tagged `location_id` (never the address). Recorded as `error` and retried daily, so a bug reports at most once per address per day |

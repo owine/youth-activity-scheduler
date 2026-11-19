@@ -118,3 +118,70 @@ async def test_fetch_enforces_per_site_concurrency_of_1():
     # With a per-site lock, we never see start-start-end-end. Asserting the
     # full list also catches a fetch that never reached the handler.
     assert order == ["start", "end", "start", "end"]
+
+
+# --- remote browser (Browserless) -------------------------------------------
+
+_TOKEN = "kept"
+_ENDPOINT = f"wss://browser.example?token={_TOKEN}&timeout=90000"
+
+
+def test_browserless_endpoint_none_without_token():
+    from yas.config import Settings
+    from yas.crawl.fetcher import browserless_endpoint
+
+    assert browserless_endpoint(Settings(anthropic_api_key="x", browserless_token=None)) is None
+    assert browserless_endpoint(Settings(anthropic_api_key="x", browserless_token="")) is None
+
+
+def test_browserless_endpoint_carries_token_and_session_timeout():
+    from yas.config import Settings
+    from yas.crawl.fetcher import browserless_endpoint
+
+    url = browserless_endpoint(
+        Settings(
+            anthropic_api_key="x",
+            browserless_url="wss://browser.example/",
+            browserless_token=_TOKEN,
+        )
+    )
+    assert url == f"wss://browser.example?token={_TOKEN}&timeout=90000"
+
+
+async def test_browser_fetch_without_endpoint_fails_cleanly():
+    fetcher = DefaultFetcher()
+    try:
+        with pytest.raises(FetchError) as ei:
+            await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1, needs_browser=True))
+        assert "YAS_BROWSERLESS_TOKEN" in ei.value.cause
+    finally:
+        await fetcher.aclose()
+
+
+class _RefusingChromium:
+    async def connect_over_cdp(self, endpoint, **_kwargs):
+        # Mirrors Playwright's handshake error, which quotes the endpoint.
+        raise RuntimeError(f"WebSocket error: {endpoint} 401 Unauthorized")
+
+
+class _FakePlaywright:
+    chromium = _RefusingChromium()
+
+    async def stop(self):
+        pass
+
+
+async def test_browser_connect_error_redacts_token():
+    fetcher = DefaultFetcher(browser_ws_url=_ENDPOINT)
+    fetcher._playwright = _FakePlaywright()
+    try:
+        with pytest.raises(FetchError) as ei:
+            await fetcher.fetch(_Page("https://example.com/p"), _Site(id=1, needs_browser=True))
+        assert _TOKEN not in str(ei.value)
+        assert "401 Unauthorized" in ei.value.cause
+        assert "token=***" in ei.value.cause
+        # The chained cause would carry the raw URL into tracebacks and GlitchTip.
+        assert ei.value.__cause__ is None
+        assert ei.value.__suppress_context__ is True
+    finally:
+        await fetcher.aclose()

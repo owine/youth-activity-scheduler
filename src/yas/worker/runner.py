@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from yas.alerts.channels.base import Notifier
 from yas.alerts.routing import seed_default_routing
 from yas.config import Settings
-from yas.crawl.fetcher import DefaultFetcher, Fetcher
+from yas.crawl.fetcher import DefaultFetcher, Fetcher, browserless_endpoint
 from yas.crawl.scheduler import crawl_scheduler_loop
 from yas.db.models import HouseholdSettings
 from yas.db.session import session_scope
@@ -73,7 +73,7 @@ async def run_worker(
 ) -> None:
     own_fetcher = fetcher is None
     own_geocoder = geocoder is None
-    fetcher = fetcher or DefaultFetcher()
+    fetcher = fetcher or DefaultFetcher(browser_ws_url=browserless_endpoint(settings))
     llm = llm or AnthropicClient(
         api_key=settings.anthropic_api_key,
         model=settings.llm_extraction_model,

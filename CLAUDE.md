@@ -154,8 +154,14 @@ fails the heartbeat and API writes with `database is locked` after the 5s busy t
 `crawl/scheduler.py` selects pages whose `next_check_at` has passed, then `crawl/pipeline.py`
 runs the stages:
 
-1. `fetcher.py` — httpx, or Playwright when `site.needs_browser`. `robots.txt` is ignored
-   unless `site.crawl_hints.respect_robots` is true.
+1. `fetcher.py` — httpx, or Playwright when `site.needs_browser`. The image ships **no
+   Chromium**: browser fetches drive a remote Browserless session over `connect_over_cdp`
+   (`YAS_BROWSERLESS_TOKEN`, `YAS_BROWSERLESS_URL`), one session per fetch since Browserless
+   ends sessions at the plan's maximum duration. Not native `connect()`, which only accepts
+   the Playwright versions Browserless runs. Without a token those fetches fail. The endpoint
+   carries the token in its query string, so `FetchError` text is redacted: it is stored on
+   the page and shown in the UI. `robots.txt` is ignored unless
+   `site.crawl_hints.respect_robots` is true.
 2. `change_detector.py` — `content_hash(normalize(html))`. Matching hash short-circuits the
    whole run (no LLM spend).
 3. `extractor.py` — checks `extraction_cache` by content hash first; on miss calls the LLM
