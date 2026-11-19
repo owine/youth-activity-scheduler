@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # with no token those sites fail their fetch; httpx-only sites are unaffected.
     browserless_url: str = "wss://production-sfo.browserless.io"
     browserless_token: SecretStr | None = None
+    # Concurrent remote sessions; match the plan's limit. Excess fetches wait.
+    browserless_max_concurrency: int = Field(1, ge=1)
 
     # LLM extraction
     llm_extraction_model: str = "claude-haiku-5-5"

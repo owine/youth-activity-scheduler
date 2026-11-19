@@ -158,7 +158,10 @@ runs the stages:
    Chromium**: browser fetches drive a remote Browserless session over `connect_over_cdp`
    (`YAS_BROWSERLESS_TOKEN`, `YAS_BROWSERLESS_URL`), one session per fetch since Browserless
    ends sessions at the plan's maximum duration. Not native `connect()`, which only accepts
-   the Playwright versions Browserless runs. Without a token those fetches fail. The endpoint
+   the Playwright versions Browserless runs. Sessions are capped fetcher-wide at
+   `YAS_BROWSERLESS_MAX_CONCURRENCY` (the scheduler gathers a whole batch at once, and a
+   session past the plan's limit is refused, not queued), connects retry transient refusals,
+   and Playwright errors become `FetchError`s. Without a token those fetches fail. The endpoint
    carries the token in its query string, so `FetchError` text is redacted: it is stored on
    the page and shown in the UI. `robots.txt` is ignored unless
    `site.crawl_hints.respect_robots` is true.

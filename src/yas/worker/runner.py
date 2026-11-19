@@ -73,7 +73,10 @@ async def run_worker(
 ) -> None:
     own_fetcher = fetcher is None
     own_geocoder = geocoder is None
-    fetcher = fetcher or DefaultFetcher(browser_ws_url=browserless_endpoint(settings))
+    fetcher = fetcher or DefaultFetcher(
+        browser_ws_url=browserless_endpoint(settings),
+        browser_max_concurrency=settings.browserless_max_concurrency,
+    )
     llm = llm or AnthropicClient(
         api_key=settings.anthropic_api_key,
         model=settings.llm_extraction_model,

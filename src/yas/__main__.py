@@ -55,7 +55,10 @@ async def _run_all(settings, engine) -> None:  # type: ignore[no-untyped-def]
     from yas.geo.client import NominatimClient
     from yas.llm.client import AnthropicClient
 
-    fetcher = DefaultFetcher(browser_ws_url=browserless_endpoint(settings))
+    fetcher = DefaultFetcher(
+        browser_ws_url=browserless_endpoint(settings),
+        browser_max_concurrency=settings.browserless_max_concurrency,
+    )
     llm = AnthropicClient(api_key=settings.anthropic_api_key, model=settings.llm_extraction_model)
     geocoder = NominatimClient(min_interval_s=settings.geocode_nominatim_min_interval_s)
     try:

@@ -17,7 +17,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -35,6 +35,9 @@ _BACKOFFS_S = (1.0, 4.0, 10.0)  # 3 attempts total (initial + 2 retries after th
 _BROWSER_SESSION_TIMEOUT_MS = 90_000
 _BROWSER_CONNECT_TIMEOUT_MS = 30_000
 _TOKEN_PARAM_RE = re.compile(r"(token=)[^&\s\"'<>]+")
+# A rejected token fails the same way on every attempt; retrying only delays
+# the FetchError that says so.
+_NO_RETRY_CONNECT_RE = re.compile(r"\b(401|403)\b")
 
 
 def browserless_endpoint(settings: Settings) -> str | None:
@@ -48,8 +51,13 @@ def browserless_endpoint(settings: Settings) -> str | None:
     token = settings.browserless_token.get_secret_value()
     if not token:
         return None
-    query = urlencode({"token": token, "timeout": _BROWSER_SESSION_TIMEOUT_MS})
-    return f"{settings.browserless_url.rstrip('/')}?{query}"
+    parts = urlsplit(settings.browserless_url)
+    # Keep any parameters already on the URL (a region or stealth flag, say);
+    # ours replace same-named ones rather than duplicating them.
+    params = [(k, v) for k, v in parse_qsl(parts.query) if k not in {"token", "timeout"}]
+    params += [("token", token), ("timeout", str(_BROWSER_SESSION_TIMEOUT_MS))]
+    path = parts.path.rstrip("/")
+    return urlunsplit((parts.scheme, parts.netloc, path, urlencode(params), parts.fragment))
 
 
 def _redact(text: str, endpoint: str) -> str:
@@ -85,7 +93,9 @@ class Fetcher(Protocol):
 
 
 class DefaultFetcher:
-    def __init__(self, browser_ws_url: str | None = None) -> None:
+    def __init__(
+        self, browser_ws_url: str | None = None, *, browser_max_concurrency: int = 1
+    ) -> None:
         self._http = httpx.AsyncClient(
             headers={"User-Agent": _USER_AGENT},
             timeout=_TIMEOUT,
@@ -95,6 +105,10 @@ class DefaultFetcher:
         self._browser_ws_url = browser_ws_url
         self._playwright: Any = None
         self._playwright_lock = asyncio.Lock()
+        # The scheduler crawls a whole batch at once and per-site locks don't
+        # bound sessions across sites, so cap them at the plan's concurrency:
+        # a fetch past it would be refused (429) rather than queued.
+        self._browser_slots = asyncio.Semaphore(browser_max_concurrency)
 
     def _lock_for(self, site_id: int) -> asyncio.Lock:
         lock = self._site_locks.get(site_id)
@@ -156,30 +170,48 @@ class DefaultFetcher:
                 # Starts Playwright's Node driver, which runs locally even though
                 # the browser does not; this is why the image keeps libatomic1.
                 self._playwright = await async_playwright().start()
-        try:
-            browser = await self._playwright.chromium.connect_over_cdp(
-                endpoint, timeout=_BROWSER_CONNECT_TIMEOUT_MS
-            )
-        except Exception as exc:
-            # `from None`: the cause's message carries the token too.
-            raise FetchError(None, url, f"browser connect: {_redact(str(exc), endpoint)}") from None
-        try:
-            context = await browser.new_context(user_agent=_USER_AGENT)
-            page = await context.new_page()
-            response = await page.goto(url, wait_until="networkidle", timeout=30000)
-            status = response.status if response is not None else 200
-            if status >= 400:
-                raise FetchError(status, url, f"browser http {status}")
-            # Give late-firing setTimeout/DOM updates one tick.
-            await page.wait_for_load_state("networkidle")
-            html = await page.content()
-            final_url = page.url
-            return html, status, final_url, True
-        finally:
-            # Ends the remote session, freeing the plan's concurrency slot now
-            # rather than at the session timeout.
-            with contextlib.suppress(Exception):
-                await browser.close()
+        from playwright.async_api import Error as PlaywrightError
+
+        async with self._browser_slots:
+            browser = await self._connect(endpoint, url)
+            try:
+                context = await browser.new_context(user_agent=_USER_AGENT)
+                page = await context.new_page()
+                response = await page.goto(url, wait_until="networkidle", timeout=30000)
+                status = response.status if response is not None else 200
+                if status >= 400:
+                    raise FetchError(status, url, f"browser http {status}")
+                # Give late-firing setTimeout/DOM updates one tick.
+                await page.wait_for_load_state("networkidle")
+                html = await page.content()
+                final_url = page.url
+                return html, status, final_url, True
+            except PlaywrightError as exc:
+                # A navigation timeout or a dropped remote session is a per-site
+                # network failure, like httpx's TransportError: back off, don't
+                # page. Redacted and unchained in case it quotes the endpoint.
+                raise FetchError(None, url, f"browser: {_redact(str(exc), endpoint)}") from None
+            finally:
+                # Ends the remote session, freeing the plan's concurrency slot now
+                # rather than at the session timeout.
+                with contextlib.suppress(Exception):
+                    await browser.close()
+
+    async def _connect(self, endpoint: str, url: str) -> Any:
+        """connect_over_cdp, retrying transient refusals (429, 5xx, timeouts)."""
+        for attempt in range(len(_BACKOFFS_S) + 1):
+            try:
+                return await self._playwright.chromium.connect_over_cdp(
+                    endpoint, timeout=_BROWSER_CONNECT_TIMEOUT_MS
+                )
+            except Exception as exc:
+                message = _redact(str(exc), endpoint)
+                if attempt < len(_BACKOFFS_S) and not _NO_RETRY_CONNECT_RE.search(message):
+                    await asyncio.sleep(_BACKOFFS_S[attempt])
+                    continue
+                # `from None`: the cause's message carries the token too.
+                raise FetchError(None, url, f"browser connect: {message}") from None
+        raise AssertionError("unreachable")  # pragma: no cover
 
     async def aclose(self) -> None:
         await self._http.aclose()
