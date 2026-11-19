@@ -327,8 +327,11 @@ jobs:
             SENTRY_PROJECT=${{ env.SENTRY_UPLOAD == 'true' && vars.SENTRY_PROJECT || '' }}
           # A buildkit secret, never a build arg: build args persist in image
           # history. Mounted only for the frontend build RUN (see Dockerfile).
-          secrets: |
-            sentry_auth_token=${{ env.SENTRY_UPLOAD == 'true' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          # The condition wraps the whole entry, not just its value: an empty
+          # `sentry_auth_token=` is rejected with a "not a valid secret"
+          # warning on every build that doesn't upload. Passing no secret at
+          # all is equivalent, since the Dockerfile's mount isn't `required`.
+          secrets: ${{ env.SENTRY_UPLOAD == 'true' && secrets.SENTRY_AUTH_TOKEN != '' && format('sentry_auth_token={0}', secrets.SENTRY_AUTH_TOKEN) || '' }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
