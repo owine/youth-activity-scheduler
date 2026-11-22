@@ -3129,8 +3129,8 @@ packages:
     resolution: {integrity: sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ==}
     engines: {node: '>=8'}
 
-  superjson@2.2.6:
-    resolution: {integrity: sha512-H+ue8Zo4vJmV2nRjpx86P35lzwDT3nItnIsocgumgr0hHMQ+ZGq5vrERg9kJBo5AWGmxZDhzDo+WVIJqkB0cGA==}
+  superjson@2.2.7:
+    resolution: {integrity: sha512-QK/H+tosbovdRvIuGqcWn8g3IxPZY7B8ZPowCAmWsV8bPvCk+bGMlZt90C4AxZjnzMO2WBRDacr1+0i1AOy/5g==}
     engines: {node: '>=16'}
 
   tagged-tag@1.0.0:
@@ -4870,7 +4870,7 @@ snapshots:
       goober: 2.1.19(csstype@3.2.4)
       solid-js: 1.9.20
       solid-transition-group: 0.2.3(solid-js@1.9.20)
-      superjson: 2.2.6
+      superjson: 2.2.7
     transitivePeerDependencies:
       - csstype
 
@@ -6223,7 +6223,7 @@ snapshots:
     dependencies:
       min-indent: 1.0.1
 
-  superjson@2.2.6:
+  superjson@2.2.7:
     dependencies:
       copy-anything: 4.1.5
 
