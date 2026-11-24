@@ -40,7 +40,7 @@ dev = [
   # Used by tests/unit/test_compose_files.py. Present transitively via
   # uvicorn[standard] and pre-commit, but declared so the tests don't silently
   # depend on someone else's extras.
-  "pyyaml==6.0.3",
+  "pyyaml==6.0.4",
 ]
 
 [build-system]
