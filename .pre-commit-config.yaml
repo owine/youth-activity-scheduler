@@ -17,7 +17,7 @@ repos:
           - fastapi
           - structlog
   - repo: https://github.com/gitguardian/ggshield
-    rev: v1.56.1
+    rev: v1.57.0
     hooks:
       - id: ggshield
         language_version: python3
